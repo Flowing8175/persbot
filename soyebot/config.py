@@ -34,16 +34,8 @@ class AppConfig:
     session_cleanup_interval: int = 300
     command_prefix: str = '!'
 
-    # --- Memory Configuration ---
-    memory_model_name: str = 'gemma-3-27b-it'
-    memory_retrieval_mode: str = 'inject_all'  # 'inject_all' or 'semantic_search'
-    max_memories_to_inject: int = 20
-    embedding_model_name: str = 'all-MiniLM-L6-v2'
+    # --- Database Configuration ---
     database_path: str = 'soyebot.db'
-    memory_cache_size: int = 50
-    max_conversation_history: int = 50
-    memory_compression_days: int = 7
-    enable_memory_system: bool = True
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""

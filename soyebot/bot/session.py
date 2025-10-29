@@ -9,8 +9,7 @@ from typing import Optional, Tuple
 from config import AppConfig
 from services.gemini_service import GeminiService
 from services.database_service import DatabaseService
-from services.memory_service import MemoryService
-from prompts import build_system_prompt_with_memory
+from prompts import BOT_PERSONA_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +26,16 @@ class ChatSession:
         return datetime.now(timezone.utc) > expiry_time
 
 class SessionManager:
-    """사용자 기반 채팅 세션을 관리합니다 - Manages user-based sessions with memory integration."""
+    """사용자 기반 채팅 세션을 관리합니다 - Manages user-based sessions."""
     def __init__(
         self,
         config: AppConfig,
         gemini_service: GeminiService,
         db_service: DatabaseService,
-        memory_service: MemoryService,
     ):
         self.config = config
         self.gemini_service = gemini_service
         self.db_service = db_service
-        self.memory_service = memory_service
         self.sessions: dict[str, ChatSession] = {}  # user_id -> ChatSession
         self.last_cleanup_time = time.time()
 
@@ -79,17 +76,12 @@ class SessionManager:
         # Ensure user exists in database
         self.db_service.get_or_create_user(user_id, username)
 
-        # Load context (unified memories only - few-shot examples are now in system prompt)
-        memory_context = self.memory_service.get_memories_context()
-        logger.debug(f"Memory context length: {len(memory_context)} characters")
-        if memory_context:
-            logger.debug(f"Memory context preview: {memory_context[:200]}...")
-
-        system_prompt = build_system_prompt_with_memory(memory_context)
+        # Use base system prompt without memory context
+        system_prompt = BOT_PERSONA_PROMPT
         logger.debug(f"System prompt length: {len(system_prompt)} characters")
         logger.debug(f"[RAW SESSION REQUEST] System prompt:\n{system_prompt}")
 
-        # Create new model with enhanced system prompt (including memory context + few-shot examples)
+        # Create new model with system prompt
         assistant_model = self.gemini_service.create_assistant_model(system_prompt)
 
         # Create new chat without separate history (few-shot examples are embedded in system prompt)

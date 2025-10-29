@@ -13,13 +13,9 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from config import load_config
 from services.gemini_service import GeminiService
 from services.database_service import DatabaseService
-from services.memory_service import MemoryService
-from services.optimization_service import OptimizationService
-from services.channel_preprocessor import ChannelPreprocessorCog
 from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
-from bot.cogs.memory import MemoryCog
 from bot.cogs.help import HelpCog
 
 logger = logging.getLogger(__name__)
@@ -65,17 +61,7 @@ async def main():
     # Initialize services
     gemini_service = GeminiService(config)
     db_service = DatabaseService(config.database_path)
-    memory_service = MemoryService(
-        db_service=db_service,
-        retrieval_mode=config.memory_retrieval_mode,
-        embedding_model_name=config.embedding_model_name,
-        cache_size=config.memory_cache_size,
-    )
-    session_manager = SessionManager(config, gemini_service, db_service, memory_service)
-    optimization_service = OptimizationService(
-        db_service=db_service,
-        cache_size=config.memory_cache_size,
-    )
+    session_manager = SessionManager(config, gemini_service, db_service)
 
     @bot.event
     async def on_ready():
@@ -84,27 +70,14 @@ async def main():
 
         # Initialize cogs
         await bot.add_cog(HelpCog(bot))
-        await bot.add_cog(SummarizerCog(bot, config, gemini_service, memory_service))
-        await bot.add_cog(AssistantCog(bot, config, gemini_service, session_manager, memory_service))
-
-        # Add memory cog if memory system is enabled
-        if config.enable_memory_system:
-            await bot.add_cog(MemoryCog(bot, config, db_service, memory_service))
-            await bot.add_cog(ChannelPreprocessorCog(bot, config, db_service, memory_service))
-            logger.info("Memory system initialized")
-
-            # Start optimization service
-            await optimization_service.start_cleanup_loop()
-            logger.info("Optimization service started")
-
+        await bot.add_cog(SummarizerCog(bot, config, gemini_service))
+        await bot.add_cog(AssistantCog(bot, config, gemini_service, session_manager))
         logger.info("Cogs 로드 완료.")
 
     @bot.event
     async def on_close():
         """Cleanup on bot close."""
         try:
-            memory_service.cleanup()
-            await optimization_service.stop()
             db_service.close()
             logger.info("Services cleaned up successfully")
         except Exception as e:

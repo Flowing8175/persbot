@@ -1,15 +1,14 @@
-"Summarizer Cog for SoyeBot."
+"""Summarizer Cog for SoyeBot."""
 
 import discord
 from discord.ext import commands
 from datetime import datetime, timedelta, timezone
 import time
 import logging
-from typing import Optional, Literal
+from typing import Literal
 
 from config import AppConfig
 from services.gemini_service import GeminiService
-from services.memory_service import MemoryService
 from utils import DiscordUI, parse_korean_time
 
 logger = logging.getLogger(__name__)
@@ -22,12 +21,10 @@ class SummarizerCog(commands.Cog):
         bot: commands.Bot,
         config: AppConfig,
         gemini_service: GeminiService,
-        memory_service: Optional[MemoryService] = None,
     ):
         self.bot = bot
         self.config = config
         self.gemini_service = gemini_service
-        self.memory_service = memory_service
 
     async def _fetch_messages(
         self,
@@ -45,41 +42,6 @@ class SummarizerCog(commands.Cog):
 
         return "\n".join(messages), message_count
 
-    async def _extract_and_save_summary_memory(
-        self,
-        user_id: int,
-        summary: str,
-        channel_name: str,
-    ) -> None:
-        """요약에서 핵심 정보를 추출하여 기억으로 저장합니다.
-
-        Args:
-            user_id: 명령어를 실행한 사용자 ID
-            summary: 생성된 요약 텍스트
-            channel_name: 요약한 채널 이름
-        """
-        if not self.memory_service or not self.config.enable_memory_system:
-            return
-
-        try:
-            # 요약의 첫 100자를 기억으로 저장
-            summary_preview = summary[:150]
-            if len(summary) > 150:
-                summary_preview += "..."
-
-            memory_content = f"[{channel_name} 채널 요약] {summary_preview}"
-
-            self.memory_service.save_memory(
-                user_id=str(user_id),
-                memory_type='key_memory',
-                content=memory_content,
-                importance_score=0.6,  # 중간 정도의 중요도
-            )
-
-            logger.info(f"Saved summary memory for user {user_id}: {memory_content[:50]}")
-
-        except Exception as e:
-            logger.warning(f"Failed to save summary memory: {e}")
 
     @commands.group(name="요약", invoke_without_command=True)
     async def summarize(self, ctx: commands.Context, *args):
@@ -140,12 +102,6 @@ class SummarizerCog(commands.Cog):
 
                 summary = await self.gemini_service.summarize_text(full_text)
                 if summary:
-                    # 요약을 기억으로 저장
-                    await self._extract_and_save_summary_memory(
-                        user_id=ctx.author.id,
-                        summary=summary,
-                        channel_name=ctx.channel.name,
-                    )
                     await DiscordUI.safe_send(ctx.channel, f"**최근 {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
                 else:
                     await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
@@ -174,12 +130,6 @@ class SummarizerCog(commands.Cog):
 
             summary = await self.gemini_service.summarize_text(full_text)
             if summary:
-                # 요약을 기억으로 저장
-                await self._extract_and_save_summary_memory(
-                    user_id=ctx.author.id,
-                    summary=summary,
-                    channel_name=ctx.channel.name,
-                )
                 await DiscordUI.safe_send(ctx.channel, f"**메시지 ID `{message_id}` 이후 {count}개 메시지 요약:**\n>>> {summary}")
             else:
                 await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
@@ -216,12 +166,6 @@ class SummarizerCog(commands.Cog):
 
             summary = await self.gemini_service.summarize_text(full_text)
             if summary:
-                # 요약을 기억으로 저장
-                await self._extract_and_save_summary_memory(
-                    user_id=ctx.author.id,
-                    summary=summary,
-                    channel_name=ctx.channel.name,
-                )
                 await DiscordUI.safe_send(ctx.channel, f"**메시지 ID `{message_id}` {direction} {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
             else:
                 await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
