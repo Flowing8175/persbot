@@ -81,13 +81,20 @@ class SessionManager:
 
         # Load context (unified memories only - no conversation history)
         memory_context = self.memory_service.get_memories_context()
+        logger.debug(f"Memory context length: {len(memory_context)} characters")
+        if memory_context:
+            logger.debug(f"Memory context preview: {memory_context[:200]}...")
+
         system_prompt = build_system_prompt_with_memory(memory_context)
+        logger.debug(f"System prompt length: {len(system_prompt)} characters")
+        logger.debug(f"[RAW SESSION REQUEST] System prompt:\n{system_prompt}")
 
         # Create new model with enhanced system prompt (including memory context)
         assistant_model = self.gemini_service.create_assistant_model(system_prompt)
 
         # Use few-shot examples for initial context
         history = get_few_shot_examples_as_content()
+        logger.debug(f"Few-shot examples: {len(history)} messages in history")
 
         # Create new chat with context
         chat = assistant_model.start_chat(

@@ -55,6 +55,62 @@ class GeminiService:
             return float(match.group(1))
         return None
 
+    def _log_raw_request(self, user_message: str, tools: Optional[list] = None, chat_session: Any = None) -> None:
+        """Log raw API request data being sent.
+
+        Args:
+            user_message: The user message being sent
+            tools: Optional function calling tools
+            chat_session: The chat session object for logging history
+        """
+        try:
+            logger.debug(f"[RAW API REQUEST] User message length: {len(user_message)} characters")
+            logger.debug(f"[RAW API REQUEST] User message content: {user_message}")
+            logger.debug(f"[RAW API REQUEST] User message preview: {user_message[:200].replace(chr(10), ' ')}...")
+
+            # Log tools if provided
+            if tools:
+                logger.debug(f"[RAW API REQUEST] Tools provided: {len(tools)} tool(s)")
+                for tool_idx, tool in enumerate(tools):
+                    tool_type = type(tool).__name__
+                    logger.debug(f"[RAW API REQUEST] Tool {tool_idx}: {tool_type}")
+
+                    # Log function declarations if available
+                    if hasattr(tool, 'function_declarations'):
+                        funcs = tool.function_declarations
+                        logger.debug(f"[RAW API REQUEST]   Function declarations: {len(funcs)}")
+                        for func_idx, func in enumerate(funcs):
+                            func_name = func.name if hasattr(func, 'name') else 'unknown'
+                            logger.debug(f"[RAW API REQUEST]   [{func_idx}] {func_name}")
+                            if hasattr(func, 'description'):
+                                logger.debug(f"[RAW API REQUEST]       Description: {func.description}")
+                            if hasattr(func, 'parameters'):
+                                params = func.parameters
+                                if hasattr(params, 'properties'):
+                                    logger.debug(f"[RAW API REQUEST]       Parameters: {list(params.properties.keys())}")
+            else:
+                logger.debug(f"[RAW API REQUEST] No tools provided - regular message mode")
+
+            # Log chat session history if available
+            if chat_session and hasattr(chat_session, 'history'):
+                try:
+                    history = chat_session.history
+                    logger.debug(f"[RAW API REQUEST] Chat history: {len(history)} message(s)")
+                    for msg_idx, msg in enumerate(history[-5:]):  # Log last 5 messages
+                        role = msg.role if hasattr(msg, 'role') else 'unknown'
+                        if hasattr(msg, 'parts') and msg.parts:
+                            for part_idx, part in enumerate(msg.parts):
+                                if hasattr(part, 'text') and part.text:
+                                    text_preview = part.text[:100].replace('\n', ' ')
+                                    logger.debug(f"[RAW API REQUEST]   [{msg_idx}] {role}: {text_preview}... ({len(part.text)} chars)")
+                except Exception as e:
+                    logger.debug(f"[RAW API REQUEST] Could not log chat history: {e}")
+
+            logger.debug(f"[RAW API REQUEST] Raw request logging completed")
+
+        except Exception as e:
+            logger.error(f"[RAW API REQUEST] Error logging raw request: {e}", exc_info=True)
+
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw API response data for debugging.
 
@@ -192,8 +248,9 @@ class GeminiService:
             logger.debug("Summarization requested for empty text")
             return "요약할 메시지가 없습니다."
         logger.info(f"Summarizing text ({len(text)} characters)...")
-        logger.debug(f"[API REQUEST] Text to summarize preview: {text[:200].replace(chr(10), ' ')}...")
+        logger.debug(f"[RAW API REQUEST] Text to summarize:\n{text}")
         prompt = f"Discord 대화 내용:\n{text}"
+        logger.debug(f"[RAW API REQUEST] Full prompt being sent ({len(prompt)} characters):\n{prompt}")
         return await self._api_request_with_retry(
             lambda: self.summary_model.generate_content(prompt),
             "요약"
@@ -217,7 +274,9 @@ class GeminiService:
             response_object is the full response for parsing function calls when tools are provided
         """
         logger.debug(f"Generating chat response - User message length: {len(user_message)}, Tools enabled: {tools is not None}")
-        logger.debug(f"[API REQUEST] User message preview: {user_message[:150].replace(chr(10), ' ')}...")
+
+        # Log raw request data
+        self._log_raw_request(user_message, tools, chat_session)
 
         def api_call():
             if tools:
