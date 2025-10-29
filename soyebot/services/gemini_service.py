@@ -11,7 +11,6 @@ import discord
 
 from config import AppConfig
 from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from utils import DiscordUI
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +182,8 @@ class GeminiService:
         self,
         model_call,
         error_prefix: str = "요청",
-        return_full_response: bool = False
+        return_full_response: bool = False,
+        discord_message: Optional[discord.Message] = None,
     ) -> Optional[Any]:
         """재시도 및 에러 처리를 포함한 API 요청 래퍼
 
@@ -230,6 +230,8 @@ class GeminiService:
                     logger.info(f"API 타임아웃, 재시도 중...")
                     continue
                 logger.error(f"❌ 에러: API 요청 시간 초과")
+                if discord_message:
+                    await discord_message.reply("❌ Gemini API 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.", mention_author=False)
                 return None
             except Exception as e:
                 error_str = str(e)
@@ -237,18 +239,31 @@ class GeminiService:
 
                 if self._is_rate_limit_error(error_str):
                     delay = self._extract_retry_delay(error_str) or self.config.api_rate_limit_retry_after
-                    logger.warning(f"API 쿼터 초과: {delay}초 후 재시도")
+                    initial_message_content = "⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요."
+                    sent_message = None
+                    if discord_message:
+                        sent_message = await discord_message.reply(initial_message_content, mention_author=False)
+
                     for remaining in range(int(delay), 0, -1):
-                        logger.info(f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)")
+                        countdown_message = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
+                        if sent_message:
+                            await sent_message.edit(content=countdown_message)
+                        logger.info(countdown_message)
                         await asyncio.sleep(1)
+                    if sent_message:
+                        await sent_message.delete() # Delete the countdown message after it finishes
                     continue
 
                 if attempt >= self.config.api_max_retries:
+                    if discord_message:
+                        await discord_message.reply(f"❌ API 요청 중 오류가 발생했습니다: {error_str}. 잠시 후 다시 시도해주세요.", mention_author=False)
                     break
                 logger.info(f"에러 발생, 재시도 중...")
                 await asyncio.sleep(2)
 
         logger.error(f"❌ 에러: 최대 재시도 횟수({self.config.api_max_retries})를 초과했습니다.")
+        if discord_message:
+            await discord_message.reply(f"❌ 최대 재시도 횟수({self.config.api_max_retries})를 초과하여 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", mention_author=False)
         return None
 
     async def summarize_text(self, text: str) -> Optional[str]:
@@ -268,6 +283,7 @@ class GeminiService:
         self,
         chat_session,
         user_message: str,
+        discord_message: discord.Message,
         tools: Optional[list] = None,
     ) -> Optional[Tuple[str, Optional[Any]]]:
         """Generate chat response with optional function calling support.
@@ -302,7 +318,8 @@ class GeminiService:
         response_obj = await self._api_request_with_retry(
             api_call,
             "응답 생성",
-            return_full_response=True
+            return_full_response=True,
+            discord_message=discord_message,
         )
 
         if response_obj is None:
