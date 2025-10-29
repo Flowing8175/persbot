@@ -24,6 +24,33 @@ from bot.cogs.help import HelpCog
 
 logger = logging.getLogger(__name__)
 
+def setup_logging():
+    """Setup logging configuration with suppressed discord.py spam."""
+    # Set up root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Create console handler with formatting
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_handler.setFormatter(formatter)
+
+    if not root_logger.handlers:
+        root_logger.addHandler(console_handler)
+
+    # Suppress discord.py debug logs
+    logging.getLogger('discord').setLevel(logging.WARNING)
+    logging.getLogger('discord.http').setLevel(logging.WARNING)
+    logging.getLogger('discord.client').setLevel(logging.WARNING)
+    logging.getLogger('discord.gateway').setLevel(logging.WARNING)
+
+    logger.debug("Logging configuration initialized")
+
 async def main():
     """Initializes and runs the bot."""
     config = load_config()
@@ -94,4 +121,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    setup_logging()
     asyncio.run(main())

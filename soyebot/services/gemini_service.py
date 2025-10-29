@@ -147,7 +147,7 @@ class GeminiService:
             Tuple of (response_text, response_object) or None
             response_object is the full response for parsing function calls when tools are provided
         """
-        logger.info("Gemini API로 채팅 응답 요청...")
+        logger.debug(f"Generating chat response - User message length: {len(user_message)}, Tools enabled: {tools is not None}")
 
         def api_call():
             if tools:
@@ -186,26 +186,36 @@ class GeminiService:
             # Try direct text access first (for simple responses without function calls)
             if hasattr(response_obj, 'text'):
                 try:
-                    return response_obj.text.strip()
-                except ValueError:
+                    text = response_obj.text.strip()
+                    logger.debug(f"Extracted text from response: {len(text)} characters")
+                    return text
+                except ValueError as e:
                     # This happens when response contains function_call parts
+                    logger.debug(f"Response contains function calls, cannot use .text directly: {e}")
                     pass
 
             # Extract text from parts manually
             text_parts = []
             if hasattr(response_obj, 'candidates') and response_obj.candidates:
+                logger.debug(f"Processing {len(response_obj.candidates)} candidates")
                 for candidate in response_obj.candidates:
                     if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
                         for part in candidate.content.parts:
                             # Only extract text parts, skip function_call parts
                             if hasattr(part, 'text') and part.text:
                                 text_parts.append(part.text)
+                                logger.debug(f"Found text part: {len(part.text)} characters")
+                            elif hasattr(part, 'function_call'):
+                                logger.debug(f"Found function call part: {part.function_call.name if hasattr(part.function_call, 'name') else 'unknown'}")
 
             if text_parts:
-                return ' '.join(text_parts).strip()
+                combined = ' '.join(text_parts).strip()
+                logger.debug(f"Combined {len(text_parts)} text parts into {len(combined)} characters")
+                return combined
 
             # If no text parts found, return empty string
             # (this is normal when Gemini only returns function calls)
+            logger.debug("Response contains no text parts, only function calls")
             return ""
 
         except Exception as e:
@@ -223,6 +233,7 @@ class GeminiService:
         function_calls = []
         try:
             if hasattr(response_obj, 'candidates') and response_obj.candidates:
+                logger.debug(f"Parsing function calls from {len(response_obj.candidates)} candidates")
                 for candidate in response_obj.candidates:
                     if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
                         for part in candidate.content.parts:
@@ -236,11 +247,13 @@ class GeminiService:
                                         logger.debug(f"Failed to convert args to dict: {e}, using empty dict")
                                         args = {}
 
+                                func_name = part.function_call.name if hasattr(part.function_call, 'name') else ''
                                 function_calls.append({
-                                    'name': part.function_call.name if hasattr(part.function_call, 'name') else '',
+                                    'name': func_name,
                                     'args': args,
                                 })
-                                logger.debug(f"Parsed function call: {function_calls[-1]['name']} with args: {args}")
+                                logger.debug(f"Parsed function call: {func_name} with {len(args)} args")
+                logger.debug(f"Total function calls parsed: {len(function_calls)}")
         except Exception as e:
             logger.error(f"Failed to parse function calls: {e}", exc_info=True)
         return function_calls
