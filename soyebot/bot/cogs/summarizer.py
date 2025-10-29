@@ -119,7 +119,6 @@ class SummarizerCog(commands.Cog):
             else:
                 await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
 
-    @summarize.command(name="id")
     async def summarize_by_id(self, ctx: commands.Context, message_id: int):
         """특정 메시지 ID 이후의 메시지를 요약합니다."""
         try:
@@ -147,7 +146,6 @@ class SummarizerCog(commands.Cog):
             else:
                 await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
 
-    @summarize.command(name="range")
     async def summarize_by_range(self, ctx: commands.Context, message_id: int, direction: Literal["이후", "이전"], time_str: str):
         """메시지 ID 기준 특정 시간 범위의 메시지를 요약합니다."""
         minutes = parse_korean_time(time_str)
@@ -184,8 +182,6 @@ class SummarizerCog(commands.Cog):
                 await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
 
     @summarize.error
-    @summarize_by_id.error
-    @summarize_by_range.error
     async def summarize_error(self, ctx, error):
         if isinstance(error, commands.BadArgument):
             await ctx.send("❌ 인수가 잘못되었어요. 숫자를 입력해야 하는 곳에 문자를 넣지 않았는지 확인해주세요.")
