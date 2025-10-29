@@ -55,6 +55,66 @@ class GeminiService:
             return float(match.group(1))
         return None
 
+    def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
+        """Log raw API response data for debugging.
+
+        Args:
+            response_obj: The response object from Gemini API
+            attempt: The current attempt number
+        """
+        try:
+            logger.debug(f"[RAW API RESPONSE {attempt}] Response type: {type(response_obj).__name__}")
+
+            # Log candidates
+            if hasattr(response_obj, 'candidates'):
+                logger.debug(f"[RAW API RESPONSE {attempt}] Candidates count: {len(response_obj.candidates) if response_obj.candidates else 0}")
+
+                if response_obj.candidates:
+                    for candidate_idx, candidate in enumerate(response_obj.candidates):
+                        logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {candidate_idx}:")
+
+                        # Log candidate finish reason
+                        if hasattr(candidate, 'finish_reason'):
+                            logger.debug(f"[RAW API RESPONSE {attempt}]   Finish reason: {candidate.finish_reason}")
+
+                        # Log content parts
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            parts = candidate.content.parts
+                            logger.debug(f"[RAW API RESPONSE {attempt}]   Content parts count: {len(parts)}")
+
+                            for part_idx, part in enumerate(parts):
+                                part_type = type(part).__name__
+                                logger.debug(f"[RAW API RESPONSE {attempt}]   Part {part_idx}: {part_type}")
+
+                                if hasattr(part, 'text'):
+                                    text_preview = part.text[:100].replace('\n', ' ') if part.text else "(empty)"
+                                    logger.debug(f"[RAW API RESPONSE {attempt}]     Text: {text_preview}... ({len(part.text)} chars)")
+
+                                if hasattr(part, 'function_call') and part.function_call:
+                                    func_name = part.function_call.name if hasattr(part.function_call, 'name') else 'unknown'
+                                    args_count = len(part.function_call.args) if hasattr(part.function_call, 'args') and part.function_call.args else 0
+                                    logger.debug(f"[RAW API RESPONSE {attempt}]     Function call: {func_name}({args_count} args)")
+
+                                    if hasattr(part.function_call, 'args') and part.function_call.args:
+                                        args_dict = dict(part.function_call.args)
+                                        logger.debug(f"[RAW API RESPONSE {attempt}]     Function args: {args_dict}")
+
+            # Log usage data if available
+            if hasattr(response_obj, 'usage_metadata'):
+                metadata = response_obj.usage_metadata
+                logger.debug(f"[RAW API RESPONSE {attempt}] Usage metadata:")
+                if hasattr(metadata, 'prompt_token_count'):
+                    logger.debug(f"[RAW API RESPONSE {attempt}]   Prompt tokens: {metadata.prompt_token_count}")
+                if hasattr(metadata, 'candidates_token_count'):
+                    logger.debug(f"[RAW API RESPONSE {attempt}]   Candidates tokens: {metadata.candidates_token_count}")
+                if hasattr(metadata, 'total_token_count'):
+                    logger.debug(f"[RAW API RESPONSE {attempt}]   Total tokens: {metadata.total_token_count}")
+
+            logger.debug(f"[RAW API RESPONSE {attempt}] Raw response logging completed")
+
+        except Exception as e:
+            logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
+
     async def _api_request_with_retry(
         self,
         model_call,
@@ -73,21 +133,28 @@ class GeminiService:
         """
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
+                logger.debug(f"[API Request {attempt}/{self.config.api_max_retries}] Starting {error_prefix}...")
+
                 # Call the model without threading - the Gemini API handles its own async
                 result = model_call()
 
                 # If result is a coroutine, await it
                 if asyncio.iscoroutine(result):
+                    logger.debug(f"[API Request {attempt}] Awaiting async result (timeout: {self.config.api_request_timeout}s)")
                     response = await asyncio.wait_for(
                         result,
                         timeout=self.config.api_request_timeout,
                     )
                 else:
                     # If it's a regular blocking call, run in thread
+                    logger.debug(f"[API Request {attempt}] Running blocking call in thread")
                     response = await asyncio.wait_for(
                         asyncio.to_thread(lambda: result),
                         timeout=self.config.api_request_timeout,
                     )
+
+                logger.debug(f"[API Request {attempt}] Response received successfully")
+                self._log_raw_response(response, attempt)
 
                 if return_full_response:
                     return response
@@ -122,8 +189,10 @@ class GeminiService:
 
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():
+            logger.debug("Summarization requested for empty text")
             return "요약할 메시지가 없습니다."
-        logger.info("Gemini API로 요약 요청...")
+        logger.info(f"Summarizing text ({len(text)} characters)...")
+        logger.debug(f"[API REQUEST] Text to summarize preview: {text[:200].replace(chr(10), ' ')}...")
         prompt = f"Discord 대화 내용:\n{text}"
         return await self._api_request_with_retry(
             lambda: self.summary_model.generate_content(prompt),
@@ -148,16 +217,19 @@ class GeminiService:
             response_object is the full response for parsing function calls when tools are provided
         """
         logger.debug(f"Generating chat response - User message length: {len(user_message)}, Tools enabled: {tools is not None}")
+        logger.debug(f"[API REQUEST] User message preview: {user_message[:150].replace(chr(10), ' ')}...")
 
         def api_call():
             if tools:
                 # Use function calling mode
+                logger.debug(f"[API REQUEST] Sending message with {len(tools)} tool(s)")
                 return chat_session.send_message(
                     user_message,
                     tools=tools,
                 )
             else:
                 # Regular mode
+                logger.debug(f"[API REQUEST] Sending message without tools")
                 return chat_session.send_message(user_message)
 
         response_obj = await self._api_request_with_retry(
