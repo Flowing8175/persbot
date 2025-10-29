@@ -322,18 +322,7 @@ class GeminiService:
             Extracted text from response, or empty string if only function calls
         """
         try:
-            # Try direct text access first (for simple responses without function calls)
-            if hasattr(response_obj, 'text'):
-                try:
-                    text = response_obj.text.strip()
-                    logger.debug(f"Extracted text from response: {len(text)} characters")
-                    return text
-                except ValueError as e:
-                    # This happens when response contains function_call parts
-                    logger.debug(f"Response contains function calls, cannot use .text directly: {e}")
-                    pass
-
-            # Extract text from parts manually
+            # Extract text from parts manually (safest approach for mixed responses)
             text_parts = []
             if hasattr(response_obj, 'candidates') and response_obj.candidates:
                 logger.debug(f"Processing {len(response_obj.candidates)} candidates")
