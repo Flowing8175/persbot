@@ -169,48 +169,9 @@ class GeminiService:
         if response_obj is None:
             return None
 
-        # Extract text from response, handling function calls properly
-        response_text = self._extract_text_from_response(response_obj)
+        response_text = response_obj.text.strip() if hasattr(response_obj, 'text') else str(response_obj)
         return (response_text, response_obj if tools else None)
 
-    def _extract_text_from_response(self, response_obj) -> str:
-        """Extract text from Gemini response, handling function calls properly.
-
-        Args:
-            response_obj: Gemini response object
-
-        Returns:
-            Extracted text from response, or empty string if only function calls
-        """
-        try:
-            # Try direct text access first (for simple responses without function calls)
-            if hasattr(response_obj, 'text'):
-                try:
-                    return response_obj.text.strip()
-                except ValueError:
-                    # This happens when response contains function_call parts
-                    pass
-
-            # Extract text from parts manually
-            text_parts = []
-            if hasattr(response_obj, 'candidates') and response_obj.candidates:
-                for candidate in response_obj.candidates:
-                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                        for part in candidate.content.parts:
-                            # Only extract text parts, skip function_call parts
-                            if hasattr(part, 'text') and part.text:
-                                text_parts.append(part.text)
-
-            if text_parts:
-                return ' '.join(text_parts).strip()
-
-            # If no text parts found, return empty string
-            # (this is normal when Gemini only returns function calls)
-            return ""
-
-        except Exception as e:
-            logger.error(f"Failed to extract text from response: {e}", exc_info=True)
-            return str(response_obj)
     def parse_function_calls(self, response_obj) -> list:
         """Parse function calls from Gemini response.
 
