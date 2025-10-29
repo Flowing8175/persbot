@@ -359,7 +359,7 @@ class GeminiService:
 
         except Exception as e:
             logger.error(f"Failed to extract text from response: {e}", exc_info=True)
-            return str(response_obj)
+            return ""
     def parse_function_calls(self, response_obj) -> list:
         """Parse function calls from Gemini response.
 
