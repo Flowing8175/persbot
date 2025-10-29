@@ -49,8 +49,8 @@ class SummarizerCog(commands.Cog):
         최근 메시지를 요약합니다.
         - `!요약`: 최근 30분 요약
         - `!요약 <시간>`: 지정된 시간만큼 요약 (예: 20분, 1시간)
-        - `!요약 <메시지ID>`: 해당 메시지 이후 요약
-        - `!요약 <메시지ID> <이후|이전> <시간>`: 범위 요약 (예: `!요약 123456 이후 30분`)
+        - `!요약 <메시지ID> 이후`: 해당 메시지 이후부터 최대 길이까지 요약
+        - `!요약 <메시지ID> <이후|이전> <시간>`: 범위 요약 (예: `!요약 123456 이후 30분`, `!요약 123456 이전 1시간`)
         """
         if ctx.invoked_subcommand is None:
             await self._handle_summarize_args(ctx, args)
@@ -61,22 +61,32 @@ class SummarizerCog(commands.Cog):
             # !요약 - 기본값: 최근 30분
             await self._summarize_by_time(ctx, 30)
         elif len(args) == 1:
-            # !요약 <인자>
+            # !요약 <시간> - 지정된 시간만큼 요약
             arg = args[0]
-            if self._is_message_id(arg):
-                # !요약 <메시지ID> - 해당 메시지 이후 요약
-                try:
-                    message_id = int(arg)
+            minutes = parse_korean_time(arg)
+            if minutes is None:
+                await DiscordUI.safe_send(ctx.channel, f"❌ 시간 형식이 올바르지 않아요. (예: '20분', '1시간')")
+                return
+            await self._summarize_by_time(ctx, minutes)
+        elif len(args) == 2:
+            # !요약 <메시지ID> <이후|이전>
+            arg1, arg2 = args[0], args[1]
+            if not self._is_message_id(arg1):
+                await DiscordUI.safe_send(ctx.channel, f"❌ 첫 번째 인자는 메시지 ID여야 해요.")
+                return
+            if arg2 not in ["이후", "이전"]:
+                await DiscordUI.safe_send(ctx.channel, f"❌ 두 번째 인자는 '이후' 또는 '이전'이어야 합니다.")
+                return
+            try:
+                message_id = int(arg1)
+                if arg2 == "이후":
+                    # 메시지 ID 이후부터 최대 길이까지
                     await self.summarize_by_id(ctx, message_id)
-                except (ValueError, IndexError):
-                    await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 메시지 ID를 입력해주세요.")
-            else:
-                # !요약 <시간> - 지정된 시간만큼 요약
-                minutes = parse_korean_time(arg)
-                if minutes is None:
-                    await DiscordUI.safe_send(ctx.channel, f"❌ 시간 형식이 올바르지 않아요. (예: '20분', '1시간')")
-                    return
-                await self._summarize_by_time(ctx, minutes)
+                else:
+                    # 메시지 ID 이전은 명시적으로 시간을 지정해야 함
+                    await DiscordUI.safe_send(ctx.channel, f"❌ '이전'은 시간을 지정해야 합니다. 예: `!요약 123456 이전 1시간`")
+            except ValueError:
+                await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 메시지 ID를 입력해주세요.")
         elif len(args) >= 3:
             # !요약 <메시지ID> <이후|이전> <시간>
             arg1, arg2, arg3 = args[0], args[1], args[2]
@@ -92,7 +102,7 @@ class SummarizerCog(commands.Cog):
             except ValueError:
                 await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 형식을 사용해주세요. 예: `!요약 123456 이후 30분`")
         else:
-            await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 형식을 사용해주세요.\n사용법:\n- `!요약`\n- `!요약 <시간>`\n- `!요약 <메시지ID>`\n- `!요약 <메시지ID> <이후|이전> <시간>`")
+            await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 형식을 사용해주세요.\n사용법:\n- `!요약`\n- `!요약 <시간>`\n- `!요약 <메시지ID> 이후`\n- `!요약 <메시지ID> <이후|이전> <시간>`")
 
     def _is_message_id(self, arg: str) -> bool:
         """인자가 메시지 ID인지 판단합니다."""
