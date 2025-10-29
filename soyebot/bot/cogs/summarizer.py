@@ -49,62 +49,75 @@ class SummarizerCog(commands.Cog):
         최근 메시지를 요약합니다.
         - `!요약`: 최근 30분 요약
         - `!요약 <시간>`: 지정된 시간만큼 요약 (예: 20분, 1시간)
-        - `!요약 id <ID>`: 특정 메시지 ID 이후 요약 (자동 감지)
-        - `!요약 range <ID> <이후/이전> <시간>`: 범위 요약 (자동 감지)
+        - `!요약 <메시지ID>`: 해당 메시지 이후 요약
+        - `!요약 <메시지ID> <이후|이전> <시간>`: 범위 요약 (예: `!요약 123456 이후 30분`)
         """
         if ctx.invoked_subcommand is None:
-            # 첫 번째 인자 확인
-            if len(args) == 0:
-                # 기본값: 최근 30분 요약
-                time_str = None
-            elif args[0].lower() == 'id' and len(args) >= 2:
-                # !요약 id <ID> 형식 - id 서브커맨드로 자동 라우팅
+            await self._handle_summarize_args(ctx, args)
+
+    async def _handle_summarize_args(self, ctx: commands.Context, args: tuple):
+        """인자를 분석하여 적절한 요약 메서드를 호출합니다."""
+        if len(args) == 0:
+            # !요약 - 기본값: 최근 30분
+            await self._summarize_by_time(ctx, 30)
+        elif len(args) == 1:
+            # !요약 <인자>
+            arg = args[0]
+            if self._is_message_id(arg):
+                # !요약 <메시지ID> - 해당 메시지 이후 요약
                 try:
-                    message_id = int(args[1])
+                    message_id = int(arg)
                     await self.summarize_by_id(ctx, message_id)
                 except (ValueError, IndexError):
-                    await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 메시지 ID를 입력해주세요. 예: `!요약 id 1234567890`")
-                return
-            elif args[0].lower() == 'range' and len(args) >= 4:
-                # !요약 range <ID> <이후/이전> <시간> 형식 - range 서브커맨드로 자동 라우팅
-                try:
-                    message_id = int(args[1])
-                    direction = args[2]
-                    time_str = args[3]
-
-                    if direction not in ["이후", "이전"]:
-                        await DiscordUI.safe_send(ctx.channel, f"❌ 방향은 '이후' 또는 '이전'이어야 합니다. 예: `!요약 range 1234567890 이후 2시간`")
-                        return
-
-                    await self.summarize_by_range(ctx, message_id, direction, time_str)
-                except (ValueError, IndexError):
-                    await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 형식을 사용해주세요. 예: `!요약 range 1234567890 이후 2시간`")
-                return
+                    await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 메시지 ID를 입력해주세요.")
             else:
-                # 일반 시간 인자 처리
-                time_str = args[0] if len(args) > 0 else None
+                # !요약 <시간> - 지정된 시간만큼 요약
+                minutes = parse_korean_time(arg)
+                if minutes is None:
+                    await DiscordUI.safe_send(ctx.channel, f"❌ 시간 형식이 올바르지 않아요. (예: '20분', '1시간')")
+                    return
+                await self._summarize_by_time(ctx, minutes)
+        elif len(args) >= 3:
+            # !요약 <메시지ID> <이후|이전> <시간>
+            arg1, arg2, arg3 = args[0], args[1], args[2]
+            if not self._is_message_id(arg1):
+                await DiscordUI.safe_send(ctx.channel, f"❌ 첫 번째 인자는 메시지 ID여야 해요.")
+                return
+            if arg2 not in ["이후", "이전"]:
+                await DiscordUI.safe_send(ctx.channel, f"❌ 두 번째 인자는 '이후' 또는 '이전'이어야 합니다.")
+                return
+            try:
+                message_id = int(arg1)
+                await self.summarize_by_range(ctx, message_id, arg2, arg3)
+            except ValueError:
+                await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 형식을 사용해주세요. 예: `!요약 123456 이후 30분`")
+        else:
+            await DiscordUI.safe_send(ctx.channel, f"❌ 올바른 형식을 사용해주세요.\n사용법:\n- `!요약`\n- `!요약 <시간>`\n- `!요약 <메시지ID>`\n- `!요약 <메시지ID> <이후|이전> <시간>`")
 
-            # 기본 요약 로직 (시간 기반)
-            minutes = parse_korean_time(time_str) if time_str else 30
-            if minutes is None:
-                await DiscordUI.safe_send(ctx.channel, f"❌ 시간 형식이 올바르지 않아요. (예: '20분', '1시간')")
+    def _is_message_id(self, arg: str) -> bool:
+        """인자가 메시지 ID인지 판단합니다."""
+        if not arg.isdigit():
+            return False
+        # Discord 메시지 ID는 17-20자리 숫자
+        return 17 <= len(arg) <= 20
+
+    async def _summarize_by_time(self, ctx: commands.Context, minutes: int):
+        """시간 기반 요약을 수행합니다."""
+        async with ctx.channel.typing():
+            time_limit = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+            full_text, count = await self._fetch_messages(
+                ctx.channel, limit=self.config.max_messages_per_fetch, after=time_limit, oldest_first=True
+            )
+
+            if count == 0:
+                await DiscordUI.safe_send(ctx.channel, f"ℹ️ 최근 {minutes}분 동안 메시지가 없어요.")
                 return
 
-            async with ctx.channel.typing():
-                time_limit = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-                full_text, count = await self._fetch_messages(
-                    ctx.channel, limit=self.config.max_messages_per_fetch, after=time_limit, oldest_first=True
-                )
-
-                if count == 0:
-                    await DiscordUI.safe_send(ctx.channel, f"ℹ️ 최근 {minutes}분 동안 메시지가 없어요.")
-                    return
-
-                summary = await self.gemini_service.summarize_text(full_text)
-                if summary:
-                    await DiscordUI.safe_send(ctx.channel, f"**최근 {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
-                else:
-                    await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
+            summary = await self.gemini_service.summarize_text(full_text)
+            if summary:
+                await DiscordUI.safe_send(ctx.channel, f"**최근 {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
+            else:
+                await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
 
     @summarize.command(name="id")
     async def summarize_by_id(self, ctx: commands.Context, message_id: int):
