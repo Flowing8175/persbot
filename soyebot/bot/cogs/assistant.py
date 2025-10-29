@@ -54,14 +54,6 @@ class AssistantCog(commands.Cog):
                 message_id=str(session_id),
             )
 
-            # Save user message to history
-            self.session_manager.save_message(
-                user_id=message.author.id,
-                session_id=str(session_id),
-                role='user',
-                content=user_message,
-            )
-
             # Get function calling tools
             tools = None
             if self.config.enable_memory_system:
@@ -86,14 +78,6 @@ class AssistantCog(commands.Cog):
                 # Only reply if there's text content
                 # (Gemini might return only function calls without text)
                 if response_text:
-                    # Save assistant response to history
-                    self.session_manager.save_message(
-                        user_id=message.author.id,
-                        session_id=str(session_id),
-                        role='assistant',
-                        content=response_text,
-                    )
-
                     await message.reply(response_text, mention_author=False)
                 else:
                     # If only function calls were returned, log but don't reply

@@ -32,7 +32,6 @@ class User(Base):
     config_json = Column(Text, default='{}', nullable=False)  # User preferences
 
     # Relationships
-    conversation_histories = relationship('ConversationHistory', back_populates='user', cascade='all, delete-orphan')
     interaction_pattern = relationship('InteractionPattern', back_populates='user', uselist=False, cascade='all, delete-orphan')
 
     __table_args__ = (
@@ -55,27 +54,6 @@ class Memory(Base):
         Index('idx_memory_type', 'memory_type'),
         Index('idx_memory_timestamp', 'timestamp'),
         Index('idx_memory_importance', 'importance_score'),
-    )
-
-
-class ConversationHistory(Base):
-    """Conversation history model for storing chat logs."""
-    __tablename__ = 'conversation_history'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(20), ForeignKey('users.user_id'), nullable=False, index=True)
-    session_id = Column(String(255), nullable=False, index=True)  # Message ID for threading
-    role = Column(String(20), nullable=False)  # 'user' or 'assistant'
-    content = Column(Text, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    # Relationship
-    user = relationship('User', back_populates='conversation_histories')
-
-    __table_args__ = (
-        Index('idx_conversation_user_session', 'user_id', 'session_id'),
-        Index('idx_conversation_timestamp', 'timestamp'),
-        UniqueConstraint('user_id', 'session_id', 'role', 'content', name='uq_conversation_unique'),
     )
 
 

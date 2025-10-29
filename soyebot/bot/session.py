@@ -10,7 +10,7 @@ from config import AppConfig
 from services.gemini_service import GeminiService
 from services.database_service import DatabaseService
 from services.memory_service import MemoryService
-from prompts import FEW_SHOT_EXAMPLES, build_system_prompt_with_memory, get_few_shot_examples_as_content
+from prompts import build_system_prompt_with_memory, get_few_shot_examples_as_content
 
 logger = logging.getLogger(__name__)
 
@@ -79,18 +79,15 @@ class SessionManager:
         # Ensure user exists in database
         self.db_service.get_or_create_user(user_id, username)
 
-        # Load context (unified memories + conversation history)
+        # Load context (unified memories only - no conversation history)
         memory_context = self.memory_service.get_memories_context()
         system_prompt = build_system_prompt_with_memory(memory_context)
-        history = self._build_chat_history(user_id)
 
         # Create new model with enhanced system prompt (including memory context)
         assistant_model = self.gemini_service.create_assistant_model(system_prompt)
 
-        # Use proper Content objects for few-shot examples as fallback
-        # Fix: use 'is None' instead of 'or' to avoid skipping empty list histories
-        if history is None:
-            history = get_few_shot_examples_as_content()
+        # Use few-shot examples for initial context
+        history = get_few_shot_examples_as_content()
 
         # Create new chat with context
         chat = assistant_model.start_chat(
@@ -106,66 +103,6 @@ class SessionManager:
         )
 
         return chat, user_id
-
-
-    def _build_chat_history(self, user_id: str, limit: int = 20) -> list:
-        """Build chat history from database. Return None if no history exists (fallback to few-shot examples).
-
-        Args:
-            user_id: Discord user ID
-            limit: Maximum messages to load
-
-        Returns:
-            Chat history in Gemini format, or None if no history exists (triggers few-shot fallback)
-        """
-        try:
-            if not self.config.enable_memory_system:
-                return None
-
-            # Get recent conversation history from database
-            db_history = self.db_service.get_conversation_history(user_id, limit=limit)
-            if not db_history:
-                # No conversation history - return None to trigger few-shot examples fallback
-                return None
-
-            # Format user's conversation history for Gemini API
-            formatted_history = []
-            for msg in db_history:
-                if msg.role == 'user':
-                    formatted_history.append({
-                        'role': 'user',
-                        'parts': [msg.content],
-                    })
-                else:
-                    formatted_history.append({
-                        'role': 'model',
-                        'parts': [msg.content],
-                    })
-
-            return formatted_history if formatted_history else None
-        except Exception as e:
-            logger.warning(f"Failed to load chat history: {e}")
-            return None
-
-    def save_message(self, user_id: str, session_id: str, role: str, content: str) -> None:
-        """Save message to conversation history.
-
-        Args:
-            user_id: Discord user ID
-            session_id: Session/thread ID
-            role: 'user' or 'assistant'
-            content: Message content
-        """
-        try:
-            if self.config.enable_memory_system:
-                self.db_service.save_conversation(
-                    user_id=str(user_id),
-                    session_id=str(session_id),
-                    role=role,
-                    content=content,
-                )
-        except Exception as e:
-            logger.warning(f"Failed to save message: {e}")
 
     def cleanup_expired(self):
         """Clean up expired sessions."""

@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
-from database.models import Base, User, Memory, ConversationHistory, InteractionPattern
+from database.models import Base, User, Memory, InteractionPattern
 
 logger = logging.getLogger(__name__)
 
@@ -208,91 +208,6 @@ class DatabaseService:
         finally:
             session.close()
 
-    # --- Conversation History Operations ---
-
-    def save_conversation(
-        self,
-        user_id: str,
-        session_id: str,
-        role: str,
-        content: str,
-    ) -> ConversationHistory:
-        """Save conversation message.
-
-        Args:
-            user_id: Discord user ID
-            session_id: Session/thread ID (message ID)
-            role: 'user' or 'assistant'
-            content: Message content
-
-        Returns:
-            ConversationHistory object
-        """
-        session = self.get_session()
-        try:
-            conversation = ConversationHistory(
-                user_id=str(user_id),
-                session_id=str(session_id),
-                role=role,
-                content=content,
-            )
-            session.add(conversation)
-            session.commit()
-            return conversation
-        except Exception as e:
-            logger.error(f"Failed to save conversation: {e}")
-            session.rollback()
-            raise
-        finally:
-            session.close()
-
-    def get_conversation_history(
-        self,
-        user_id: str,
-        session_id: Optional[str] = None,
-        limit: int = 50,
-    ) -> List[ConversationHistory]:
-        """Get conversation history.
-
-        Args:
-            user_id: Discord user ID
-            session_id: Filter by session ID (optional)
-            limit: Maximum number of messages to return
-
-        Returns:
-            List of ConversationHistory objects
-        """
-        session_db = self.get_session()
-        try:
-            query = session_db.query(ConversationHistory).filter_by(user_id=str(user_id))
-            if session_id:
-                query = query.filter_by(session_id=str(session_id))
-            history = query.order_by(ConversationHistory.timestamp.desc()).limit(limit).all()
-            return list(reversed(history))  # Return in chronological order
-        finally:
-            session_db.close()
-
-    def delete_old_conversations(self, days: int = 7) -> int:
-        """Delete conversation history older than specified days.
-
-        Args:
-            days: Days to keep (default: 7)
-
-        Returns:
-            Number of deleted records
-        """
-        session = self.get_session()
-        try:
-            cutoff_date = datetime.utcnow() - timedelta(days=days)
-            count = session.query(ConversationHistory).filter(
-                ConversationHistory.timestamp < cutoff_date
-            ).delete()
-            session.commit()
-            logger.info(f"Deleted {count} old conversation records")
-            return count
-        finally:
-            session.close()
-
     # --- Interaction Pattern Operations ---
 
     def get_or_create_interaction_pattern(self, user_id: str) -> InteractionPattern:
@@ -370,18 +285,13 @@ class DatabaseService:
 
     # --- Database Maintenance ---
 
-    def cleanup_expired_data(self, conversation_retention_days: int = 7) -> Dict[str, int]:
+    def cleanup_expired_data(self) -> Dict[str, int]:
         """Clean up old data.
-
-        Args:
-            conversation_retention_days: Days to keep conversation history
 
         Returns:
             Dictionary with cleanup statistics
         """
-        stats = {
-            'deleted_conversations': self.delete_old_conversations(conversation_retention_days),
-        }
+        stats = {}
         logger.info(f"Database cleanup completed: {stats}")
         return stats
 
@@ -396,7 +306,6 @@ class DatabaseService:
             return {
                 'total_users': session.query(func.count(User.id)).scalar(),
                 'total_memories': session.query(func.count(Memory.id)).scalar(),
-                'total_conversations': session.query(func.count(ConversationHistory.id)).scalar(),
                 'users_with_patterns': session.query(func.count(InteractionPattern.id)).scalar(),
             }
         finally:
