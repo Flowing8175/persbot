@@ -10,7 +10,7 @@ from config import AppConfig
 from services.gemini_service import GeminiService
 from services.database_service import DatabaseService
 from services.memory_service import MemoryService
-from prompts import build_system_prompt_with_memory, get_few_shot_examples_as_content
+from prompts import build_system_prompt_with_memory
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class SessionManager:
         # Ensure user exists in database
         self.db_service.get_or_create_user(user_id, username)
 
-        # Load context (unified memories only - no conversation history)
+        # Load context (unified memories only - few-shot examples are now in system prompt)
         memory_context = self.memory_service.get_memories_context()
         logger.debug(f"Memory context length: {len(memory_context)} characters")
         if memory_context:
@@ -89,17 +89,11 @@ class SessionManager:
         logger.debug(f"System prompt length: {len(system_prompt)} characters")
         logger.debug(f"[RAW SESSION REQUEST] System prompt:\n{system_prompt}")
 
-        # Create new model with enhanced system prompt (including memory context)
+        # Create new model with enhanced system prompt (including memory context + few-shot examples)
         assistant_model = self.gemini_service.create_assistant_model(system_prompt)
 
-        # Use few-shot examples for initial context
-        history = get_few_shot_examples_as_content()
-        logger.debug(f"Few-shot examples: {len(history)} messages in history")
-
-        # Create new chat with context
-        chat = assistant_model.start_chat(
-            history=history
-        )
+        # Create new chat without separate history (few-shot examples are embedded in system prompt)
+        chat = assistant_model.start_chat()
 
         # Store session
         self.sessions[user_id] = ChatSession(
