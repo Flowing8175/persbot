@@ -63,6 +63,10 @@ class GeminiService:
             tools: Optional function calling tools
             chat_session: The chat session object for logging history
         """
+        # Skip expensive logging if debug level is not enabled
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
         try:
             logger.debug(f"[RAW API REQUEST] User message length: {len(user_message)} characters")
             logger.debug(f"[RAW API REQUEST] User message content: {user_message}")
@@ -118,6 +122,10 @@ class GeminiService:
             response_obj: The response object from Gemini API
             attempt: The current attempt number
         """
+        # Skip expensive logging if debug level is not enabled
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
         try:
             logger.debug(f"[RAW API RESPONSE {attempt}] Response type: {type(response_obj).__name__}")
 
