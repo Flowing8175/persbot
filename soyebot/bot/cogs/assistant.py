@@ -30,7 +30,12 @@ class AssistantCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        # Ignore bot messages, messages without bot mention, or @everyone/@here mentions
         if message.author.bot or not self.bot.user.mentioned_in(message):
+            return
+        
+        # Ignore @everyone and @here mentions
+        if message.mention_everyone:
             return
 
         logger.debug(f"Message from {message.author.name} ({message.author.id}): {len(message.content)} chars")
