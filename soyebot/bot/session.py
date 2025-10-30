@@ -2,6 +2,7 @@
 
 import time
 import logging
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
@@ -39,13 +40,13 @@ class SessionManager:
         self.sessions: dict[str, ChatSession] = {}  # user_id -> ChatSession
         self.last_cleanup_time = time.time()
 
-    def get_or_create(
+    async def get_or_create(
         self,
         user_id: str,
         username: str,
         message_id: Optional[str] = None,
     ) -> Tuple[object, str]:
-        """Get or create user session.
+        """Get or create user session (async to prevent blocking on DB operations).
 
         Args:
             user_id: Discord user ID
@@ -73,15 +74,14 @@ class SessionManager:
         # Create new session
         logger.info(f"새 세션 생성: {user_id}")
 
-        # Ensure user exists in database
-        self.db_service.get_or_create_user(user_id, username)
+        # Ensure user exists in database (run in thread to avoid blocking event loop)
+        await asyncio.to_thread(self.db_service.get_or_create_user, user_id, username)
 
         # Use base system prompt without memory context
         system_prompt = BOT_PERSONA_PROMPT
         logger.debug(f"System prompt length: {len(system_prompt)} characters")
-        logger.debug(f"[RAW SESSION REQUEST] System prompt:\n{system_prompt}")
 
-        # Create new model with system prompt
+        # Create new model with system prompt (uses cached model, no overhead)
         assistant_model = self.gemini_service.create_assistant_model(system_prompt)
 
         # Create new chat without separate history (few-shot examples are embedded in system prompt)

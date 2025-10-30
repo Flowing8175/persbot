@@ -32,8 +32,6 @@ class AssistantCog(commands.Cog):
             return
 
         logger.debug(f"Message from {message.author.name} ({message.author.id}): {len(message.content)} chars")
-        self.session_manager.cleanup_expired()
-        logger.debug("Session cleanup completed")
 
         try:
             user_message = extract_message_content(message)
@@ -49,8 +47,8 @@ class AssistantCog(commands.Cog):
                 session_id = message.reference.message_id if message.reference else message.id
                 logger.debug(f"Session ID determined: {session_id}")
 
-                # Get or create user session with memory context
-                chat_session, user_id = self.session_manager.get_or_create(
+                # Get or create user session with memory context (async to prevent blocking)
+                chat_session, user_id = await self.session_manager.get_or_create(
                     user_id=message.author.id,
                     username=message.author.name,
                     message_id=str(session_id),

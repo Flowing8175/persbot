@@ -25,8 +25,10 @@ class DatabaseService:
         self.engine = create_engine(
             self.database_url,
             poolclass=QueuePool,
-            pool_size=2,
-            max_overflow=0,
+            pool_size=5,  # Increased from 2 for better concurrency
+            max_overflow=10,  # Allow overflow with limit for spike handling
+            pool_pre_ping=True,  # Verify connections before use
+            pool_recycle=3600,  # Recycle connections every hour
             connect_args={'check_same_thread': False},
         )
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)

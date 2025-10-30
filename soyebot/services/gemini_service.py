@@ -20,27 +20,50 @@ class GeminiService:
     def __init__(self, config: AppConfig):
         self.config = config
         genai.configure(api_key=config.gemini_api_key)
-        self.summary_model = genai.GenerativeModel(
-            config.model_name, system_instruction=SUMMARY_SYSTEM_INSTRUCTION
+
+        # Cache for model instances by system instruction hash
+        self._model_cache = {}
+
+        # Pre-load default models using cache
+        self.summary_model = self._get_or_create_model(
+            config.model_name, SUMMARY_SYSTEM_INSTRUCTION
         )
-        self.assistant_model = genai.GenerativeModel(
-            config.model_name, system_instruction=BOT_PERSONA_PROMPT
+        self.assistant_model = self._get_or_create_model(
+            config.model_name, BOT_PERSONA_PROMPT
         )
-        logger.info(f"Gemini 모델 '{config.model_name}' 로드 완료.")
+        logger.info(f"Gemini 모델 '{config.model_name}' 로드 완료. (모델 캐시 활성화)")
+
+    def _get_or_create_model(self, model_name: str, system_instruction: str) -> genai.GenerativeModel:
+        """Get cached model instance or create new one.
+
+        Args:
+            model_name: Name of the model to use
+            system_instruction: System instruction for the model
+
+        Returns:
+            Cached or newly created GenerativeModel instance
+        """
+        key = hash(system_instruction)
+        if key not in self._model_cache:
+            self._model_cache[key] = genai.GenerativeModel(
+                model_name,
+                system_instruction=system_instruction
+            )
+            logger.debug(f"모델 캐시 생성: hash={key}, 캐시 크기={len(self._model_cache)}")
+        else:
+            logger.debug(f"모델 캐시 재사용: hash={key}")
+        return self._model_cache[key]
 
     def create_assistant_model(self, system_instruction: str) -> genai.GenerativeModel:
-        """Create a new assistant model with custom system instruction.
+        """Create or retrieve a cached assistant model with custom system instruction.
 
         Args:
             system_instruction: Custom system instruction for the model
 
         Returns:
-            GenerativeModel instance with the custom instruction
+            GenerativeModel instance with the custom instruction (cached if possible)
         """
-        return genai.GenerativeModel(
-            self.config.model_name,
-            system_instruction=system_instruction
-        )
+        return self._get_or_create_model(self.config.model_name, system_instruction)
 
     def _is_rate_limit_error(self, error_str: str) -> bool:
         return ("429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower())
@@ -239,19 +262,27 @@ class GeminiService:
 
                 if self._is_rate_limit_error(error_str):
                     delay = self._extract_retry_delay(error_str) or self.config.api_rate_limit_retry_after
-                    initial_message_content = "⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요."
+                    logger.info(f"⏳ 레이트 제한 감지. {int(delay)}초 대기 중...")
                     sent_message = None
                     if discord_message:
-                        sent_message = await discord_message.reply(initial_message_content, mention_author=False)
+                        sent_message = await discord_message.reply(
+                            f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
+                            mention_author=False
+                        )
 
-                    for remaining in range(int(delay), 0, -1):
-                        countdown_message = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
-                        if sent_message:
-                            await sent_message.edit(content=countdown_message)
-                        logger.info(countdown_message)
+                    # Wait for the delay, updating Discord only every 10 seconds or final 3 seconds
+                    remaining = int(delay)
+                    while remaining > 0:
+                        if remaining % 10 == 0 or remaining <= 3:
+                            countdown_message = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
+                            if sent_message:
+                                await sent_message.edit(content=countdown_message)
+                            logger.info(countdown_message)
                         await asyncio.sleep(1)
+                        remaining -= 1
+
                     if sent_message:
-                        await sent_message.delete() # Delete the countdown message after it finishes
+                        await sent_message.delete()  # Delete the countdown message after it finishes
                     continue
 
                 if attempt >= self.config.api_max_retries:
