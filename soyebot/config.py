@@ -23,7 +23,7 @@ class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
     gemini_api_key: str
-    model_name: str = 'gemini-2.5-flash-lite'
+    model_name: str = 'gemini-2.5-flash'
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
