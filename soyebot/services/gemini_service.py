@@ -6,12 +6,12 @@ import time
 import re
 import logging
 from typing import Optional, Tuple, Any
-from datetime import timedelta
 
 import discord
 
 from config import AppConfig
 from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
+from metrics import get_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -22,95 +22,49 @@ class GeminiService:
         self.config = config
         genai.configure(api_key=config.gemini_api_key)
 
-        # Create shared models to avoid repeated instantiation (model pooling pattern)
-        self._summary_model = genai.GenerativeModel(
-            config.model_name, system_instruction=SUMMARY_SYSTEM_INSTRUCTION
+        # Cache for model instances by system instruction hash
+        self._model_cache = {}
+
+        # Pre-load default models using cache
+        self.summary_model = self._get_or_create_model(
+            config.model_name, SUMMARY_SYSTEM_INSTRUCTION
         )
+        self.assistant_model = self._get_or_create_model(
+            config.model_name, BOT_PERSONA_PROMPT
+        )
+        logger.info(f"Gemini 모델 '{config.model_name}' 로드 완료. (모델 캐시 활성화)")
 
-        # Base chat model - sessions will be created from this
-        self._base_chat_model = None  # Lazy-initialized per system prompt
-
-        # Prompt caching support (if available in SDK version)
-        self._cached_prompt = None
-        self._cache_supported = self._check_cache_support()
-
-        if self._cache_supported:
-            logger.info("Gemini prompt caching is supported - will attempt to use caching")
-            self._initialize_prompt_cache()
-        else:
-            logger.info("Gemini prompt caching not available in current SDK version")
-
-        logger.info(f"Gemini 모델 '{config.model_name}' 로드 완료.")
-
-    def _check_cache_support(self) -> bool:
-        """Check if the current SDK version supports prompt caching."""
-        try:
-            # Check if caching module exists
-            from google.generativeai import caching
-            return hasattr(caching, 'CachedContent')
-        except (ImportError, AttributeError):
-            return False
-
-    def _initialize_prompt_cache(self):
-        """Initialize prompt cache for the base persona.
-
-        This can reduce token costs by ~75% and improve latency by 30-40%.
-        """
-        try:
-            from google.generativeai import caching
-
-            # Create cached content with 1-hour TTL
-            self._cached_prompt = caching.CachedContent.create(
-                model=self.config.model_name,
-                system_instruction=BOT_PERSONA_PROMPT,
-                ttl=timedelta(hours=1)
-            )
-            logger.info(f"Prompt cache created successfully (TTL: 1 hour)")
-        except Exception as e:
-            logger.warning(f"Failed to create prompt cache: {e}. Falling back to non-cached mode.")
-            self._cache_supported = False
-            self._cached_prompt = None
-
-    def get_chat_session(self, system_instruction: str = None):
-        """Get a new chat session from the shared base model.
-
-        Uses prompt caching if available to reduce token costs by ~75%.
-        Falls back to regular model instantiation if caching unavailable.
+    def _get_or_create_model(self, model_name: str, system_instruction: str) -> genai.GenerativeModel:
+        """Get cached model instance or create new one.
 
         Args:
-            system_instruction: Custom system instruction for the model (optional)
+            model_name: Name of the model to use
+            system_instruction: System instruction for the model
 
         Returns:
-            Chat session object
+            Cached or newly created GenerativeModel instance
         """
-        if system_instruction:
-            # Create temporary model for custom system instruction
-            model = genai.GenerativeModel(
-                self.config.model_name,
+        key = hash(system_instruction)
+        if key not in self._model_cache:
+            self._model_cache[key] = genai.GenerativeModel(
+                model_name,
                 system_instruction=system_instruction
             )
-            return model.start_chat()
+            logger.debug(f"모델 캐시 생성: hash={key}, 캐시 크기={len(self._model_cache)}")
+        else:
+            logger.debug(f"모델 캐시 재사용: hash={key}")
+        return self._model_cache[key]
 
-        # Try to use cached prompt if available
-        if self._cache_supported and self._cached_prompt:
-            try:
-                model = genai.GenerativeModel.from_cached_content(
-                    cached_content=self._cached_prompt
-                )
-                logger.debug("Using cached prompt for chat session")
-                return model.start_chat()
-            except Exception as e:
-                logger.warning(f"Failed to use cached prompt: {e}. Falling back to regular model.")
-                # Fall through to regular model creation
+    def create_assistant_model(self, system_instruction: str) -> genai.GenerativeModel:
+        """Create or retrieve a cached assistant model with custom system instruction.
 
-        # Use shared base chat model for default persona (fallback)
-        if self._base_chat_model is None:
-            self._base_chat_model = genai.GenerativeModel(
-                self.config.model_name,
-                system_instruction=BOT_PERSONA_PROMPT
-            )
+        Args:
+            system_instruction: Custom system instruction for the model
 
-        return self._base_chat_model.start_chat()
+        Returns:
+            GenerativeModel instance with the custom instruction (cached if possible)
+        """
+        return self._get_or_create_model(self.config.model_name, system_instruction)
 
     def _is_rate_limit_error(self, error_str: str) -> bool:
         return ("429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower())
@@ -265,6 +219,10 @@ class GeminiService:
         Returns:
             Response text (str) or full response object depending on return_full_response flag
         """
+        metrics = get_metrics()
+        request_start = time.perf_counter()
+        metrics.increment_counter('api_requests_total')
+
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
                 logger.debug(f"[API Request {attempt}/{self.config.api_max_retries}] Starting {error_prefix}...")
@@ -290,6 +248,11 @@ class GeminiService:
                 logger.debug(f"[API Request {attempt}] Response received successfully")
                 self._log_raw_response(response, attempt)
 
+                # Track successful API request
+                duration_ms = (time.perf_counter() - request_start) * 1000
+                metrics.record_latency('gemini_api', duration_ms)
+                metrics.increment_counter('api_requests_success')
+
                 if return_full_response:
                     return response
                 else:
@@ -300,6 +263,7 @@ class GeminiService:
                     logger.info(f"API 타임아웃, 재시도 중...")
                     continue
                 logger.error(f"❌ 에러: API 요청 시간 초과")
+                metrics.increment_counter('api_requests_error')
                 if discord_message:
                     await discord_message.reply("❌ Gemini API 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.", mention_author=False)
                 return None
@@ -309,22 +273,24 @@ class GeminiService:
 
                 if self._is_rate_limit_error(error_str):
                     delay = self._extract_retry_delay(error_str) or self.config.api_rate_limit_retry_after
+                    logger.info(f"⏳ 레이트 제한 감지. {int(delay)}초 대기 중...")
                     sent_message = None
                     if discord_message:
                         sent_message = await discord_message.reply(
-                            f"⏳ 소예봇 뇌 과부하! {int(delay)}초 후 재시도합니다.",
+                            f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
                             mention_author=False
                         )
 
-                    # Update countdown every 5 seconds instead of every 1 second
-                    # This reduces Discord API calls by 80% while maintaining UX
-                    update_interval = 5
-                    for remaining in range(int(delay), 0, -update_interval):
-                        countdown_message = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
-                        if sent_message:
-                            await sent_message.edit(content=countdown_message)
-                        logger.info(countdown_message)
-                        await asyncio.sleep(min(update_interval, remaining))
+                    # Wait for the delay, updating Discord only every 10 seconds or final 3 seconds
+                    remaining = int(delay)
+                    while remaining > 0:
+                        if remaining % 10 == 0 or remaining <= 3:
+                            countdown_message = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
+                            if sent_message:
+                                await sent_message.edit(content=countdown_message)
+                            logger.info(countdown_message)
+                        await asyncio.sleep(1)
+                        remaining -= 1
 
                     if sent_message:
                         await sent_message.delete()  # Delete the countdown message after it finishes
@@ -334,16 +300,11 @@ class GeminiService:
                     if discord_message:
                         await discord_message.reply(f"❌ API 요청 중 오류가 발생했습니다: {error_str}. 잠시 후 다시 시도해주세요.", mention_author=False)
                     break
-
-                # Exponential backoff for transient errors
-                backoff = min(
-                    self.config.api_retry_backoff_base ** (attempt - 1),
-                    self.config.api_retry_backoff_max
-                )
-                logger.info(f"에러 발생, {backoff}초 후 재시도 중... (attempt {attempt}/{self.config.api_max_retries})")
-                await asyncio.sleep(backoff)
+                logger.info(f"에러 발생, 재시도 중...")
+                await asyncio.sleep(2)
 
         logger.error(f"❌ 에러: 최대 재시도 횟수({self.config.api_max_retries})를 초과했습니다.")
+        metrics.increment_counter('api_requests_error')
         if discord_message:
             await discord_message.reply(f"❌ 최대 재시도 횟수({self.config.api_max_retries})를 초과하여 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", mention_author=False)
         return None
@@ -357,7 +318,7 @@ class GeminiService:
         prompt = f"Discord 대화 내용:\n{text}"
         logger.debug(f"[RAW API REQUEST] Full prompt being sent ({len(prompt)} characters):\n{prompt}")
         return await self._api_request_with_retry(
-            lambda: self._summary_model.generate_content(prompt),
+            lambda: self.summary_model.generate_content(prompt),
             "요약"
         )
 

@@ -40,9 +40,10 @@ class HelpCog(commands.Cog):
                 name="💬 AI 어시스턴트 기능",
                 value="봇을 멘션(@mention)하면 AI가 대화합니다.\n"
                       "• 자연스러운 대화\n"
-                      "• 기억 기능과 통합\n"
+                      "• 각 @mention마다 새로운 대화 시작 (메모리 최적화)\n"
                       "• 복잡한 질문 처리\n\n"
-                      "**사용법:** `@SoyeBot 안녕! 오늘 날씨 어때?`",
+                      "**사용법:** `@SoyeBot 안녕! 오늘 날씨 어때?`\n"
+                      "**참고:** 이전 대화 내역은 유지되지 않습니다 (1GB RAM 최적화)",
                 inline=False,
             )
 
@@ -101,7 +102,10 @@ class HelpCog(commands.Cog):
                 name="🔧 시스템 정보",
                 value=f"봇 상태: 🟢 온라인\n"
                       f"프레임워크: Discord.py\n"
-                      f"AI 엔진: Google Gemini API",
+                      f"AI 엔진: Google Gemini API\n\n"
+                      f"📊 **성능 모니터링:**\n"
+                      f"실시간 메트릭 대시보드: http://localhost:5000\n"
+                      f"(메모리, CPU, API 응답시간, 성공률 등)",
                 inline=False,
             )
 
