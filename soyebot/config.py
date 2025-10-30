@@ -25,9 +25,11 @@ class AppConfig:
     gemini_api_key: str
     model_name: str = 'gemini-2.5-flash'
     max_messages_per_fetch: int = 300
-    api_max_retries: int = 2
+    api_max_retries: int = 5  # Increased from 2 for better reliability
     api_rate_limit_retry_after: int = 5
     api_request_timeout: int = 30
+    api_retry_backoff_base: float = 2.0  # Exponential backoff base
+    api_retry_backoff_max: float = 32.0  # Max backoff cap (seconds)
     progress_update_interval: float = 0.5
     countdown_update_interval: int = 5
     session_ttl_minutes: int = 10

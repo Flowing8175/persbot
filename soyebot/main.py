@@ -47,6 +47,19 @@ def setup_logging():
 
     logger.debug("Logging configuration initialized")
 
+async def periodic_session_cleanup(session_manager: SessionManager):
+    """Background task to periodically clean up expired sessions.
+
+    This prevents cleanup overhead in the message handling hot path.
+    """
+    while True:
+        try:
+            await asyncio.sleep(session_manager.config.session_cleanup_interval)
+            session_manager.cleanup_expired()
+            logger.debug(f"Background cleanup completed: {len(session_manager.sessions)} active sessions")
+        except Exception as e:
+            logger.error(f"Error in background session cleanup: {e}", exc_info=True)
+
 async def main():
     """Initializes and runs the bot."""
     config = load_config()
@@ -73,6 +86,10 @@ async def main():
         await bot.add_cog(SummarizerCog(bot, config, gemini_service))
         await bot.add_cog(AssistantCog(bot, config, gemini_service, session_manager))
         logger.info("Cogs 로드 완료.")
+
+        # Start background cleanup task
+        asyncio.create_task(periodic_session_cleanup(session_manager))
+        logger.info("Background session cleanup task started")
 
     @bot.event
     async def on_close():

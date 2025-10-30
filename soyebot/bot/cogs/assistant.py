@@ -3,6 +3,7 @@
 import discord
 from discord.ext import commands
 import logging
+import asyncio
 
 from config import AppConfig
 from services.gemini_service import GeminiService
@@ -25,6 +26,10 @@ class AssistantCog(commands.Cog):
         self.config = config
         self.gemini_service = gemini_service
         self.session_manager = session_manager
+        # Concurrency limiting: prevent too many simultaneous API calls
+        # This prevents rate limit violations and resource exhaustion
+        self.api_semaphore = asyncio.Semaphore(10)  # Max 10 concurrent API calls
+        logger.info("AssistantCog initialized with concurrency limit: 10")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -32,8 +37,6 @@ class AssistantCog(commands.Cog):
             return
 
         logger.debug(f"Message from {message.author.name} ({message.author.id}): {len(message.content)} chars")
-        self.session_manager.cleanup_expired()
-        logger.debug("Session cleanup completed")
 
         try:
             user_message = extract_message_content(message)
@@ -44,40 +47,42 @@ class AssistantCog(commands.Cog):
 
             logger.info(f"Processing message from {message.author.name}: {user_message[:100]}")
 
-            async with message.channel.typing():
-                # 세션 ID 결정: 리플라이 대상이 있으면 그 메시지 ID, 없으면 현재 메시지 ID
-                session_id = message.reference.message_id if message.reference else message.id
-                logger.debug(f"Session ID determined: {session_id}")
+            # Acquire semaphore slot to limit concurrent API calls
+            async with self.api_semaphore:
+                async with message.channel.typing():
+                    # 세션 ID 결정: 리플라이 대상이 있으면 그 메시지 ID, 없으면 현재 메시지 ID
+                    session_id = message.reference.message_id if message.reference else message.id
+                    logger.debug(f"Session ID determined: {session_id}")
 
-                # Get or create user session with memory context
-                chat_session, user_id = self.session_manager.get_or_create(
-                    user_id=message.author.id,
-                    username=message.author.name,
-                    message_id=str(session_id),
-                )
-                logger.debug(f"Session created/retrieved for user {user_id}")
+                    # Get or create user session with memory context
+                    chat_session, user_id = self.session_manager.get_or_create(
+                        user_id=message.author.id,
+                        username=message.author.name,
+                        message_id=str(session_id),
+                    )
+                    logger.debug(f"Session created/retrieved for user {user_id}")
 
-                logger.debug("Sending request to Gemini API")
-                response_result = await self.gemini_service.generate_chat_response(
-                    chat_session,
-                    user_message,
-                    message,
-                )
-                logger.debug(f"Received response: {response_result is not None}")
+                    logger.debug("Sending request to Gemini API")
+                    response_result = await self.gemini_service.generate_chat_response(
+                        chat_session,
+                        user_message,
+                        message,
+                    )
+                    logger.debug(f"Received response: {response_result is not None}")
 
-                if response_result:
-                    response_text, response_obj = response_result
-                    logger.debug(f"Response text length: {len(response_text)}, Has response object: {response_obj is not None}")
+                    if response_result:
+                        response_text, response_obj = response_result
+                        logger.debug(f"Response text length: {len(response_text)}, Has response object: {response_obj is not None}")
 
-                    # Only reply if there's text content
-                    # (Gemini might return only function calls without text)
-                    if response_text:
-                        logger.debug(f"Sending reply with {len(response_text)} characters")
-                        await message.reply(response_text, mention_author=False)
-                    else:
-                        # If only function calls were returned, log but don't reply
-                        logger.debug("Response contained only function calls, no text to reply with")
-                # else: The error message is now handled by gemini_service._api_request_with_retry
+                        # Only reply if there's text content
+                        # (Gemini might return only function calls without text)
+                        if response_text:
+                            logger.debug(f"Sending reply with {len(response_text)} characters")
+                            await message.reply(response_text, mention_author=False)
+                        else:
+                            # If only function calls were returned, log but don't reply
+                            logger.debug("Response contained only function calls, no text to reply with")
+                    # else: The error message is now handled by gemini_service._api_request_with_retry
 
         except Exception as e:
             logger.error(f"메시지 처리 중 예상치 못한 오류 발생: {e}", exc_info=True)
