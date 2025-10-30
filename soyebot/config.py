@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
-    gemini_api_key: str
-    model_name: str = 'gemini-2.5-flash-lite'
+    llm_endpoint_url: str
+    model_name: str = 'local-model'
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
@@ -40,10 +40,10 @@ class AppConfig:
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
     discord_token = os.environ.get('DISCORD_TOKEN')
-    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    llm_endpoint_url = os.environ.get('LLM_ENDPOINT_URL')
 
-    if not discord_token or not gemini_api_key:
-        logger.error("에러: DISCORD_TOKEN 또는 GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
+    if not discord_token or not llm_endpoint_url:
+        logger.error("에러: DISCORD_TOKEN 또는 LLM_ENDPOINT_URL 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 
-    return AppConfig(discord_token=discord_token, gemini_api_key=gemini_api_key)
+    return AppConfig(discord_token=discord_token, llm_endpoint_url=llm_endpoint_url)

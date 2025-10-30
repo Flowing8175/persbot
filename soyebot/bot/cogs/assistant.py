@@ -5,7 +5,7 @@ from discord.ext import commands
 import logging
 
 from config import AppConfig
-from services.gemini_service import GeminiService
+from services.local_llm_service import LocalLLMService
 from bot.session import SessionManager
 from utils import extract_message_content, is_bot_mentioned
 
@@ -18,12 +18,12 @@ class AssistantCog(commands.Cog):
         self,
         bot: commands.Bot,
         config: AppConfig,
-        gemini_service: GeminiService,
+        llm_service: LocalLLMService,
         session_manager: SessionManager,
     ):
         self.bot = bot
         self.config = config
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
         self.session_manager = session_manager
 
     @commands.Cog.listener()
@@ -57,8 +57,8 @@ class AssistantCog(commands.Cog):
                 )
                 logger.debug(f"Session created/retrieved for user {user_id}")
 
-                logger.debug("Sending request to Gemini API")
-                response_result = await self.gemini_service.generate_chat_response(
+                logger.debug("Sending request to Local LLM API")
+                response_result = await self.llm_service.generate_chat_response(
                     chat_session,
                     user_message,
                     message,
@@ -70,14 +70,13 @@ class AssistantCog(commands.Cog):
                     logger.debug(f"Response text length: {len(response_text)}, Has response object: {response_obj is not None}")
 
                     # Only reply if there's text content
-                    # (Gemini might return only function calls without text)
                     if response_text:
                         logger.debug(f"Sending reply with {len(response_text)} characters")
                         await message.reply(response_text, mention_author=False)
                     else:
                         # If only function calls were returned, log but don't reply
                         logger.debug("Response contained only function calls, no text to reply with")
-                # else: The error message is now handled by gemini_service._api_request_with_retry
+                # else: The error message is now handled by llm_service._api_request_with_retry
 
         except Exception as e:
             logger.error(f"메시지 처리 중 예상치 못한 오류 발생: {e}", exc_info=True)

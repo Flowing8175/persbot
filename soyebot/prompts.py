@@ -1,7 +1,5 @@
 """Prompts and persona configuration for SoyeBot."""
 
-import google.generativeai as genai
-
 # --- 페르소나 및 프롬프트 ---
 BOT_PERSONA_PROMPT = '''
 🌟 캐릭터 기본 설정 및 역할 (Role-Playing)

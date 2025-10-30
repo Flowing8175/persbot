@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 
 from config import AppConfig
-from services.gemini_service import GeminiService
+from services.local_llm_service import LocalLLMService, LocalLLMChatSession
 from services.database_service import DatabaseService
 from prompts import BOT_PERSONA_PROMPT
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChatSession:
     """사용자별 채팅 세션 - now user-based instead of message-based"""
-    chat: object
+    chat: LocalLLMChatSession
     user_id: str
     last_activity_at: datetime
     last_message_id: Optional[str] = None  # For threading
@@ -30,11 +30,11 @@ class SessionManager:
     def __init__(
         self,
         config: AppConfig,
-        gemini_service: GeminiService,
+        llm_service: LocalLLMService,
         db_service: DatabaseService,
     ):
         self.config = config
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
         self.db_service = db_service
         self.sessions: dict[str, ChatSession] = {}  # user_id -> ChatSession
         self.last_cleanup_time = time.time()
@@ -81,11 +81,8 @@ class SessionManager:
         logger.debug(f"System prompt length: {len(system_prompt)} characters")
         logger.debug(f"[RAW SESSION REQUEST] System prompt:\n{system_prompt}")
 
-        # Create new model with system prompt
-        assistant_model = self.gemini_service.create_assistant_model(system_prompt)
-
-        # Create new chat without separate history (few-shot examples are embedded in system prompt)
-        chat = assistant_model.start_chat()
+        # Create new LocalLLM chat session with system prompt
+        chat = LocalLLMChatSession(system_instruction=system_prompt)
 
         # Store session
         self.sessions[user_id] = ChatSession(
