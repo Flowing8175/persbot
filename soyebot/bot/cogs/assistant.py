@@ -7,7 +7,7 @@ import logging
 from config import AppConfig
 from services.gemini_service import GeminiService
 from bot.session import SessionManager
-from utils import extract_message_content
+from utils import extract_message_content, is_bot_mentioned
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class AssistantCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if message.author.bot or not self.bot.user.mentioned_in(message):
+        if message.author.bot or not is_bot_mentioned(message, self.bot):
             return
 
         logger.debug(f"Message from {message.author.name} ({message.author.id}): {len(message.content)} chars")

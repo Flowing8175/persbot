@@ -46,10 +46,30 @@ def parse_korean_time(time_str: str) -> Optional[int]:
         total_minutes += int(minute_match.group(1))
     return total_minutes if total_minutes > 0 else None
 
+def is_bot_mentioned(message: discord.Message, bot: discord.Client) -> bool:
+    """봇이 mention되었는지 확인합니다 (ID 형식 및 닉네임 형식 모두 지원)."""
+    # Check for Discord mention format <@user_id>
+    if bot.user.mentioned_in(message):
+        return True
+
+    # Check for text-based mention format @bot_nickname
+    if bot.user.name and f"@{bot.user.name}" in message.content:
+        return True
+
+    return False
+
 def extract_message_content(message: discord.Message) -> str:
-    """메시지에서 봇 mention을 제거한 내용을 추출합니다."""
+    """메시지에서 봇 mention을 제거한 내용을 추출합니다 (ID 형식 및 닉네임 형식 모두 지원)."""
     user_message = message.content
+
+    # Remove Discord mention formats <@user_id> and <@!user_id>
     for mention in message.mentions:
         user_message = user_message.replace(f"<@{mention.id}>", "")
         user_message = user_message.replace(f"<@!{mention.id}>", "")
+
+    # Remove text-based mention format @bot_nickname
+    if message.mentions:
+        for mention in message.mentions:
+            user_message = user_message.replace(f"@{mention.name}", "")
+
     return user_message.strip()
