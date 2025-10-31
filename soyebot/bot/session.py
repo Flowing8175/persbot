@@ -7,16 +7,27 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 
 from config import AppConfig
-from services.local_llm_service import LocalLLMService, LocalLLMChatSession
 from services.database_service import DatabaseService
 from prompts import BOT_PERSONA_PROMPT
+from typing import Union
+
+# Import both chat session types
+try:
+    from services.local_llm_service import LocalLLMChatSession
+except ImportError:
+    LocalLLMChatSession = None
+
+try:
+    from services.internal_llm_service import InternalLLMChatSession
+except ImportError:
+    InternalLLMChatSession = None
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class ChatSession:
     """사용자별 채팅 세션 - now user-based instead of message-based"""
-    chat: LocalLLMChatSession
+    chat: object  # Can be LocalLLMChatSession or InternalLLMChatSession
     user_id: str
     last_activity_at: datetime
     last_message_id: Optional[str] = None  # For threading
@@ -30,7 +41,7 @@ class SessionManager:
     def __init__(
         self,
         config: AppConfig,
-        llm_service: LocalLLMService,
+        llm_service: object,  # Can be LocalLLMService or InternalLLMService
         db_service: DatabaseService,
     ):
         self.config = config
@@ -81,8 +92,15 @@ class SessionManager:
         logger.debug(f"System prompt length: {len(system_prompt)} characters")
         logger.debug(f"[RAW SESSION REQUEST] System prompt:\n{system_prompt}")
 
-        # Create new LocalLLM chat session with system prompt
-        chat = LocalLLMChatSession(system_instruction=system_prompt)
+        # Create new chat session with system prompt (works for both service types)
+        # Both LocalLLMChatSession and InternalLLMChatSession have the same interface
+        from services.internal_llm_service import InternalLLMService, InternalLLMChatSession
+        from services.local_llm_service import LocalLLMService, LocalLLMChatSession
+
+        if isinstance(self.llm_service, InternalLLMService):
+            chat = InternalLLMChatSession(system_instruction=system_prompt)
+        else:
+            chat = LocalLLMChatSession(system_instruction=system_prompt)
 
         # Store session
         self.sessions[user_id] = ChatSession(

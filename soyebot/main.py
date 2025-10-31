@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from config import load_config
 from services.local_llm_service import LocalLLMService
+from services.internal_llm_service import InternalLLMService
 from services.database_service import DatabaseService
 from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
@@ -59,7 +60,12 @@ async def main():
     bot = commands.Bot(command_prefix=config.command_prefix, intents=intents, help_command=None)
 
     # Initialize services
-    llm_service = LocalLLMService(config)
+    logger.info(f"Initializing LLM service in {config.llm_mode} mode...")
+    if config.llm_mode == 'internal':
+        llm_service = InternalLLMService(config)
+    else:  # external
+        llm_service = LocalLLMService(config)
+
     db_service = DatabaseService(config.database_path)
     session_manager = SessionManager(config, llm_service, db_service)
 
