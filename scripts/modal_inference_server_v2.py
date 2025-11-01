@@ -138,9 +138,8 @@ def health() -> dict:
     }
 
 
-@web_app.post("/v1/chat/completions")
-def chat_completions(request: ChatCompletionRequest) -> dict:
-    """OpenAI-compatible chat completion endpoint."""
+def _chat_completions_handler(request: ChatCompletionRequest) -> dict:
+    """OpenAI-compatible chat completion endpoint handler."""
     try:
         llm = LLMInference()
         llm.load()
@@ -184,6 +183,18 @@ def chat_completions(request: ChatCompletionRequest) -> dict:
                 "type": "server_error",
             }
         }
+
+
+@web_app.post("/chat/completions")
+def chat_completions(request: ChatCompletionRequest) -> dict:
+    """OpenAI-compatible chat completion endpoint (without /v1 prefix)."""
+    return _chat_completions_handler(request)
+
+
+@web_app.post("/v1/chat/completions")
+def chat_completions_v1(request: ChatCompletionRequest) -> dict:
+    """OpenAI-compatible chat completion endpoint (with /v1 prefix)."""
+    return _chat_completions_handler(request)
 
 
 # ============================================================================
