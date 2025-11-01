@@ -14,7 +14,7 @@ import time
 from typing import List, Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
-from modal import App, Image, Volume, asgi_app
+from modal import App, Image, Volume, asgi_app, enter
 
 # ============================================================================
 # Configuration
@@ -84,7 +84,7 @@ class LLMInference:
         self.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+            dtype=torch.float16 if self.device == "cuda" else torch.float32,
             device_map="auto" if self.device == "cuda" else self.device,
             trust_remote_code=True,
         )
@@ -123,20 +123,10 @@ class LLMInference:
 # FastAPI App with Web Endpoints
 # ============================================================================
 
-# Global LLM instance (loaded once, reused across all requests)
-_llm_instance = None
-
-
-def get_llm():
-    """Get or initialize the global LLM instance."""
-    global _llm_instance
-    if _llm_instance is None:
-        _llm_instance = LLMInference()
-        _llm_instance.load()
-    return _llm_instance
-
-
 web_app = FastAPI()
+
+# Global LLM instance (set by Modal's @enter method)
+_llm_instance = None
 
 
 @web_app.get("/")
@@ -153,7 +143,10 @@ def health() -> dict:
 def _chat_completions_handler(request: ChatCompletionRequest) -> dict:
     """OpenAI-compatible chat completion endpoint handler."""
     try:
-        llm = get_llm()
+        # Use the global LLM instance loaded by @enter
+        llm = _llm_instance
+        if llm is None:
+            raise RuntimeError("Model not loaded. Container initialization may have failed.")
 
         # Build prompt from messages
         prompt = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
@@ -209,15 +202,27 @@ def chat_completions_v1(request: ChatCompletionRequest) -> dict:
 
 
 # ============================================================================
-# Mount FastAPI app to Modal with Volume
+# Mount FastAPI app to Modal with Volume and Persistent Model Loading
 # ============================================================================
 
 @app.function(
     gpu="T4",  # Free-tier eligible GPU
     memory=12288,  # 12GB RAM for model inference
-    volumes={"/model_vol": model_volume}
+    volumes={"/model_vol": model_volume},
+    container_idle_timeout=300,  # Keep container alive for 5 minutes after last request
+    keep_warm=1,  # Keep at least 1 container warm (optional, may incur costs)
 )
 @asgi_app()
 def api():
     """Modal web app handler with GPU support and persistent model loading."""
     return web_app
+
+
+@api.enter()
+def load_model():
+    """Load model once when container starts (runs before any requests)."""
+    global _llm_instance
+    print("🚀 Container starting - loading model...")
+    _llm_instance = LLMInference()
+    _llm_instance.load()
+    print("✅ Container ready - model loaded and cached in memory")
