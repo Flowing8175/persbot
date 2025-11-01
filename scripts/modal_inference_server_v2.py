@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-Modal.com Inference Server with OpenAI-compatible API - Simplified Pattern
+Modal.com Inference Server with OpenAI-compatible API
 
 Deploy with: modal deploy modal_inference_server_v2.py
 
-Access the API at: https://hsomex0000--soyebot-llm-v2.modal.run
+Access the API:
+  Base URL: https://hsomex0000--soyebot-llm-v2.modal.run
+  Health: GET /
+  Chat: POST /v1/chat/completions (OpenAI-compatible)
 """
 
 import time
-import json
 from typing import List, Optional
-
-from modal import App, Image, fastapi_endpoint
+from fastapi import FastAPI
 from pydantic import BaseModel
+from modal import App, Image, asgi_app
 
 # ============================================================================
 # Configuration
@@ -53,12 +55,12 @@ class ChatCompletionRequest(BaseModel):
 
 
 # ============================================================================
-# LLM Class
+# LLM Class (GPU-backed)
 # ============================================================================
 
 
 class LLMInference:
-    """GPU-backed LLM."""
+    """GPU-backed LLM inference."""
 
     def __init__(self):
         self.model = None
@@ -84,7 +86,7 @@ class LLMInference:
         print("✅ Model loaded")
 
     def generate(self, prompt: str, temp: float = 0.7, top_p: float = 0.9, max_tokens: int = 128) -> str:
-        """Generate response."""
+        """Generate response from prompt."""
         import torch
 
         if not self.model:
@@ -103,28 +105,31 @@ class LLMInference:
 
 
 # ============================================================================
-# Modal Web Endpoints
+# FastAPI App with Web Endpoints
 # ============================================================================
 
 
-@app.function()
-@fastapi_endpoint(method="GET")
-def health_check() -> dict:
-    """Health check."""
+web_app = FastAPI()
+
+
+@web_app.get("/")
+def health() -> dict:
+    """Health check endpoint."""
     return {"status": "ok", "model": MODEL_NAME}
 
 
-@app.function()
-@fastapi_endpoint(method="POST")
-def chat_inference(request: ChatCompletionRequest) -> dict:
-    """Chat completion endpoint."""
+@web_app.post("/v1/chat/completions")
+def chat_completions(request: ChatCompletionRequest) -> dict:
+    """OpenAI-compatible chat completion endpoint."""
     try:
         llm = LLMInference()
         llm.load()
 
+        # Build prompt from messages
         prompt = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
         prompt += "\nassistant:"
 
+        # Generate response
         response_text = llm.generate(
             prompt=prompt,
             temp=request.temperature,
@@ -132,6 +137,7 @@ def chat_inference(request: ChatCompletionRequest) -> dict:
             max_tokens=request.max_tokens or 128,
         )
 
+        # Return OpenAI-compatible response
         return {
             "id": f"chatcmpl-{int(time.time())}",
             "object": "chat.completion",
@@ -158,3 +164,14 @@ def chat_inference(request: ChatCompletionRequest) -> dict:
                 "type": "server_error",
             }
         }
+
+
+# ============================================================================
+# Mount FastAPI app to Modal
+# ============================================================================
+
+@app.function()
+@asgi_app()
+def api():
+    """Modal web app handler."""
+    return web_app
