@@ -4,13 +4,12 @@ Modal.com Inference Server with OpenAI-compatible API.
 
 Deploy with: modal deploy modal_inference_server.py
 
-Access the API at: https://workspace--soyebot-llm-dev.modal.run/chat/completions
+Access the API at: https://hsomex0000--soyebot-llm.modal.run/chat/completions
 """
 
 import time
 from typing import List, Optional
 
-from fastapi import FastAPI
 from pydantic import BaseModel
 
 from modal import Image, App, web_endpoint
@@ -30,7 +29,6 @@ image = Image.debian_slim(python_version="3.10").pip_install(
     "torch>=2.0.0",
     "transformers>=4.40.0",
     "peft>=0.10.0",
-    "fastapi",
     "pydantic",
 )
 
@@ -119,17 +117,17 @@ class LLMInference:
 
 
 # ============================================================================
-# FastAPI App
+# Web Endpoints
 # ============================================================================
 
 
-@web_endpoint(method="POST")
+@web_endpoint(method="POST", label="chat-completions")
 def chat_completions(request: ChatCompletionRequest) -> dict:
     """
     OpenAI-compatible chat completions endpoint.
 
     Example:
-        curl -X POST https://workspace--soyebot-llm-dev.modal.run/chat/completions \
+        curl -X POST https://hsomex0000--soyebot-llm.modal.run/chat/completions \
           -H "Content-Type: application/json" \
           -d '{
             "model": "soyebot-model",
@@ -193,13 +191,13 @@ def chat_completions(request: ChatCompletionRequest) -> dict:
         }
 
 
-@web_endpoint(method="GET")
+@web_endpoint(method="GET", label="health-check")
 def health() -> dict:
     """Health check endpoint."""
     return {"status": "ok", "model": "soyebot-qwen3-4b"}
 
 
-@web_endpoint(method="GET")
+@web_endpoint(method="GET", label="root")
 def root() -> dict:
     """Root endpoint."""
     return {
