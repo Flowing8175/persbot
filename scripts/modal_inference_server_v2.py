@@ -108,15 +108,20 @@ class ModelServer:
         import torch
 
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        input_length = inputs["input_ids"].shape[1]
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_length=max_tokens + inputs["input_ids"].shape[1],
+                max_length=max_tokens + input_length,
                 temperature=temp,
                 top_p=top_p,
                 do_sample=True,
             )
-        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        # Decode only the newly generated tokens (exclude input prompt)
+        generated_tokens = outputs[0][input_length:]
+        return self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
     @modal.asgi_app()
     def api(self):
@@ -148,9 +153,15 @@ class ModelServer:
     def _chat_handler(self, request: ChatCompletionRequest) -> dict:
         """Internal chat completion handler."""
         try:
-            # Build prompt from messages
-            prompt = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
-            prompt += "\nassistant:"
+            # Convert messages to Qwen3 chat template format
+            messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+
+            # Apply Qwen3 chat template
+            prompt = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
 
             # Generate response using the loaded model
             response_text = self.generate(
