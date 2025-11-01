@@ -123,6 +123,18 @@ class LLMInference:
 # FastAPI App with Web Endpoints
 # ============================================================================
 
+# Global LLM instance (loaded once, reused across all requests)
+_llm_instance = None
+
+
+def get_llm():
+    """Get or initialize the global LLM instance."""
+    global _llm_instance
+    if _llm_instance is None:
+        _llm_instance = LLMInference()
+        _llm_instance.load()
+    return _llm_instance
+
 
 web_app = FastAPI()
 
@@ -141,8 +153,7 @@ def health() -> dict:
 def _chat_completions_handler(request: ChatCompletionRequest) -> dict:
     """OpenAI-compatible chat completion endpoint handler."""
     try:
-        llm = LLMInference()
-        llm.load()
+        llm = get_llm()
 
         # Build prompt from messages
         prompt = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
@@ -201,8 +212,12 @@ def chat_completions_v1(request: ChatCompletionRequest) -> dict:
 # Mount FastAPI app to Modal with Volume
 # ============================================================================
 
-@app.function(volumes={"/model_vol": model_volume})
+@app.function(
+    gpu="T4",  # Free-tier eligible GPU
+    memory=12288,  # 12GB RAM for model inference
+    volumes={"/model_vol": model_volume}
+)
 @asgi_app()
 def api():
-    """Modal web app handler with access to model volume."""
+    """Modal web app handler with GPU support and persistent model loading."""
     return web_app
