@@ -256,6 +256,7 @@ class LocalLLMService:
                 model=self.config.model_name,
                 messages=messages,
                 temperature=0.7,
+                max_tokens=self.config.summary_max_tokens,
             )
 
         response = await self._api_request_with_retry(api_call, "요약")
@@ -299,6 +300,7 @@ class LocalLLMService:
                 model=self.config.model_name,
                 messages=messages,
                 temperature=0.7,
+                max_tokens=self.config.max_tokens,
             )
 
         response_obj = await self._api_request_with_retry(

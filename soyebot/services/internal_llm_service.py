@@ -241,7 +241,7 @@ class InternalLLMService:
         ]
 
         try:
-            response = await self._generate_async(messages, max_new_tokens=512, temperature=0.7)
+            response = await self._generate_async(messages, max_new_tokens=self.config.summary_max_tokens, temperature=0.7)
             return response
         except Exception as e:
             logger.error(f"Summarization failed: {e}", exc_info=True)
@@ -277,7 +277,7 @@ class InternalLLMService:
             # Generate response
             response_text = await self._generate_async(
                 messages,
-                max_new_tokens=512,
+                max_new_tokens=self.config.max_tokens,
                 temperature=0.7
             )
 

@@ -36,6 +36,10 @@ class AppConfig:
     session_cleanup_interval: int = 300
     command_prefix: str = '!'
 
+    # LLM Generation Settings
+    max_tokens: int = 1024  # Maximum tokens to generate in responses
+    summary_max_tokens: int = 512  # Maximum tokens for summaries
+
     # --- Database Configuration ---
     database_path: str = 'soyebot.db'
 
