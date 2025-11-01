@@ -14,7 +14,7 @@ import time
 from typing import List, Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
-from modal import App, Image, Volume, asgi_app, enter
+import modal
 
 # ============================================================================
 # Configuration
@@ -27,7 +27,7 @@ LORA_ADAPTER_PATH = "/model_vol/soyemodel"
 # Create Modal App with Image and Volume
 # ============================================================================
 
-image = Image.debian_slim(python_version="3.10").pip_install(
+image = modal.Image.debian_slim(python_version="3.10").pip_install(
     "torch>=2.0.0",
     "transformers>=4.40.0",
     "peft>=0.10.0",
@@ -35,10 +35,10 @@ image = Image.debian_slim(python_version="3.10").pip_install(
     "fastapi",
 )
 
-app = App(name="soyebot-llm-v2", image=image)
+app = modal.App(name="soyebot-llm-v2", image=image)
 
 # Mount the volume containing the custom LoRA model
-model_volume = Volume.from_name("soyebot-model-volume")
+model_volume = modal.Volume.from_name("soyebot-model-volume")
 
 # ============================================================================
 # Pydantic Models
@@ -59,26 +59,29 @@ class ChatCompletionRequest(BaseModel):
 
 
 # ============================================================================
-# LLM Class with LoRA Support
+# Modal Class with Persistent Model Loading
 # ============================================================================
 
 
-class LLMInference:
-    """GPU-backed LLM with LoRA adapter."""
+@app.cls(
+    gpu="T4",  # Free-tier eligible GPU
+    memory=12288,  # 12GB RAM for model inference
+    volumes={"/model_vol": model_volume},
+    scaledown_window=300,  # Keep container alive for 5 minutes after last request
+    min_containers=1,  # Keep at least 1 container warm (optional, may incur costs)
+)
+class ModelServer:
+    """GPU-backed LLM server with LoRA adapter and persistent model loading."""
 
-    def __init__(self):
-        self.model = None
-        self.tokenizer = None
-        self.device = None
-
-    def load(self):
-        """Load base model and LoRA adapter."""
+    @modal.enter()
+    def load_model(self):
+        """Load model once when container starts (runs before any requests)."""
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from peft import PeftModel
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"🤖 Loading base model {BASE_MODEL} on {self.device}...")
+        print(f"🚀 Container starting - loading base model {BASE_MODEL} on {self.device}...")
 
         # Load base model and tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
@@ -98,14 +101,11 @@ class LLMInference:
         self.model = self.model.merge_and_unload()
 
         self.model.eval()
-        print("✅ Model and LoRA adapter loaded successfully")
+        print("✅ Container ready - model loaded and cached in memory")
 
     def generate(self, prompt: str, temp: float = 0.7, top_p: float = 0.9, max_tokens: int = 128) -> str:
         """Generate response from prompt."""
         import torch
-
-        if not self.model:
-            self.load()
 
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         with torch.no_grad():
@@ -118,111 +118,72 @@ class LLMInference:
             )
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
+    @modal.asgi_app()
+    def api(self):
+        """FastAPI web app with OpenAI-compatible endpoints."""
+        web_app = FastAPI()
 
-# ============================================================================
-# FastAPI App with Web Endpoints
-# ============================================================================
-
-web_app = FastAPI()
-
-# Global LLM instance (set by Modal's @enter method)
-_llm_instance = None
-
-
-@web_app.get("/")
-def health() -> dict:
-    """Health check endpoint."""
-    return {
-        "status": "ok",
-        "model": "soyebot-custom-model",
-        "base_model": BASE_MODEL,
-        "lora_adapter": LORA_ADAPTER_PATH,
-    }
-
-
-def _chat_completions_handler(request: ChatCompletionRequest) -> dict:
-    """OpenAI-compatible chat completion endpoint handler."""
-    try:
-        # Use the global LLM instance loaded by @enter
-        llm = _llm_instance
-        if llm is None:
-            raise RuntimeError("Model not loaded. Container initialization may have failed.")
-
-        # Build prompt from messages
-        prompt = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
-        prompt += "\nassistant:"
-
-        # Generate response
-        response_text = llm.generate(
-            prompt=prompt,
-            temp=request.temperature,
-            top_p=request.top_p,
-            max_tokens=request.max_tokens or 128,
-        )
-
-        # Return OpenAI-compatible response
-        return {
-            "id": f"chatcmpl-{int(time.time())}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": request.model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": response_text.strip()},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": len(prompt.split()),
-                "completion_tokens": len(response_text.split()),
-                "total_tokens": len(prompt.split()) + len(response_text.split()),
-            },
-        }
-
-    except Exception as e:
-        return {
-            "error": {
-                "message": str(e),
-                "type": "server_error",
+        @web_app.get("/")
+        def health() -> dict:
+            """Health check endpoint."""
+            return {
+                "status": "ok",
+                "model": "soyebot-custom-model",
+                "base_model": BASE_MODEL,
+                "lora_adapter": LORA_ADAPTER_PATH,
             }
-        }
 
+        @web_app.post("/chat/completions")
+        def chat_completions(request: ChatCompletionRequest) -> dict:
+            """OpenAI-compatible chat completion endpoint (without /v1 prefix)."""
+            return self._chat_handler(request)
 
-@web_app.post("/chat/completions")
-def chat_completions(request: ChatCompletionRequest) -> dict:
-    """OpenAI-compatible chat completion endpoint (without /v1 prefix)."""
-    return _chat_completions_handler(request)
+        @web_app.post("/v1/chat/completions")
+        def chat_completions_v1(request: ChatCompletionRequest) -> dict:
+            """OpenAI-compatible chat completion endpoint (with /v1 prefix)."""
+            return self._chat_handler(request)
 
+        return web_app
 
-@web_app.post("/v1/chat/completions")
-def chat_completions_v1(request: ChatCompletionRequest) -> dict:
-    """OpenAI-compatible chat completion endpoint (with /v1 prefix)."""
-    return _chat_completions_handler(request)
+    def _chat_handler(self, request: ChatCompletionRequest) -> dict:
+        """Internal chat completion handler."""
+        try:
+            # Build prompt from messages
+            prompt = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
+            prompt += "\nassistant:"
 
+            # Generate response using the loaded model
+            response_text = self.generate(
+                prompt=prompt,
+                temp=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens or 128,
+            )
 
-# ============================================================================
-# Mount FastAPI app to Modal with Volume and Persistent Model Loading
-# ============================================================================
+            # Return OpenAI-compatible response
+            return {
+                "id": f"chatcmpl-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": request.model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": response_text.strip()},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": len(prompt.split()),
+                    "completion_tokens": len(response_text.split()),
+                    "total_tokens": len(prompt.split()) + len(response_text.split()),
+                },
+            }
 
-@app.function(
-    gpu="T4",  # Free-tier eligible GPU
-    memory=12288,  # 12GB RAM for model inference
-    volumes={"/model_vol": model_volume},
-    container_idle_timeout=300,  # Keep container alive for 5 minutes after last request
-    keep_warm=1,  # Keep at least 1 container warm (optional, may incur costs)
-)
-@asgi_app()
-def api():
-    """Modal web app handler with GPU support and persistent model loading."""
-    return web_app
-
-
-@api.enter()
-def load_model():
-    """Load model once when container starts (runs before any requests)."""
-    global _llm_instance
-    print("🚀 Container starting - loading model...")
-    _llm_instance = LLMInference()
-    _llm_instance.load()
-    print("✅ Container ready - model loaded and cached in memory")
+        except Exception as e:
+            return {
+                "error": {
+                    "message": str(e),
+                    "type": "server_error",
+                }
+            }
