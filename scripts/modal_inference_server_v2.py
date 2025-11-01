@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Modal.com Inference Server with OpenAI-compatible API
+Modal.com Inference Server with Custom LoRA Model
 
 Deploy with: modal deploy modal_inference_server_v2.py
 
 Access the API:
-  Base URL: https://hsomex0000--soyebot-llm-v2.modal.run
+  Base URL: https://hsomex0000--soyebot-llm-v2-api.modal.run
   Health: GET /
   Chat: POST /v1/chat/completions (OpenAI-compatible)
 """
@@ -14,16 +14,17 @@ import time
 from typing import List, Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
-from modal import App, Image, asgi_app
+from modal import App, Image, Volume, asgi_app
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-MODEL_NAME = "Qwen/Qwen3-4B-Instruct-2507"
+BASE_MODEL = "Qwen/Qwen3-4B-Instruct-2507"
+LORA_ADAPTER_PATH = "/model_vol/soyemodel"
 
 # ============================================================================
-# Create Modal App with Image
+# Create Modal App with Image and Volume
 # ============================================================================
 
 image = Image.debian_slim(python_version="3.10").pip_install(
@@ -36,6 +37,9 @@ image = Image.debian_slim(python_version="3.10").pip_install(
 
 app = App(name="soyebot-llm-v2", image=image)
 
+# Mount the volume containing the custom LoRA model
+model_volume = Volume.from_name("soyebot-model-volume")
+
 # ============================================================================
 # Pydantic Models
 # ============================================================================
@@ -47,7 +51,7 @@ class Message(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = "soyebot-model"
+    model: str = "soyebot-custom-model"
     messages: List[Message]
     temperature: float = 0.7
     top_p: float = 0.9
@@ -55,12 +59,12 @@ class ChatCompletionRequest(BaseModel):
 
 
 # ============================================================================
-# LLM Class (GPU-backed)
+# LLM Class with LoRA Support
 # ============================================================================
 
 
 class LLMInference:
-    """GPU-backed LLM inference."""
+    """GPU-backed LLM with LoRA adapter."""
 
     def __init__(self):
         self.model = None
@@ -68,22 +72,33 @@ class LLMInference:
         self.device = None
 
     def load(self):
-        """Load model and tokenizer."""
+        """Load base model and LoRA adapter."""
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
+        from peft import PeftModel
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"🤖 Loading {MODEL_NAME} on {self.device}...")
+        print(f"🤖 Loading base model {BASE_MODEL} on {self.device}...")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+        # Load base model and tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
+            BASE_MODEL,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
             device_map="auto" if self.device == "cuda" else self.device,
             trust_remote_code=True,
         )
+
+        # Load and merge LoRA adapter
+        print(f"🎯 Loading LoRA adapter from {LORA_ADAPTER_PATH}...")
+        self.model = PeftModel.from_pretrained(self.model, LORA_ADAPTER_PATH)
+
+        # Merge LoRA weights into base model for inference speedup
+        print("⚡ Merging LoRA weights into base model...")
+        self.model = self.model.merge_and_unload()
+
         self.model.eval()
-        print("✅ Model loaded")
+        print("✅ Model and LoRA adapter loaded successfully")
 
     def generate(self, prompt: str, temp: float = 0.7, top_p: float = 0.9, max_tokens: int = 128) -> str:
         """Generate response from prompt."""
@@ -115,7 +130,12 @@ web_app = FastAPI()
 @web_app.get("/")
 def health() -> dict:
     """Health check endpoint."""
-    return {"status": "ok", "model": MODEL_NAME}
+    return {
+        "status": "ok",
+        "model": "soyebot-custom-model",
+        "base_model": BASE_MODEL,
+        "lora_adapter": LORA_ADAPTER_PATH,
+    }
 
 
 @web_app.post("/v1/chat/completions")
@@ -167,11 +187,11 @@ def chat_completions(request: ChatCompletionRequest) -> dict:
 
 
 # ============================================================================
-# Mount FastAPI app to Modal
+# Mount FastAPI app to Modal with Volume
 # ============================================================================
 
-@app.function()
+@app.function(volumes={"/model_vol": model_volume})
 @asgi_app()
 def api():
-    """Modal web app handler."""
+    """Modal web app handler with access to model volume."""
     return web_app
