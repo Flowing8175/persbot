@@ -38,6 +38,11 @@ class AppConfig:
 
     # --- Database Configuration ---
     database_path: str = 'soyebot.db'
+    # Gemini/LLM model tuning
+    # Temperature controls creativity (0.0 = deterministic, higher = more creative)
+    temperature: float = 0.8
+    # Frequency penalty discourages repetition of previously used words/phrases
+    frequency_penalty: float = 0.8
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
