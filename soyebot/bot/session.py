@@ -1,10 +1,10 @@
 """Chat session management for SoyeBot."""
 
-import time
 import logging
 import asyncio
+from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from config import AppConfig
@@ -15,20 +15,20 @@ from metrics import get_metrics
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class ChatSession:
-    """사용자별 채팅 세션 - now user-based instead of message-based"""
+    """Represents a very short-lived Gemini chat tied to a session key."""
     chat: object
     user_id: str
+    session_id: str
     last_activity_at: datetime
-    last_message_id: Optional[str] = None  # For threading
+    last_message_id: Optional[str] = None
 
-    def is_expired(self, ttl_minutes: int) -> bool:
-        expiry_time = self.last_activity_at + timedelta(minutes=ttl_minutes)
-        return datetime.now(timezone.utc) > expiry_time
 
 class SessionManager:
-    """사용자 기반 채팅 세션을 관리합니다 - Manages user-based sessions."""
+    """Keeps at most `max_session_records` active sessions to cap memory usage."""
+
     def __init__(
         self,
         config: AppConfig,
@@ -38,8 +38,7 @@ class SessionManager:
         self.config = config
         self.gemini_service = gemini_service
         self.db_service = db_service
-        self.sessions: dict[str, ChatSession] = {}  # user_id -> ChatSession
-        self.last_cleanup_time = time.time()
+        self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
 
     async def get_or_create(
         self,
@@ -47,78 +46,44 @@ class SessionManager:
         username: str,
         message_id: Optional[str] = None,
     ) -> Tuple[object, str]:
-        """Return an existing user session or lazily create a new one.
-
-        Sessions are kept user-based to provide multi-turn context and only
-        refreshed when expired, keeping memory usage predictable while
-        preserving conversation history within the TTL window.
-
-        Args:
-            user_id: Discord user ID
-            username: Discord username
-            message_id: Current message ID for threading
-
-        Returns:
-            Tuple of (chat_object, session_id)
-        """
+        """Retrieve a cached chat or start a new one while dropping old sessions."""
         user_id = str(user_id)
-        existing_session = self.sessions.get(user_id)
+        session_key = message_id or user_id
+        existing_session = self.sessions.get(session_key)
 
         if existing_session:
-            if existing_session.is_expired(self.config.session_ttl_minutes):
-                logger.info(f"세션 만료 - 새 대화 시작: {user_id}")
-                del self.sessions[user_id]
-            else:
-                logger.debug(f"기존 세션 재사용: {user_id}")
-                existing_session.last_activity_at = datetime.now(timezone.utc)
-                existing_session.last_message_id = message_id
-                return existing_session.chat, user_id
+            existing_session.last_activity_at = datetime.now(timezone.utc)
+            existing_session.last_message_id = message_id
+            self.sessions.move_to_end(session_key)
+            return existing_session.chat, user_id
 
-        logger.info(f"새 세션 생성: {user_id}")
+        logger.info(f"Creating new session {session_key} for user {user_id}")
 
-        # Ensure user exists in database (run in thread to avoid blocking event loop)
         await asyncio.to_thread(self.db_service.get_or_create_user, user_id, username)
 
-        # Use base system prompt without memory context
         system_prompt = BOT_PERSONA_PROMPT
-        logger.debug(f"System prompt length: {len(system_prompt)} characters")
 
-        # Create new model with system prompt (uses cached model, no overhead)
         assistant_model = self.gemini_service.create_assistant_model(system_prompt)
-
-        # Create new chat without separate history (few-shot examples are embedded in system prompt)
         chat = assistant_model.start_chat()
 
-        # Store session
-        self.sessions[user_id] = ChatSession(
+        self._enforce_capacity()
+
+        self.sessions[session_key] = ChatSession(
             chat=chat,
             user_id=user_id,
+            session_id=session_key,
             last_activity_at=datetime.now(timezone.utc),
             last_message_id=message_id,
         )
 
-        # Track session creation in metrics
         get_metrics().increment_counter('sessions_created')
 
         return chat, user_id
 
-    def cleanup_expired(self):
-        """Clean up expired sessions."""
-        now = time.time()
-        if now - self.last_cleanup_time < self.config.session_cleanup_interval:
-            return
-
-        expired_ids = [
-            uid for uid, session in self.sessions.items()
-            if session.is_expired(self.config.session_ttl_minutes)
-        ]
-        for uid in expired_ids:
-            logger.info(f"만료된 세션 정리: {uid}")
-            del self.sessions[uid]
-
-        if expired_ids:
-            logger.info(f"정리 완료: {len(expired_ids)}개 삭제, 남은 세션: {len(self.sessions)}개")
-            # Track cleanup in metrics
-            get_metrics().increment_counter('sessions_cleaned', len(expired_ids))
-
-        self.last_cleanup_time = now
+    def _enforce_capacity(self):
+        """Evict oldest sessions to keep memory bounded."""
+        limit = max(1, getattr(self.config, 'max_session_records', 2))
+        while len(self.sessions) >= limit:
+            evicted_key, evicted_session = self.sessions.popitem(last=False)
+            logger.info(f"Evicting session {evicted_key} (user {evicted_session.user_id}) to honor cache limit")
+            get_metrics().increment_counter('sessions_cleaned')

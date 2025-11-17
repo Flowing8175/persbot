@@ -32,8 +32,7 @@ class AppConfig:
     api_retry_backoff_max: float = 32.0  # Max backoff cap (seconds)
     progress_update_interval: float = 0.5
     countdown_update_interval: int = 5
-    session_ttl_minutes: int = 10
-    session_cleanup_interval: int = 300
+    max_session_records: int = 2
     command_prefix: str = '!'
 
     # --- Database Configuration ---

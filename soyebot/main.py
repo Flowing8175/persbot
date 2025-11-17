@@ -46,19 +46,6 @@ def setup_logging():
     logging.getLogger('discord.client').setLevel(logging.WARNING)
     logging.getLogger('discord.gateway').setLevel(logging.WARNING)
 
-    logger.debug("Logging configuration initialized")
-
-async def _background_session_cleanup(bot: commands.Bot, session_manager: SessionManager, cleanup_interval: int):
-    """Background task to clean up expired sessions periodically."""
-    await bot.wait_until_ready()
-    logger.info(f"세션 정리 백그라운드 태스크 시작 (간격: {cleanup_interval}초)")
-    while not bot.is_closed():
-        try:
-            session_manager.cleanup_expired()
-            await asyncio.sleep(cleanup_interval)
-        except Exception as e:
-            logger.error(f"세션 정리 중 오류: {e}", exc_info=True)
-            await asyncio.sleep(60)  # Retry after 1 minute on error
 
 async def main():
     """Initializes and runs the bot."""
@@ -89,11 +76,6 @@ async def main():
         await bot.add_cog(SummarizerCog(bot, config, gemini_service))
         await bot.add_cog(AssistantCog(bot, config, gemini_service, session_manager))
         logger.info("Cogs 로드 완료.")
-
-        # Start background session cleanup task (only once)
-        if not hasattr(bot, '_cleanup_task_started'):
-            bot._cleanup_task_started = True
-            bot.loop.create_task(_background_session_cleanup(bot, session_manager, config.session_cleanup_interval))
 
     @bot.event
     async def on_close():

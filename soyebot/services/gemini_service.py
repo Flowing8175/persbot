@@ -81,9 +81,7 @@ class GeminiService:
                 temperature=getattr(self.config, 'temperature', 1.0),
             )
             self._model_cache[key] = _CachedModel(self.client, model_name, config)
-            logger.debug(f"모델 캐시 생성: hash={key}, 캐시 크기={len(self._model_cache)}")
         else:
-            logger.debug(f"모델 캐시 재사용: hash={key}")
         return self._model_cache[key]
 
     def _build_tool_config(self, chat_session: Any, tools: list) -> genai_types.GenerateContentConfig:
@@ -134,49 +132,35 @@ class GeminiService:
             return
 
         try:
-            logger.debug(f"[RAW API REQUEST] User message length: {len(user_message)} characters")
-            logger.debug(f"[RAW API REQUEST] User message content: {user_message}")
-            logger.debug(f"[RAW API REQUEST] User message preview: {user_message[:200].replace(chr(10), ' ')}...")
 
             # Log tools if provided
             if tools:
-                logger.debug(f"[RAW API REQUEST] Tools provided: {len(tools)} tool(s)")
                 for tool_idx, tool in enumerate(tools):
                     tool_type = type(tool).__name__
-                    logger.debug(f"[RAW API REQUEST] Tool {tool_idx}: {tool_type}")
 
                     # Log function declarations if available
                     if hasattr(tool, 'function_declarations'):
                         funcs = tool.function_declarations
-                        logger.debug(f"[RAW API REQUEST]   Function declarations: {len(funcs)}")
                         for func_idx, func in enumerate(funcs):
                             func_name = func.name if hasattr(func, 'name') else 'unknown'
-                            logger.debug(f"[RAW API REQUEST]   [{func_idx}] {func_name}")
                             if hasattr(func, 'description'):
-                                logger.debug(f"[RAW API REQUEST]       Description: {func.description}")
                             if hasattr(func, 'parameters'):
                                 params = func.parameters
                                 if hasattr(params, 'properties'):
-                                    logger.debug(f"[RAW API REQUEST]       Parameters: {list(params.properties.keys())}")
             else:
-                logger.debug(f"[RAW API REQUEST] No tools provided - regular message mode")
 
             # Log chat session history if available
             if chat_session and hasattr(chat_session, 'get_history'):
                 try:
                     history = chat_session.get_history()
-                    logger.debug(f"[RAW API REQUEST] Chat history: {len(history)} message(s)")
                     for msg_idx, msg in enumerate(history[-5:]):  # Log last 5 messages
                         role = msg.role if hasattr(msg, 'role') else 'unknown'
                         if hasattr(msg, 'parts') and msg.parts:
                             for part_idx, part in enumerate(msg.parts):
                                 if hasattr(part, 'text') and part.text:
                                     text_preview = part.text[:100].replace('\n', ' ')
-                                    logger.debug(f"[RAW API REQUEST]   [{msg_idx}] {role}: {text_preview}... ({len(part.text)} chars)")
                 except Exception as e:
-                    logger.debug(f"[RAW API REQUEST] Could not log chat history: {e}")
 
-            logger.debug(f"[RAW API REQUEST] Raw request logging completed")
 
         except Exception as e:
             logger.error(f"[RAW API REQUEST] Error logging raw request: {e}", exc_info=True)
@@ -193,54 +177,40 @@ class GeminiService:
             return
 
         try:
-            logger.debug(f"[RAW API RESPONSE {attempt}] Response type: {type(response_obj).__name__}")
 
             # Log candidates
             if hasattr(response_obj, 'candidates'):
-                logger.debug(f"[RAW API RESPONSE {attempt}] Candidates count: {len(response_obj.candidates) if response_obj.candidates else 0}")
 
                 if response_obj.candidates:
                     for candidate_idx, candidate in enumerate(response_obj.candidates):
-                        logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {candidate_idx}:")
 
                         # Log candidate finish reason
                         if hasattr(candidate, 'finish_reason'):
-                            logger.debug(f"[RAW API RESPONSE {attempt}]   Finish reason: {candidate.finish_reason}")
 
                         # Log content parts
                         if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
                             parts = candidate.content.parts
-                            logger.debug(f"[RAW API RESPONSE {attempt}]   Content parts count: {len(parts)}")
 
                             for part_idx, part in enumerate(parts):
                                 part_type = type(part).__name__
-                                logger.debug(f"[RAW API RESPONSE {attempt}]   Part {part_idx}: {part_type}")
 
                                 if hasattr(part, 'text'):
                                     text_preview = part.text[:100].replace('\n', ' ') if part.text else "(empty)"
-                                    logger.debug(f"[RAW API RESPONSE {attempt}]     Text: {text_preview}... ({len(part.text)} chars)")
 
                                 if hasattr(part, 'function_call') and part.function_call:
                                     func_name = part.function_call.name if hasattr(part.function_call, 'name') else 'unknown'
                                     args_count = len(part.function_call.args) if hasattr(part.function_call, 'args') and part.function_call.args else 0
-                                    logger.debug(f"[RAW API RESPONSE {attempt}]     Function call: {func_name}({args_count} args)")
 
                                     if hasattr(part.function_call, 'args') and part.function_call.args:
                                         args_dict = dict(part.function_call.args)
-                                        logger.debug(f"[RAW API RESPONSE {attempt}]     Function args: {args_dict}")
 
             # Log usage data if available
             if hasattr(response_obj, 'usage_metadata'):
                 metadata = response_obj.usage_metadata
-                logger.debug(f"[RAW API RESPONSE {attempt}] Usage metadata:")
                 if hasattr(metadata, 'prompt_token_count'):
-                    logger.debug(f"[RAW API RESPONSE {attempt}]   Prompt tokens: {metadata.prompt_token_count}")
                 if hasattr(metadata, 'candidates_token_count'):
-                    logger.debug(f"[RAW API RESPONSE {attempt}]   Candidates tokens: {metadata.candidates_token_count}")
                 if hasattr(metadata, 'total_token_count'):
-                    logger.debug(f"[RAW API RESPONSE {attempt}]   Total tokens: {metadata.total_token_count}")
 
-            logger.debug(f"[RAW API RESPONSE {attempt}] Raw response logging completed")
 
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
@@ -268,27 +238,23 @@ class GeminiService:
 
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
-                logger.debug(f"[API Request {attempt}/{self.config.api_max_retries}] Starting {error_prefix}...")
 
                 # Call the model without threading - the Gemini API handles its own async
                 result = model_call()
 
                 # If result is a coroutine, await it
                 if asyncio.iscoroutine(result):
-                    logger.debug(f"[API Request {attempt}] Awaiting async result (timeout: {self.config.api_request_timeout}s)")
                     response = await asyncio.wait_for(
                         result,
                         timeout=self.config.api_request_timeout,
                     )
                 else:
                     # If it's a regular blocking call, run in thread
-                    logger.debug(f"[API Request {attempt}] Running blocking call in thread")
                     response = await asyncio.wait_for(
                         asyncio.to_thread(lambda: result),
                         timeout=self.config.api_request_timeout,
                     )
 
-                logger.debug(f"[API Request {attempt}] Response received successfully")
                 self._log_raw_response(response, attempt)
 
                 # Track successful API request
@@ -354,12 +320,9 @@ class GeminiService:
 
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():
-            logger.debug("Summarization requested for empty text")
             return "요약할 메시지가 없습니다."
         logger.info(f"Summarizing text ({len(text)} characters)...")
-        logger.debug(f"[RAW API REQUEST] Text to summarize:\n{text}")
         prompt = f"Discord 대화 내용:\n{text}"
-        logger.debug(f"[RAW API REQUEST] Full prompt being sent ({len(prompt)} characters):\n{prompt}")
         return await self._api_request_with_retry(
             lambda: self.summary_model.generate_content(prompt),
             "요약"
@@ -383,7 +346,6 @@ class GeminiService:
             Tuple of (response_text, response_object) or None
             response_object is the full response for parsing function calls when tools are provided
         """
-        logger.debug(f"Generating chat response - User message length: {len(user_message)}, Tools enabled: {tools is not None}")
 
         # Log raw request data
         self._log_raw_request(user_message, tools, chat_session)
@@ -391,14 +353,12 @@ class GeminiService:
         def api_call():
             if tools:
                 # Use function calling mode
-                logger.debug(f"[API REQUEST] Sending message with {len(tools)} tool(s)")
                 return chat_session.send_message(
                     user_message,
                     config=self._build_tool_config(chat_session, tools),
                 )
             else:
                 # Regular mode
-                logger.debug(f"[API REQUEST] Sending message without tools")
                 return chat_session.send_message(user_message)
 
         response_obj = await self._api_request_with_retry(
@@ -428,25 +388,20 @@ class GeminiService:
             # Extract text from parts manually (safest approach for mixed responses)
             text_parts = []
             if hasattr(response_obj, 'candidates') and response_obj.candidates:
-                logger.debug(f"Processing {len(response_obj.candidates)} candidates")
                 for candidate in response_obj.candidates:
                     if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
                         for part in candidate.content.parts:
                             # Only extract text parts, skip function_call parts
                             if hasattr(part, 'text') and part.text:
                                 text_parts.append(part.text)
-                                logger.debug(f"Found text part: {len(part.text)} characters")
                             elif hasattr(part, 'function_call'):
-                                logger.debug(f"Found function call part: {part.function_call.name if hasattr(part.function_call, 'name') else 'unknown'}")
 
             if text_parts:
                 combined = ' '.join(text_parts).strip()
-                logger.debug(f"Combined {len(text_parts)} text parts into {len(combined)} characters")
                 return combined
 
             # If no text parts found, return empty string
             # (this is normal when Gemini only returns function calls)
-            logger.debug("Response contains no text parts, only function calls")
             return ""
 
         except Exception as e:
@@ -465,7 +420,6 @@ class GeminiService:
         function_calls = []
         try:
             if hasattr(response_obj, 'candidates') and response_obj.candidates:
-                logger.debug(f"Parsing function calls from {len(response_obj.candidates)} candidates")
                 for candidate in response_obj.candidates:
                     if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
                         for part in candidate.content.parts:
@@ -476,7 +430,6 @@ class GeminiService:
                                     try:
                                         args = dict(part.function_call.args)
                                     except (TypeError, ValueError) as e:
-                                        logger.debug(f"Failed to convert args to dict: {e}, using empty dict")
                                         args = {}
 
                                 func_name = part.function_call.name if hasattr(part.function_call, 'name') else ''
@@ -484,8 +437,6 @@ class GeminiService:
                                     'name': func_name,
                                     'args': args,
                                 })
-                                logger.debug(f"Parsed function call: {func_name} with {len(args)} args")
-                logger.debug(f"Total function calls parsed: {len(function_calls)}")
         except Exception as e:
             logger.error(f"Failed to parse function calls: {e}", exc_info=True)
         return function_calls
