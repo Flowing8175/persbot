@@ -39,6 +39,8 @@ class SessionManager:
         self.gemini_service = gemini_service
         self.db_service = db_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
+        self.message_sessions: OrderedDict[str, str] = OrderedDict()
+        self.message_session_capacity = getattr(config, 'max_tracked_message_ids', 800)
 
     async def get_or_create(
         self,
@@ -78,7 +80,23 @@ class SessionManager:
 
         get_metrics().increment_counter('sessions_created')
 
-        return chat, user_id
+        return chat, session_key
+
+    def link_message_to_session(self, message_id: Optional[str], session_key: str) -> None:
+        """Remember which Discord message belongs to which session for reply chains."""
+        if not message_id or not session_key:
+            return
+        self.message_sessions[str(message_id)] = session_key
+        self.message_sessions.move_to_end(str(message_id))
+        while len(self.message_sessions) > self.message_session_capacity:
+            evicted_message, _ = self.message_sessions.popitem(last=False)
+            logger.debug(f"Dropped message {evicted_message} from session lookup (capacity {self.message_session_capacity})")
+
+    def get_session_for_message(self, message_id: Optional[str]) -> Optional[str]:
+        """Return the session key for a referenced message if we have seen it."""
+        if not message_id:
+            return None
+        return self.message_sessions.get(str(message_id))
 
     def _enforce_capacity(self):
         """Evict oldest sessions to keep memory bounded."""

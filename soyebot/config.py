@@ -33,6 +33,7 @@ class AppConfig:
     progress_update_interval: float = 0.5
     countdown_update_interval: int = 5
     max_session_records: int = 2
+    max_tracked_message_ids: int = 800
     command_prefix: str = '!'
 
     # --- Database Configuration ---

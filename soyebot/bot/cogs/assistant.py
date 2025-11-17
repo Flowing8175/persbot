@@ -28,6 +28,16 @@ class AssistantCog(commands.Cog):
         self.gemini_service = gemini_service
         self.session_manager = session_manager
 
+    def _determine_session_id(self, message: discord.Message) -> str:
+        """Resolve a stable session key for deep reply chains."""
+        if message.reference and message.reference.message_id:
+            referenced_id = str(message.reference.message_id)
+            existing_session = self.session_manager.get_session_for_message(referenced_id)
+            if existing_session:
+                return existing_session
+            return referenced_id
+        return str(message.id)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         # Ignore bot messages, messages without bot mention, or @everyone/@here mentions
@@ -52,15 +62,15 @@ class AssistantCog(commands.Cog):
             logger.info(f"Processing message from {message.author.name}: {user_message[:100]}")
 
             async with message.channel.typing():
-                # 세션 ID 결정: 리플라이 대상이 있으면 그 메시지 ID, 없으면 현재 메시지 ID
-                session_id = message.reference.message_id if message.reference else message.id
+                session_id = self._determine_session_id(message)
 
                 # Get or create user session (async to prevent blocking)
-                chat_session, user_id = await self.session_manager.get_or_create(
+                chat_session, session_key = await self.session_manager.get_or_create(
                     user_id=message.author.id,
                     username=message.author.name,
                     message_id=str(session_id),
                 )
+                self.session_manager.link_message_to_session(str(message.id), session_key)
 
                 response_result = await self.gemini_service.generate_chat_response(
                     chat_session,
@@ -74,7 +84,12 @@ class AssistantCog(commands.Cog):
                     # Only reply if there's text content
                     # (Some responses may be non-text, so skip replying)
                     if response_text:
-                        await message.reply(response_text, mention_author=False)
+                        reply_message = await message.reply(response_text, mention_author=False)
+                        if reply_message:
+                            self.session_manager.link_message_to_session(
+                                str(reply_message.id),
+                                session_key,
+                            )
                     else:
                         logger.debug("Gemini returned no text response for the mention.")
                 # else: The error message is now handled by gemini_service._api_request_with_retry
