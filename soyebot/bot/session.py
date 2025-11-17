@@ -47,10 +47,11 @@ class SessionManager:
         username: str,
         message_id: Optional[str] = None,
     ) -> Tuple[object, str]:
-        """Create a fresh session for each @mention (memory optimization for 1GB RAM).
+        """Return an existing user session or lazily create a new one.
 
-        Each @mention starts a new conversation with no history persistence.
-        This dramatically reduces memory usage in production.
+        Sessions are kept user-based to provide multi-turn context and only
+        refreshed when expired, keeping memory usage predictable while
+        preserving conversation history within the TTL window.
 
         Args:
             user_id: Discord user ID
@@ -61,15 +62,19 @@ class SessionManager:
             Tuple of (chat_object, session_id)
         """
         user_id = str(user_id)
+        existing_session = self.sessions.get(user_id)
 
-        # Always delete existing session to force fresh start per @mention
-        # This prevents memory accumulation from chat history (critical for 1GB RAM)
-        if user_id in self.sessions:
-            logger.info(f"기존 세션 삭제 (새 대화 시작): {user_id}")
-            del self.sessions[user_id]
+        if existing_session:
+            if existing_session.is_expired(self.config.session_ttl_minutes):
+                logger.info(f"세션 만료 - 새 대화 시작: {user_id}")
+                del self.sessions[user_id]
+            else:
+                logger.debug(f"기존 세션 재사용: {user_id}")
+                existing_session.last_activity_at = datetime.now(timezone.utc)
+                existing_session.last_message_id = message_id
+                return existing_session.chat, user_id
 
-        # Create new session
-        logger.info(f"새 세션 생성 (메모리 최적화 - 이력 없음): {user_id}")
+        logger.info(f"새 세션 생성: {user_id}")
 
         # Ensure user exists in database (run in thread to avoid blocking event loop)
         await asyncio.to_thread(self.db_service.get_or_create_user, user_id, username)
