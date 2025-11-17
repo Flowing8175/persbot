@@ -23,7 +23,7 @@ class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
     gemini_api_key: str
-    model_name: str = 'gemini-2.5-flash'
+    model_name: str = 'gemini-2.5-flash-lite'
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
@@ -39,7 +39,7 @@ class AppConfig:
     database_path: str = 'soyebot.db'
     # Gemini/LLM model tuning
     # Temperature controls creativity (0.0 = deterministic, higher = more creative)
-    temperature: float = 1.3
+    temperature: float = 1.0
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""

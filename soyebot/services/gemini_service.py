@@ -82,7 +82,7 @@ class GeminiService:
             )
             self._model_cache[key] = _CachedModel(self.client, model_name, config)
         else:
-        return self._model_cache[key]
+            return self._model_cache[key]
 
     def _build_tool_config(self, chat_session: Any, tools: list) -> genai_types.GenerateContentConfig:
         """Clone the base config and attach tools for a single request."""
