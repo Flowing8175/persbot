@@ -55,7 +55,7 @@ class AssistantCog(commands.Cog):
                 # 세션 ID 결정: 리플라이 대상이 있으면 그 메시지 ID, 없으면 현재 메시지 ID
                 session_id = message.reference.message_id if message.reference else message.id
 
-                # Get or create user session with memory context (async to prevent blocking)
+                # Get or create user session (async to prevent blocking)
                 chat_session, user_id = await self.session_manager.get_or_create(
                     user_id=message.author.id,
                     username=message.author.name,
@@ -72,11 +72,11 @@ class AssistantCog(commands.Cog):
                     response_text, response_obj = response_result
 
                     # Only reply if there's text content
-                    # (Gemini might return only function calls without text)
+                    # (Some responses may be non-text, so skip replying)
                     if response_text:
                         await message.reply(response_text, mention_author=False)
                     else:
-                        # If only function calls were returned, log but don't reply
+                        logger.debug("Gemini returned no text response for the mention.")
                 # else: The error message is now handled by gemini_service._api_request_with_retry
 
             # Track successful message processing

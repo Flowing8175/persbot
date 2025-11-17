@@ -1,10 +1,9 @@
 """Database module for SoyeBot."""
 
-from .models import Base, User, Memory, InteractionPattern
+from .models import Base, User, InteractionPattern
 
 __all__ = [
     'Base',
     'User',
-    'Memory',
     'InteractionPattern',
 ]

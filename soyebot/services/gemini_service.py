@@ -1,7 +1,6 @@
 "Gemini API service for SoyeBot."
 
 import asyncio
-import copy
 import time
 import re
 import logging
@@ -84,18 +83,6 @@ class GeminiService:
         else:
             return self._model_cache[key]
 
-    def _build_tool_config(self, chat_session: Any, tools: list) -> genai_types.GenerateContentConfig:
-        """Clone the base config and attach tools for a single request."""
-        base_config = getattr(chat_session, '_config', None)
-        if base_config:
-            config = copy.deepcopy(base_config)
-        else:
-            config = genai_types.GenerateContentConfig(
-                temperature=getattr(self.config, 'temperature', 1.0),
-            )
-        config.tools = tools
-        return config
-
     def create_assistant_model(self, system_instruction: str) -> _CachedModel:
         """Create or retrieve a cached assistant model with custom system instruction.
 
@@ -119,99 +106,59 @@ class GeminiService:
             return float(match.group(1))
         return None
 
-    def _log_raw_request(self, user_message: str, tools: Optional[list] = None, chat_session: Any = None) -> None:
-        """Log raw API request data being sent.
-
-        Args:
-            user_message: The user message being sent
-            tools: Optional function calling tools
-            chat_session: The chat session object for logging history
-        """
-        # Skip expensive logging if debug level is not enabled
+    def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
+        """Log raw API request data being sent (debug level only)."""
         if not logger.isEnabledFor(logging.DEBUG):
             return
 
         try:
+            logger.debug(f"[RAW API REQUEST] User message preview: {user_message[:200]!r}")
 
-            # Log tools if provided
-            if tools:
-                for tool_idx, tool in enumerate(tools):
-                    tool_type = type(tool).__name__
-
-                    # Log function declarations if available
-                    if hasattr(tool, 'function_declarations'):
-                        funcs = tool.function_declarations
-                        for func_idx, func in enumerate(funcs):
-                            func_name = func.name if hasattr(func, 'name') else 'unknown'
-                            if hasattr(func, 'description'):
-                            if hasattr(func, 'parameters'):
-                                params = func.parameters
-                                if hasattr(params, 'properties'):
-            else:
-
-            # Log chat session history if available
             if chat_session and hasattr(chat_session, 'get_history'):
-                try:
-                    history = chat_session.get_history()
-                    for msg_idx, msg in enumerate(history[-5:]):  # Log last 5 messages
-                        role = msg.role if hasattr(msg, 'role') else 'unknown'
-                        if hasattr(msg, 'parts') and msg.parts:
-                            for part_idx, part in enumerate(msg.parts):
-                                if hasattr(part, 'text') and part.text:
-                                    text_preview = part.text[:100].replace('\n', ' ')
-                except Exception as e:
-
-
+                history = chat_session.get_history()
+                formatted_history = []
+                for msg in history[-5:]:
+                    role = getattr(msg, 'role', 'unknown')
+                    parts = getattr(msg, 'parts', [])
+                    texts = []
+                    for part in parts:
+                        text = getattr(part, 'text', '')
+                        if text:
+                            texts.append(text[:100].replace('\n', ' '))
+                    formatted_history.append(f"{role}: {' '.join(texts)}")
+                if formatted_history:
+                    logger.debug("[RAW API REQUEST] Recent history:\n" + "\n".join(formatted_history))
         except Exception as e:
             logger.error(f"[RAW API REQUEST] Error logging raw request: {e}", exc_info=True)
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
-        """Log raw API response data for debugging.
-
-        Args:
-            response_obj: The response object from Gemini API
-            attempt: The current attempt number
-        """
-        # Skip expensive logging if debug level is not enabled
+        """Log raw API response data for debugging."""
         if not logger.isEnabledFor(logging.DEBUG):
             return
 
         try:
+            if hasattr(response_obj, 'candidates') and response_obj.candidates:
+                for idx, candidate in enumerate(response_obj.candidates):
+                    finish_reason = getattr(candidate, 'finish_reason', 'unknown')
+                    logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} finish_reason={finish_reason}")
+                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                        texts = []
+                        for part in candidate.content.parts:
+                            text = getattr(part, 'text', '')
+                            if text:
+                                texts.append(text[:200].replace('\n', ' '))
+                        if texts:
+                            logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}")
 
-            # Log candidates
-            if hasattr(response_obj, 'candidates'):
-
-                if response_obj.candidates:
-                    for candidate_idx, candidate in enumerate(response_obj.candidates):
-
-                        # Log candidate finish reason
-                        if hasattr(candidate, 'finish_reason'):
-
-                        # Log content parts
-                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                            parts = candidate.content.parts
-
-                            for part_idx, part in enumerate(parts):
-                                part_type = type(part).__name__
-
-                                if hasattr(part, 'text'):
-                                    text_preview = part.text[:100].replace('\n', ' ') if part.text else "(empty)"
-
-                                if hasattr(part, 'function_call') and part.function_call:
-                                    func_name = part.function_call.name if hasattr(part.function_call, 'name') else 'unknown'
-                                    args_count = len(part.function_call.args) if hasattr(part.function_call, 'args') and part.function_call.args else 0
-
-                                    if hasattr(part.function_call, 'args') and part.function_call.args:
-                                        args_dict = dict(part.function_call.args)
-
-            # Log usage data if available
-            if hasattr(response_obj, 'usage_metadata'):
-                metadata = response_obj.usage_metadata
-                if hasattr(metadata, 'prompt_token_count'):
-                if hasattr(metadata, 'candidates_token_count'):
-                if hasattr(metadata, 'total_token_count'):
-
-
+            metadata = getattr(response_obj, 'usage_metadata', None)
+            if metadata:
+                prompt_tokens = getattr(metadata, 'prompt_token_count', 'unknown')
+                response_tokens = getattr(metadata, 'candidates_token_count', 'unknown')
+                total_tokens = getattr(metadata, 'total_token_count', 'unknown')
+                logger.debug(
+                    f"[RAW API RESPONSE {attempt}] Token usage "
+                    f"(prompt={prompt_tokens}, response={response_tokens}, total={total_tokens})"
+                )
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
@@ -333,33 +280,14 @@ class GeminiService:
         chat_session,
         user_message: str,
         discord_message: discord.Message,
-        tools: Optional[list] = None,
-    ) -> Optional[Tuple[str, Optional[Any]]]:
-        """Generate chat response with optional function calling support.
-
-        Args:
-            chat_session: Gemini chat session
-            user_message: User message
-            tools: Optional list of function calling tools
-
-        Returns:
-            Tuple of (response_text, response_object) or None
-            response_object is the full response for parsing function calls when tools are provided
-        """
+    ) -> Optional[Tuple[str, Any]]:
+        """Generate chat response."""
 
         # Log raw request data
-        self._log_raw_request(user_message, tools, chat_session)
+        self._log_raw_request(user_message, chat_session)
 
         def api_call():
-            if tools:
-                # Use function calling mode
-                return chat_session.send_message(
-                    user_message,
-                    config=self._build_tool_config(chat_session, tools),
-                )
-            else:
-                # Regular mode
-                return chat_session.send_message(user_message)
+            return chat_session.send_message(user_message)
 
         response_obj = await self._api_request_with_retry(
             api_call,
@@ -371,72 +299,34 @@ class GeminiService:
         if response_obj is None:
             return None
 
-        # Extract text from response, handling function calls properly
+        # Extract text from response
         response_text = self._extract_text_from_response(response_obj)
-        return (response_text, response_obj if tools else None)
+        return (response_text, response_obj)
 
     def _extract_text_from_response(self, response_obj) -> str:
-        """Extract text from Gemini response, handling function calls properly.
+        """Extract text content from Gemini response.
 
         Args:
             response_obj: Gemini response object
 
         Returns:
-            Extracted text from response, or empty string if only function calls
+            Extracted text from response, or empty string if no text parts exist
         """
         try:
-            # Extract text from parts manually (safest approach for mixed responses)
             text_parts = []
             if hasattr(response_obj, 'candidates') and response_obj.candidates:
                 for candidate in response_obj.candidates:
                     if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
                         for part in candidate.content.parts:
-                            # Only extract text parts, skip function_call parts
                             if hasattr(part, 'text') and part.text:
                                 text_parts.append(part.text)
-                            elif hasattr(part, 'function_call'):
 
             if text_parts:
                 combined = ' '.join(text_parts).strip()
                 return combined
 
-            # If no text parts found, return empty string
-            # (this is normal when Gemini only returns function calls)
             return ""
 
         except Exception as e:
             logger.error(f"Failed to extract text from response: {e}", exc_info=True)
             return ""
-
-    def parse_function_calls(self, response_obj) -> list:
-        """Parse function calls from Gemini response.
-
-        Args:
-            response_obj: Gemini response object
-
-        Returns:
-            List of function call dictionaries
-        """
-        function_calls = []
-        try:
-            if hasattr(response_obj, 'candidates') and response_obj.candidates:
-                for candidate in response_obj.candidates:
-                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'function_call') and part.function_call:
-                                # Safely handle args which might be None
-                                args = {}
-                                if hasattr(part.function_call, 'args') and part.function_call.args:
-                                    try:
-                                        args = dict(part.function_call.args)
-                                    except (TypeError, ValueError) as e:
-                                        args = {}
-
-                                func_name = part.function_call.name if hasattr(part.function_call, 'name') else ''
-                                function_calls.append({
-                                    'name': func_name,
-                                    'args': args,
-                                })
-        except Exception as e:
-            logger.error(f"Failed to parse function calls: {e}", exc_info=True)
-        return function_calls

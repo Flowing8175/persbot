@@ -2,12 +2,12 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
-from database.models import Base, User, Memory, InteractionPattern
+from database.models import Base, User, InteractionPattern
 
 logger = logging.getLogger(__name__)
 
@@ -108,108 +108,6 @@ class DatabaseService:
         finally:
             session.close()
 
-    # --- Memory Operations ---
-
-    def save_memory(
-        self,
-        memory_type: str,
-        content: str,
-        importance_score: float = 0.5,
-        embedding: Optional[bytes] = None,
-    ) -> Memory:
-        """Save a unified memory (shared across all users).
-
-        Args:
-            memory_type: Type of memory ('fact', 'preference', 'key_memory')
-            content: Memory content
-            importance_score: Importance score (0.0-1.0)
-            embedding: Binary encoded embedding vector
-
-        Returns:
-            Memory object
-        """
-        session = self.get_session()
-        try:
-            memory = Memory(
-                memory_type=memory_type,
-                content=content,
-                importance_score=importance_score,
-                embedding=embedding,
-            )
-            session.add(memory)
-            session.commit()
-            logger.info(f"Saved unified memory: {memory_type}")
-            return memory
-        except Exception as e:
-            logger.error(f"Failed to save memory: {e}")
-            session.rollback()
-            raise
-        finally:
-            session.close()
-
-    def get_memories(
-        self,
-        memory_type: Optional[str] = None,
-        limit: int = 20,
-    ) -> List[Memory]:
-        """Get unified memories (shared across all users).
-
-        Args:
-            memory_type: Filter by memory type (optional)
-            limit: Maximum number of memories to return
-
-        Returns:
-            List of Memory objects
-        """
-        session = self.get_session()
-        try:
-            query = session.query(Memory)
-            if memory_type:
-                query = query.filter_by(memory_type=memory_type)
-            memories = query.order_by(Memory.importance_score.desc(), Memory.timestamp.desc()).limit(limit).all()
-            return memories
-        finally:
-            session.close()
-
-    def delete_memory(self, memory_id: int) -> bool:
-        """Delete a memory by ID.
-
-        Args:
-            memory_id: Memory ID
-
-        Returns:
-            True if deleted, False otherwise
-        """
-        session = self.get_session()
-        try:
-            memory = session.query(Memory).filter_by(id=memory_id).first()
-            if memory:
-                session.delete(memory)
-                session.commit()
-                logger.info(f"Deleted memory {memory_id}")
-                return True
-            return False
-        finally:
-            session.close()
-
-    def delete_all_memories(self, user_id: str = None) -> int:
-        """Delete all unified memories (shared across all users).
-
-        Args:
-            user_id: Discord user ID (ignored for unified memory, kept for compatibility)
-
-        Returns:
-            Number of deleted memories
-        """
-        session = self.get_session()
-        try:
-            count = session.query(Memory).delete()
-            session.commit()
-            logger.info(f"Deleted {count} unified memories")
-            return count
-        finally:
-            session.close()
-
     # --- Interaction Pattern Operations ---
 
     def get_or_create_interaction_pattern(self, user_id: str) -> InteractionPattern:
@@ -307,7 +205,6 @@ class DatabaseService:
         try:
             return {
                 'total_users': session.query(func.count(User.id)).scalar(),
-                'total_memories': session.query(func.count(Memory.id)).scalar(),
                 'users_with_patterns': session.query(func.count(InteractionPattern.id)).scalar(),
             }
         finally:

@@ -18,7 +18,7 @@ class HelpCog(commands.Cog):
         """봇의 전체 기능을 설명하는 도움말을 표시합니다.
 
         사용법: !도움말 [기능명]
-        예: !도움말 기억, !도움말 요약, !도움말 ai
+        예: !도움말 요약, !도움말 ai
         """
         try:
             # Parse subcommand argument
@@ -47,23 +47,6 @@ class HelpCog(commands.Cog):
                 inline=False,
             )
 
-            # Memory Management Commands
-            embed.add_field(
-                name="📝 기억 관리 명령어",
-                value="**`!기억 [내용]`** - 내용을 기억에 저장\n"
-                      "예: `!기억 나는 파이썬을 좋아한다`\n\n"
-                      "**`!기억목록`** - 저장된 모든 기억 조회\n"
-                      "예: `!기억목록`\n\n"
-                      "**`!기억삭제 [ID]`** - 특정 기억 삭제\n"
-                      "예: `!기억삭제 123`\n\n"
-                      "**`!기억초기화`** - 모든 기억 초기화 (확인 필요)\n"
-                      "예: `!기억초기화`\n\n"
-                      "**`!기억설정 [모드]`** - 검색 모드 설정\n"
-                      "모드: `inject_all` 또는 `semantic_search`\n"
-                      "예: `!기억설정 semantic_search`",
-                inline=False,
-            )
-
             # Summarization Commands
             embed.add_field(
                 name="📊 요약 명령어",
@@ -81,9 +64,8 @@ class HelpCog(commands.Cog):
             # Advanced Features
             embed.add_field(
                 name="✨ 고급 기능",
-                value="**기억 통합:** AI 어시스턴트가 저장된 기억을 활용합니다\n"
-                      "**의미론적 검색:** 관련된 기억을 자동으로 찾습니다\n"
-                      "**상호작용 분석:** 당신의 선호와 패턴을 분석합니다",
+                value="**고정 프롬프트 페르소나:** 캐릭터 일관성을 유지합니다\n"
+                      "**상호작용 분석:** 사용자 기본 통계를 추적합니다",
                 inline=False,
             )
 
@@ -92,8 +74,7 @@ class HelpCog(commands.Cog):
                 name="💡 팁",
                 value="• 명령어는 대소문자를 구분하지 않습니다\n"
                       "• 많은 명령어가 별칭(alias)을 지원합니다\n"
-                      "• 예: `!기억`, `!save`, `!memory` 모두 같은 명령어\n"
-                      "• AI 어시스턴트와의 대화는 자동으로 기억됩니다",
+                      "• @mention 대화는 항상 새로운 세션으로 처리됩니다",
                 inline=False,
             )
 
@@ -110,7 +91,7 @@ class HelpCog(commands.Cog):
             )
 
             embed.set_footer(
-                text="더 자세한 정보가 필요하면 각 명령어 앞에 !도움말을 붙이세요. 예: !도움말 기억"
+                text="더 자세한 정보가 필요하면 각 명령어 앞에 !도움말을 붙이세요. 예: !도움말 요약"
             )
 
             await ctx.reply(embed=embed, mention_author=False)
@@ -128,28 +109,9 @@ class HelpCog(commands.Cog):
 
         Args:
             ctx: Command context
-            feature: Feature name (기억, 요약, ai, etc.)
+            feature: Feature name (요약, ai, etc.)
         """
         feature_helps = {
-            '기억': {
-                'title': '📝 기억 관리 명령어',
-                'content': (
-                    "**`!기억 [내용]`** - 내용을 기억에 저장\n"
-                    "예: `!기억 나는 파이썬을 좋아한다`\n\n"
-                    "**`!기억목록`** - 저장된 모든 기억 조회\n"
-                    "예: `!기억목록`\n\n"
-                    "**`!기억삭제 [ID]`** - 특정 기억 삭제\n"
-                    "예: `!기억삭제 123`\n\n"
-                    "**`!기억초기화`** - 모든 기억 초기화 (확인 필요)\n"
-                    "예: `!기억초기화`\n\n"
-                    "**`!기억설정 [모드]`** - 검색 모드 설정\n"
-                    "모드: `inject_all` 또는 `semantic_search`\n"
-                    "예: `!기억설정 semantic_search`\n\n"
-                    "**`!기억통계`** - 기억 통계 조회\n"
-                    "예: `!기억통계`"
-                ),
-                'color': discord.Color.blue(),
-            },
             '요약': {
                 'title': '📊 요약 명령어',
                 'content': (
@@ -173,32 +135,14 @@ class HelpCog(commands.Cog):
                     "봇을 멘션(@mention)하면 AI가 대화합니다.\n\n"
                     "**기능:**\n"
                     "• 자연스러운 대화\n"
-                    "• 기억 기능과 통합\n"
                     "• 복잡한 질문 처리\n"
-                    "• 추가 정보 학습\n\n"
+                    "• 고정된 캐릭터 페르소나 유지\n\n"
                     "**사용법:** `@SoyeBot 안녕! 오늘 날씨 어때?`\n\n"
                     "**팁:**\n"
-                    "• 대화는 자동으로 저장됩니다\n"
-                    "• AI가 당신의 기억을 활용합니다\n"
+                    "• 각 멘션은 독립 세션입니다\n"
                     "• 자연스러운 한국어로 대화할 수 있습니다"
                 ),
                 'color': discord.Color.purple(),
-            },
-            '검색': {
-                'title': '🔍 의미론적 검색',
-                'content': (
-                    "저장된 기억 중 관련된 내용을 자동으로 찾습니다.\n\n"
-                    "**기능:**\n"
-                    "• 자동 의미론적 검색: AI가 관련 기억을 찾습니다\n"
-                    "• 전체 기억 주입: 모든 기억을 항상 제공합니다\n\n"
-                    "**설정 방법:**\n"
-                    "`!기억설정 semantic_search` - 의미론적 검색 사용\n"
-                    "`!기억설정 inject_all` - 모든 기억 항상 제공\n\n"
-                    "**추천:**\n"
-                    "• 기억이 적으면: `inject_all`\n"
-                    "• 기억이 많으면: `semantic_search`"
-                ),
-                'color': discord.Color.green(),
             },
         }
 
@@ -235,10 +179,8 @@ class HelpCog(commands.Cog):
 
             features = [
                 ("🤖 AI 대화", "봇을 멘션하면 Google Gemini API를 통한 AI와 대화"),
-                ("💾 기억 시스템", "사용자와의 대화 내용을 저장하고 나중에 활용"),
                 ("📝 요약 기능", "채팅 내용을 자동으로 요약"),
-                ("🔍 의미론적 검색", "저장된 기억 중 관련된 내용을 자동으로 찾음"),
-                ("📊 통계 분석", "상호작용 패턴과 선호 주제 분석"),
+                ("📊 통계 분석", "상호작용 패턴과 기본적인 선호 주제 분석"),
                 ("🌐 다국어 지원", "한글 명령어와 안내말"),
             ]
 

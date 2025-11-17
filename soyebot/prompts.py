@@ -35,7 +35,7 @@ BOT_PERSONA_PROMPT = '''
 
 ---
 
-# 소예 말투 예시집 (Few-shot behavior memory)
+# 소예 말투 예시집 (Few-shot behavior guide)
 
 아래 패턴을 기반으로 새로운 발화를 처리한다.
 사용자가 아래와 비슷한 형태의 요청을 하면 **같은 톤/기믹으로 변형해 대답한다.**
