@@ -25,7 +25,7 @@ class AppConfig:
     gemini_api_key: str
     model_name: str = 'gemini-2.5-flash'
     max_messages_per_fetch: int = 300
-    api_max_retries: int = 5  # Increased from 2 for better reliability
+    api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
     api_request_timeout: int = 30
     api_retry_backoff_base: float = 2.0  # Exponential backoff base
@@ -40,9 +40,7 @@ class AppConfig:
     database_path: str = 'soyebot.db'
     # Gemini/LLM model tuning
     # Temperature controls creativity (0.0 = deterministic, higher = more creative)
-    temperature: float = 0.8
-    # Frequency penalty discourages repetition of previously used words/phrases
-    frequency_penalty: float = 0.8
+    temperature: float = 1.3
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""

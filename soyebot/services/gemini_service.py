@@ -76,11 +76,9 @@ class GeminiService:
         """
         key = hash(system_instruction)
         if key not in self._model_cache:
-            # Create model with configurable temperature and frequency penalty
             config = genai_types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=getattr(self.config, 'temperature', 0.8),
-                frequency_penalty=getattr(self.config, 'frequency_penalty', 0.8),
+                temperature=getattr(self.config, 'temperature', 1.0),
             )
             self._model_cache[key] = _CachedModel(self.client, model_name, config)
             logger.debug(f"모델 캐시 생성: hash={key}, 캐시 크기={len(self._model_cache)}")
@@ -95,8 +93,7 @@ class GeminiService:
             config = copy.deepcopy(base_config)
         else:
             config = genai_types.GenerateContentConfig(
-                temperature=getattr(self.config, 'temperature', 0.8),
-                frequency_penalty=getattr(self.config, 'frequency_penalty', 0.8),
+                temperature=getattr(self.config, 'temperature', 1.0),
             )
         config.tools = tools
         return config
