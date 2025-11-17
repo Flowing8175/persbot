@@ -1,13 +1,15 @@
 "Gemini API service for SoyeBot."
 
-import google.generativeai as genai
 import asyncio
+import copy
 import time
 import re
 import logging
 from typing import Optional, Tuple, Any
 
 import discord
+import google.genai as genai
+from google.genai import types as genai_types
 
 from config import AppConfig
 from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
@@ -15,15 +17,43 @@ from metrics import get_metrics
 
 logger = logging.getLogger(__name__)
 
+
+class _CachedModel:
+    """Lightweight wrapper that mimics the old GenerativeModel interface."""
+
+    def __init__(
+        self,
+        client: genai.Client,
+        model_name: str,
+        config: genai_types.GenerateContentConfig,
+    ):
+        self._client = client
+        self._model_name = model_name
+        self._config = config
+
+    def generate_content(self, contents: str):
+        return self._client.models.generate_content(
+            model=self._model_name,
+            contents=contents,
+            config=self._config,
+        )
+
+    def start_chat(self):
+        return self._client.chats.create(
+            model=self._model_name,
+            config=self._config,
+        )
+
+
 class GeminiService:
     """Gemini API와의 모든 상호작용을 관리합니다."""
 
     def __init__(self, config: AppConfig):
         self.config = config
-        genai.configure(api_key=config.gemini_api_key)
+        self.client = genai.Client(api_key=config.gemini_api_key)
 
-        # Cache for model instances by system instruction hash
-        self._model_cache = {}
+        # Cache wrapper instances keyed by system instruction hash
+        self._model_cache: dict[int, _CachedModel] = {}
 
         # Pre-load default models using cache
         self.summary_model = self._get_or_create_model(
@@ -32,9 +62,9 @@ class GeminiService:
         self.assistant_model = self._get_or_create_model(
             config.model_name, BOT_PERSONA_PROMPT
         )
-        logger.info(f"Gemini 모델 '{config.model_name}' 로드 완료. (모델 캐시 활성화)")
+        logger.info(f"Gemini 모델 '{config.model_name}' 로드 완료. (구성 캐시 활성화)")
 
-    def _get_or_create_model(self, model_name: str, system_instruction: str) -> genai.GenerativeModel:
+    def _get_or_create_model(self, model_name: str, system_instruction: str) -> _CachedModel:
         """Get cached model instance or create new one.
 
         Args:
@@ -42,30 +72,43 @@ class GeminiService:
             system_instruction: System instruction for the model
 
         Returns:
-            Cached or newly created GenerativeModel instance
+            Cached or newly created model wrapper instance
         """
         key = hash(system_instruction)
         if key not in self._model_cache:
             # Create model with configurable temperature and frequency penalty
-            self._model_cache[key] = genai.GenerativeModel(
-                model_name,
+            config = genai_types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=getattr(self.config, 'temperature', 0.8),
                 frequency_penalty=getattr(self.config, 'frequency_penalty', 0.8),
             )
+            self._model_cache[key] = _CachedModel(self.client, model_name, config)
             logger.debug(f"모델 캐시 생성: hash={key}, 캐시 크기={len(self._model_cache)}")
         else:
             logger.debug(f"모델 캐시 재사용: hash={key}")
         return self._model_cache[key]
 
-    def create_assistant_model(self, system_instruction: str) -> genai.GenerativeModel:
+    def _build_tool_config(self, chat_session: Any, tools: list) -> genai_types.GenerateContentConfig:
+        """Clone the base config and attach tools for a single request."""
+        base_config = getattr(chat_session, '_config', None)
+        if base_config:
+            config = copy.deepcopy(base_config)
+        else:
+            config = genai_types.GenerateContentConfig(
+                temperature=getattr(self.config, 'temperature', 0.8),
+                frequency_penalty=getattr(self.config, 'frequency_penalty', 0.8),
+            )
+        config.tools = tools
+        return config
+
+    def create_assistant_model(self, system_instruction: str) -> _CachedModel:
         """Create or retrieve a cached assistant model with custom system instruction.
 
         Args:
             system_instruction: Custom system instruction for the model
 
         Returns:
-            GenerativeModel instance with the custom instruction (cached if possible)
+            Model wrapper instance with the custom instruction (cached if possible)
         """
         return self._get_or_create_model(self.config.model_name, system_instruction)
 
@@ -122,9 +165,9 @@ class GeminiService:
                 logger.debug(f"[RAW API REQUEST] No tools provided - regular message mode")
 
             # Log chat session history if available
-            if chat_session and hasattr(chat_session, 'history'):
+            if chat_session and hasattr(chat_session, 'get_history'):
                 try:
-                    history = chat_session.history
+                    history = chat_session.get_history()
                     logger.debug(f"[RAW API REQUEST] Chat history: {len(history)} message(s)")
                     for msg_idx, msg in enumerate(history[-5:]):  # Log last 5 messages
                         role = msg.role if hasattr(msg, 'role') else 'unknown'
@@ -354,7 +397,7 @@ class GeminiService:
                 logger.debug(f"[API REQUEST] Sending message with {len(tools)} tool(s)")
                 return chat_session.send_message(
                     user_message,
-                    tools=tools,
+                    config=self._build_tool_config(chat_session, tools),
                 )
             else:
                 # Regular mode
@@ -412,6 +455,7 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Failed to extract text from response: {e}", exc_info=True)
             return ""
+
     def parse_function_calls(self, response_obj) -> list:
         """Parse function calls from Gemini response.
 

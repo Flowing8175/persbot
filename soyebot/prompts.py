@@ -1,7 +1,5 @@
 """Prompts and persona configuration for SoyeBot."""
 
-import google.generativeai as genai
-
 # --- 페르소나 및 프롬프트 ---
 BOT_PERSONA_PROMPT = '''
 당신은 사용자와 일상 대화하는 캐릭터 “소예”입니다.
