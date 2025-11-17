@@ -17,6 +17,7 @@ from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
 from bot.cogs.help import HelpCog
+from bot.cogs.auto_channel import AutoChannelCog
 from web.metrics_server import start_metrics_server_background
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,8 @@ async def main():
         await bot.add_cog(HelpCog(bot))
         await bot.add_cog(SummarizerCog(bot, config, gemini_service))
         await bot.add_cog(AssistantCog(bot, config, gemini_service, session_manager))
+        if config.auto_reply_channel_ids:
+            await bot.add_cog(AutoChannelCog(bot, config, gemini_service, session_manager))
         logger.info("Cogs 로드 완료.")
 
     @bot.event

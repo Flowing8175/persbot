@@ -4,6 +4,7 @@ import os
 import sys
 import logging
 from dataclasses import dataclass
+from typing import Tuple
 from dotenv import load_dotenv
 
 # --- 로딩 및 기본 설정 ---
@@ -32,8 +33,6 @@ class AppConfig:
     api_retry_backoff_max: float = 32.0  # Max backoff cap (seconds)
     progress_update_interval: float = 0.5
     countdown_update_interval: int = 5
-    max_session_records: int = 2
-    max_tracked_message_ids: int = 800
     command_prefix: str = '!'
 
     # --- Database Configuration ---
@@ -41,6 +40,8 @@ class AppConfig:
     # Gemini/LLM model tuning
     # Temperature controls creativity (0.0 = deterministic, higher = more creative)
     temperature: float = 1.0
+    # Channels where every message should be auto-processed by Gemini
+    auto_reply_channel_ids: Tuple[int, ...] = ()
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
@@ -51,4 +52,19 @@ def load_config() -> AppConfig:
         logger.error("에러: DISCORD_TOKEN 또는 GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 
-    return AppConfig(discord_token=discord_token, gemini_api_key=gemini_api_key)
+    auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
+    auto_reply_channel_ids: Tuple[int, ...] = ()
+    if auto_channel_env.strip():
+        try:
+            auto_reply_channel_ids = tuple(
+                int(cid.strip()) for cid in auto_channel_env.split(',')
+                if cid.strip()
+            )
+        except ValueError:
+            logger.warning("AUTO_REPLY_CHANNEL_IDS 환경 변수에 잘못된 값이 있어 무시되었습니다.")
+
+    return AppConfig(
+        discord_token=discord_token,
+        gemini_api_key=gemini_api_key,
+        auto_reply_channel_ids=auto_reply_channel_ids,
+    )
