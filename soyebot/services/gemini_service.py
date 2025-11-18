@@ -187,19 +187,15 @@ class GeminiService:
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
 
-                # Call the model without threading - the Gemini API handles its own async
-                result = model_call()
-
-                # If result is a coroutine, await it
-                if asyncio.iscoroutine(result):
+                # If the call is async, await it directly; otherwise run the blocking call off the loop
+                if asyncio.iscoroutinefunction(model_call):
                     response = await asyncio.wait_for(
-                        result,
+                        model_call(),
                         timeout=self.config.api_request_timeout,
                     )
                 else:
-                    # If it's a regular blocking call, run in thread
                     response = await asyncio.wait_for(
-                        asyncio.to_thread(lambda: result),
+                        asyncio.to_thread(model_call),
                         timeout=self.config.api_request_timeout,
                     )
 
