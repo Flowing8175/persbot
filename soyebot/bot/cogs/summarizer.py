@@ -9,7 +9,7 @@ from typing import Literal
 
 from config import AppConfig
 from services.gemini_service import GeminiService
-from utils import DiscordUI, parse_korean_time
+from utils import GENERIC_ERROR_MESSAGE, DiscordUI, parse_korean_time
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class SummarizerCog(commands.Cog):
             if summary:
                 await DiscordUI.safe_send(ctx.channel, f"**최근 {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
             else:
-                await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
+                await DiscordUI.safe_send(ctx.channel, GENERIC_ERROR_MESSAGE)
 
     async def summarize_by_id(self, ctx: commands.Context, message_id: int):
         """특정 메시지 ID 이후의 메시지를 요약합니다."""
@@ -162,7 +162,7 @@ class SummarizerCog(commands.Cog):
             if summary:
                 await DiscordUI.safe_send(ctx.channel, f"**메시지 ID `{message_id}` 이후 {count}개 메시지 요약:**\n>>> {summary}")
             else:
-                await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
+                await DiscordUI.safe_send(ctx.channel, GENERIC_ERROR_MESSAGE)
 
     async def summarize_by_range(self, ctx: commands.Context, message_id: int, direction: Literal["이후", "이전"], time_str: str):
         """메시지 ID 기준 특정 시간 범위의 메시지를 요약합니다."""
@@ -197,7 +197,7 @@ class SummarizerCog(commands.Cog):
             if summary:
                 await DiscordUI.safe_send(ctx.channel, f"**메시지 ID `{message_id}` {direction} {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
             else:
-                await DiscordUI.safe_send(ctx.channel, "❌ 요약 생성 중 오류가 발생했어요. 다시 시도해주세요.")
+                await DiscordUI.safe_send(ctx.channel, GENERIC_ERROR_MESSAGE)
 
     @summarize.error
     async def summarize_error(self, ctx, error):
@@ -207,4 +207,4 @@ class SummarizerCog(commands.Cog):
             await ctx.send(f"❌ 명령어를 완성해주세요! `!도움말 {ctx.command.name}`으로 사용법을 볼 수 있어요.")
         else:
             logger.error(f"요약 명령어 에러: {error}", exc_info=True)
-            await ctx.send(f"❌ 예상치 못한 에러가 발생했어요: {error}")
+            await ctx.send(GENERIC_ERROR_MESSAGE)

@@ -37,7 +37,7 @@ def _resolve_log_level(raw_level: str) -> int:
 
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
