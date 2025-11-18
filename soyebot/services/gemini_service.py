@@ -380,7 +380,7 @@ class GeminiService:
 
         def api_call():
             return self.client.models.generate_content(
-                model=self.config.model_name,
+                model=self.config.eval_model_name,
                 contents=[
                     prompt,
                     f"Message A:\n{text_a}\n\nMessage B:\n{text_b}",
