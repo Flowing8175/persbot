@@ -28,16 +28,6 @@ class AssistantCog(commands.Cog):
         self.gemini_service = gemini_service
         self.session_manager = session_manager
 
-    def _determine_session_id(self, message: discord.Message) -> str:
-        """Resolve a stable session key for deep reply chains."""
-        if message.reference and message.reference.message_id:
-            referenced_id = str(message.reference.message_id)
-            existing_session = self.session_manager.get_session_for_message(referenced_id)
-            if existing_session:
-                return existing_session
-            return referenced_id
-        return str(message.id)
-
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         # Ignore bot messages, messages without bot mention, or @everyone/@here mentions
@@ -62,19 +52,40 @@ class AssistantCog(commands.Cog):
             logger.info(f"Processing message from {message.author.name}: {user_message[:100]}")
 
             async with message.channel.typing():
-                session_id = self._determine_session_id(message)
+                reference_message_id = (
+                    str(message.reference.message_id)
+                    if message.reference and message.reference.message_id
+                    else None
+                )
 
-                # Get or create user session (async to prevent blocking)
+                resolution = self.session_manager.resolve_session(
+                    channel_id=message.channel.id,
+                    author_id=message.author.id,
+                    username=message.author.name,
+                    message_id=str(message.id),
+                    message_content=user_message,
+                    reference_message_id=reference_message_id,
+                    created_at=message.created_at,
+                )
+
+                if not resolution.cleaned_message:
+                    await message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
+                    return
+
                 chat_session, session_key = await self.session_manager.get_or_create(
                     user_id=message.author.id,
                     username=message.author.name,
-                    message_id=str(session_id),
+                    session_key=resolution.session_key,
+                    channel_id=message.channel.id,
+                    message_content=resolution.cleaned_message,
+                    message_ts=message.created_at,
+                    message_id=str(message.id),
                 )
                 self.session_manager.link_message_to_session(str(message.id), session_key)
 
                 response_result = await self.gemini_service.generate_chat_response(
                     chat_session,
-                    user_message,
+                    resolution.cleaned_message,
                     message,
                 )
 

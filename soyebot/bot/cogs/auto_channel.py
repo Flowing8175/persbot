@@ -30,16 +30,6 @@ class AutoChannelCog(commands.Cog):
         self.gemini_service = gemini_service
         self.session_manager = session_manager
 
-    def _determine_session_id(self, message: discord.Message) -> str:
-        """Resolve a stable session key for reply chains."""
-        if message.reference and message.reference.message_id:
-            referenced_id = str(message.reference.message_id)
-            existing_session = self.session_manager.get_session_for_message(referenced_id)
-            if existing_session:
-                return existing_session
-            return referenced_id
-        return str(message.id)
-
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         # Skip bot messages or messages outside configured channels
@@ -52,13 +42,17 @@ class AutoChannelCog(commands.Cog):
         if message.content.startswith(self.config.command_prefix):
             return
 
+        # Allow users to bypass auto-response by prefixing a backslash
+        if message.content and message.content.lstrip().startswith("\\"):
+            return
+
         start_time = time.perf_counter()
         metrics = get_metrics()
 
         try:
             user_message = extract_message_content(message)
             if not user_message:
-                await message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
+                await message.channel.send("❌ 메시지 내용이 없는데요.")
                 return
 
             logger.info(
@@ -69,28 +63,50 @@ class AutoChannelCog(commands.Cog):
             )
 
             async with message.channel.typing():
-                session_id = self._determine_session_id(message)
+                reference_message_id = (
+                    str(message.reference.message_id)
+                    if message.reference and message.reference.message_id
+                    else None
+                )
+
+                resolution = self.session_manager.resolve_session(
+                    channel_id=message.channel.id,
+                    author_id=message.author.id,
+                    username=message.author.name,
+                    message_id=str(message.id),
+                    message_content=user_message,
+                    reference_message_id=reference_message_id,
+                    created_at=message.created_at,
+                )
+
+                if not resolution.cleaned_message:
+                    await message.channel.send("❌ 메시지 내용이 없는데요.")
+                    return
 
                 chat_session, session_key = await self.session_manager.get_or_create(
                     user_id=message.author.id,
                     username=message.author.name,
-                    message_id=str(session_id),
+                    session_key=resolution.session_key,
+                    channel_id=message.channel.id,
+                    message_content=resolution.cleaned_message,
+                    message_ts=message.created_at,
+                    message_id=str(message.id),
                 )
                 self.session_manager.link_message_to_session(str(message.id), session_key)
 
                 response_result = await self.gemini_service.generate_chat_response(
                     chat_session,
-                    user_message,
+                    resolution.cleaned_message,
                     message,
                 )
 
                 if response_result:
                     response_text, _response_obj = response_result
                     if response_text:
-                        reply_message = await message.reply(response_text, mention_author=False)
-                        if reply_message:
+                        sent_message = await message.channel.send(response_text)
+                        if sent_message:
                             self.session_manager.link_message_to_session(
-                                str(reply_message.id),
+                                str(sent_message.id),
                                 session_key,
                             )
                     else:
@@ -102,9 +118,8 @@ class AutoChannelCog(commands.Cog):
 
         except Exception as exc:
             logger.error("자동 응답 메시지 처리 중 오류 발생: %s", exc, exc_info=True)
-            await message.reply(
-                "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요.",
-                mention_author=False,
+            await message.channel.send(
+                "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요."
             )
 
             duration_ms = (time.perf_counter() - start_time) * 1000
