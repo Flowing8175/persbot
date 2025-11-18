@@ -16,8 +16,6 @@ from services.database_service import DatabaseService
 from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
-from bot.cogs.help import HelpCog
-from web.metrics_server import start_metrics_server_background
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +60,6 @@ async def main(config):
                 exc,
             )
 
-    # Start metrics web UI server in background thread
-    start_metrics_server_background(host='0.0.0.0', port=5000)
-
     intents = discord.Intents.default()
     intents.messages = True
     intents.guilds = True
@@ -88,7 +83,6 @@ async def main(config):
             logger.info("channel registered to reply: []")
 
         # Initialize cogs
-        await bot.add_cog(HelpCog(bot, config))
         await bot.add_cog(SummarizerCog(bot, config, llm_service))
         await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager))
         if auto_channel_cog_cls:

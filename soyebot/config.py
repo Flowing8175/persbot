@@ -49,11 +49,14 @@ logger = logging.getLogger(__name__)
 class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
-    llm_provider: str = 'gemini'
+    assistant_llm_provider: str = 'gemini'
+    summarizer_llm_provider: str = 'gemini'
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
-    model_name: str = 'gemini-2.5-flash'
-    eval_model_name: str = 'gemini-2.5-flash-lite'
+    gemini_model_name: str = 'gemini-2.5-flash'
+    openai_model_name: str = 'gpt-5-mini'
+    assistant_model_name: str = 'gemini-2.5-flash'
+    summarizer_model_name: str = 'gemini-2.5-flash'
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
@@ -63,6 +66,7 @@ class AppConfig:
     progress_update_interval: float = 0.5
     countdown_update_interval: int = 5
     command_prefix: str = '!'
+    service_tier: str = 'flex'
 
     # --- Database Configuration ---
     database_path: str = 'soyebot.db'
@@ -76,30 +80,67 @@ class AppConfig:
     session_cache_limit: int = 200
     session_inactive_minutes: int = 30
 
+def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
+    if raw_provider is None or not raw_provider.strip():
+        return default
+    return raw_provider.strip().lower()
+
+
+def _validate_provider(provider: str) -> str:
+    if provider not in {'gemini', 'openai'}:
+        logger.error("에러: LLM 공급자는 'gemini' 또는 'openai'여야 합니다. (입력값: %s)", provider)
+        sys.exit(1)
+    return provider
+
+
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
     discord_token = os.environ.get('DISCORD_TOKEN')
-    llm_provider = os.environ.get('LLM_PROVIDER', 'gemini').strip().lower()
     gemini_api_key = os.environ.get('GEMINI_API_KEY')
     openai_api_key = os.environ.get('OPENAI_API_KEY')
+    service_tier = os.environ.get('SERVICE_TIER', 'flex')
 
-    model_name_env = os.environ.get('MODEL_NAME')
-    eval_model_name_env = os.environ.get('EVAL_MODEL_NAME')
+    # Provider별 설정 (어시스턴트/요약 분리)
+    assistant_llm_provider = _validate_provider(
+        _normalize_provider(
+            os.environ.get('ASSISTANT_LLM_PROVIDER')
+            or os.environ.get('LLM_PROVIDER'),
+            'gemini',
+        )
+    )
+    summarizer_llm_provider = _validate_provider(
+        _normalize_provider(os.environ.get('SUMMARIZER_LLM_PROVIDER'), assistant_llm_provider)
+    )
 
-    if llm_provider == 'openai':
-        if not discord_token or not openai_api_key:
-            logger.error("에러: DISCORD_TOKEN 또는 OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
-            sys.exit(1)
-        model_name = model_name_env or 'gpt-4o-mini'
-        eval_model_name = eval_model_name_env or 'gpt-4o-mini'
-    elif llm_provider == 'gemini':
-        if not discord_token or not gemini_api_key:
-            logger.error("에러: DISCORD_TOKEN 또는 GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
-            sys.exit(1)
-        model_name = model_name_env or 'gemini-2.5-flash'
-        eval_model_name = eval_model_name_env or 'gemini-2.5-flash-lite'
+    # Provider별 모델 설정 (별도의 환경 변수를 통해 개별 오버라이드 가능)
+    gemini_model_name = os.environ.get('GEMINI_MODEL_NAME') or 'gemini-2.5-flash'
+    openai_model_name = os.environ.get('OPENAI_MODEL_NAME') or 'gpt-5-mini'
+
+    assistant_model_name = openai_model_name if assistant_llm_provider == 'openai' else gemini_model_name
+    if summarizer_llm_provider == 'openai':
+        summarizer_model_name = (
+            os.environ.get('OPENAI_SUMMARY_MODEL_NAME')
+            or os.environ.get('OPENAI_MODEL_NAME')
+            or 'gpt-5-mini'
+        )
     else:
-        logger.error("에러: LLM_PROVIDER는 'gemini' 또는 'openai'여야 합니다.")
+        summarizer_model_name = (
+            os.environ.get('GEMINI_SUMMARY_MODEL_NAME')
+            or os.environ.get('GEMINI_MODEL_NAME')
+            or 'gemini-2.5-flash'
+        )
+
+    # 필수 키 검증
+    if not discord_token:
+        logger.error("에러: DISCORD_TOKEN 환경 변수가 설정되지 않았습니다.")
+        sys.exit(1)
+
+    if 'gemini' in {assistant_llm_provider, summarizer_llm_provider} and not gemini_api_key:
+        logger.error("에러: GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
+        sys.exit(1)
+
+    if 'openai' in {assistant_llm_provider, summarizer_llm_provider} and not openai_api_key:
+        logger.error("에러: OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 
     auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
@@ -125,15 +166,25 @@ def load_config() -> AppConfig:
 
         auto_reply_channel_ids = tuple(valid_ids)
 
-    logger.info("LLM_PROVIDER=%s, model=%s, eval_model=%s", llm_provider, model_name, eval_model_name)
+    logger.info(
+        "LLM_PROVIDER(assistant)=%s, LLM_PROVIDER(summarizer)=%s, assistant_model=%s, summarizer_model=%s",
+        assistant_llm_provider,
+        summarizer_llm_provider,
+        assistant_model_name,
+        summarizer_model_name,
+    )
 
     return AppConfig(
         discord_token=discord_token,
-        llm_provider=llm_provider,
+        assistant_llm_provider=assistant_llm_provider,
+        summarizer_llm_provider=summarizer_llm_provider,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
-        model_name=model_name,
-        eval_model_name=eval_model_name,
+        gemini_model_name=gemini_model_name,
+        openai_model_name=openai_model_name,
+        assistant_model_name=assistant_model_name,
+        summarizer_model_name=summarizer_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,
         log_level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
+        service_tier=service_tier,
     )
