@@ -21,36 +21,35 @@ from web.metrics_server import start_metrics_server_background
 
 logger = logging.getLogger(__name__)
 
-
-def setup_logging(log_level: int) -> None:
+def setup_logging():
     """Setup logging configuration with suppressed discord.py spam."""
-
+    # Set up root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
+    root_logger.setLevel(logging.DEBUG)
+
+    # Create console handler with formatting
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_handler.setFormatter(formatter)
 
     if not root_logger.handlers:
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(log_level)
-
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        console_handler.setFormatter(formatter)
-
         root_logger.addHandler(console_handler)
-    else:
-        for handler in root_logger.handlers:
-            handler.setLevel(log_level)
 
+    # Suppress discord.py debug logs
     logging.getLogger('discord').setLevel(logging.WARNING)
     logging.getLogger('discord.http').setLevel(logging.WARNING)
     logging.getLogger('discord.client').setLevel(logging.WARNING)
     logging.getLogger('discord.gateway').setLevel(logging.WARNING)
 
 
-async def main(config):
+async def main():
     """Initializes and runs the bot."""
+    config = load_config()
     auto_channel_cog_cls = None
     if config.auto_reply_channel_ids:
         try:
@@ -115,6 +114,5 @@ async def main(config):
 
 
 if __name__ == "__main__":
-    config = load_config()
-    setup_logging(config.log_level)
-    asyncio.run(main(config))
+    setup_logging()
+    asyncio.run(main())

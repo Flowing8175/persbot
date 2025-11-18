@@ -20,24 +20,8 @@ if _dotenv_path.exists():
 else:
     logging.getLogger(__name__).debug("No .env file found; relying on existing environment")
 
-def _resolve_log_level(raw_level: str) -> int:
-    """Return a logging level constant from a string, defaulting to INFO."""
-
-    if not raw_level:
-        return logging.INFO
-
-    normalized = raw_level.strip().upper()
-    if normalized in logging._nameToLevel:
-        return logging._nameToLevel[normalized]
-
-    logging.getLogger(__name__).warning(
-        "Unknown LOG_LEVEL '%s'; defaulting to INFO", raw_level
-    )
-    return logging.INFO
-
-
 logging.basicConfig(
-    level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -111,5 +95,4 @@ def load_config() -> AppConfig:
         discord_token=discord_token,
         gemini_api_key=gemini_api_key,
         auto_reply_channel_ids=auto_reply_channel_ids,
-        log_level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
     )
