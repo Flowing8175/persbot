@@ -1,6 +1,7 @@
 "Gemini API service for SoyeBot."
 
 import asyncio
+import json
 import time
 import re
 import logging
@@ -186,19 +187,15 @@ class GeminiService:
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
 
-                # Call the model without threading - the Gemini API handles its own async
-                result = model_call()
-
-                # If result is a coroutine, await it
-                if asyncio.iscoroutine(result):
+                # If the call is async, await it directly; otherwise run the blocking call off the loop
+                if asyncio.iscoroutinefunction(model_call):
                     response = await asyncio.wait_for(
-                        result,
+                        model_call(),
                         timeout=self.config.api_request_timeout,
                     )
                 else:
-                    # If it's a regular blocking call, run in thread
                     response = await asyncio.wait_for(
-                        asyncio.to_thread(lambda: result),
+                        asyncio.to_thread(model_call),
                         timeout=self.config.api_request_timeout,
                     )
 
@@ -330,3 +327,125 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Failed to extract text from response: {e}", exc_info=True)
             return ""
+
+    def _extract_structured_json(self, response_obj) -> Optional[dict]:
+        """Extract JSON payload from a structured Gemini response."""
+
+        try:
+            if not hasattr(response_obj, "candidates") or not response_obj.candidates:
+                return None
+
+            for candidate in response_obj.candidates:
+                content = getattr(candidate, "content", None)
+                if not content or not hasattr(content, "parts"):
+                    continue
+
+                for part in content.parts:
+                    text = getattr(part, "text", "")
+                    if text:
+                        try:
+                            return json.loads(text)
+                        except Exception:
+                            logger.debug("Structured response text was not valid JSON: %s", text)
+
+                    func_call = getattr(part, "function_call", None)
+                    if func_call:
+                        args = getattr(func_call, "args", None)
+                        if isinstance(args, dict):
+                            return args
+                        args_json = getattr(func_call, "args_json", None)
+                        if isinstance(args_json, str):
+                            try:
+                                return json.loads(args_json)
+                            except Exception:
+                                logger.debug("Function call args_json not parseable: %s", args_json)
+
+                    inline = getattr(part, "inline_data", None)
+                    if inline and hasattr(inline, "data"):
+                        data = getattr(inline, "data")
+                        if data:
+                            try:
+                                return json.loads(data)
+                            except Exception:
+                                logger.debug("Inline data not parseable as JSON")
+
+        except Exception:
+            logger.exception("Failed to parse structured Gemini response")
+        return None
+
+    async def score_topic_similarity(self, text_a: str, text_b: str) -> Optional[float]:
+        """Score semantic similarity between two short Discord messages using structured output."""
+
+        if not text_a.strip() or not text_b.strip():
+            return 0.0
+
+        schema = genai_types.Schema(
+            type=genai_types.Type.OBJECT,
+            properties={
+                "similarity": genai_types.Schema(
+                    type=genai_types.Type.NUMBER,
+                    description="Semantic similarity between 0 and 1",
+                ),
+                "same_topic": genai_types.Schema(
+                    type=genai_types.Type.BOOLEAN,
+                    description="True when both messages are about the same topic",
+                ),
+                "reason": genai_types.Schema(
+                    type=genai_types.Type.STRING,
+                    description="Short explanation",
+                ),
+            },
+            required=["similarity", "same_topic"],
+        )
+
+        prompt = (
+            "You are scoring whether two short Discord messages belong to the same conversation topic. "
+            "Return JSON that includes a similarity between 0 (unrelated) and 1 (identical topic) and a boolean same_topic. "
+            "Scoring rubric: 1.0 for the same ask or paraphrase; ~0.75 for clear follow-ups on the same task; ~0.5 when the main subject is shared but the request shifts; ~0.25 for only weak lexical overlap; 0.0 for unrelated topics. "
+            "Guidelines: focus on intent, subject matter, and entities (project, ticket, feature), not tone or emoji. Scheduling vs reminder about the same release is similar; release talk vs API error is not. "
+            "Examples: "
+            "A: '오늘 저녁에 뭐 먹을까?' / B: '파스타 어때?' => ~0.8-0.9, same_topic true. "
+            "A: '주말에 등산 갈래?' / B: '토요일 오전에 시간 괜찮아' => ~0.75-0.85, same_topic true. "
+            "A: '이번 주말 영화 볼래?' / B: '다음 주에 친구 결혼식 있어' => ~0.2, same_topic false. "
+            "A: '우산 챙겼어?' / B: '어제 본 드라마 재밌더라' => 0.0, same_topic false. "
+            "Be decisive and return a single numeric similarity in the 0-1 range."
+        )
+
+        def api_call():
+            return self.client.models.generate_content(
+                model=self.config.model_name,
+                contents=[
+                    prompt,
+                    f"Message A:\n{text_a}\n\nMessage B:\n{text_b}",
+                ],
+                config=genai_types.GenerateContentConfig(
+                    temperature=0,
+                    response_schema=schema,
+                    response_mime_type="application/json",
+                ),
+            )
+
+        response_obj = await self._api_request_with_retry(
+            api_call,
+            "세션 유사도 판정",
+            return_full_response=True,
+        )
+
+        if response_obj is None:
+            return None
+
+        parsed = self._extract_structured_json(response_obj)
+        if not parsed:
+            return None
+
+        similarity = parsed.get("similarity")
+        if isinstance(similarity, str):
+            try:
+                similarity = float(similarity)
+            except ValueError:
+                similarity = None
+
+        if isinstance(similarity, (int, float)):
+            return max(0.0, min(1.0, float(similarity)))
+
+        return None
