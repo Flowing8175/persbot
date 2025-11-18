@@ -11,7 +11,7 @@ from difflib import SequenceMatcher
 from typing import Optional, Tuple
 
 from config import AppConfig
-from services.gemini_service import GeminiService
+from services.llm_service import LLMService
 from services.database_service import DatabaseService
 from prompts import BOT_PERSONA_PROMPT
 from metrics import get_metrics
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChatSession:
-    """Represents a very short-lived Gemini chat tied to a session key."""
+    """Represents a very short-lived LLM chat tied to a session key."""
     chat: object
     user_id: str
     session_id: str
@@ -57,11 +57,11 @@ class SessionManager:
     def __init__(
         self,
         config: AppConfig,
-        gemini_service: GeminiService,
+        llm_service: LLMService,
         db_service: DatabaseService,
     ):
         self.config = config
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
         self.db_service = db_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.message_sessions: OrderedDict[str, str] = OrderedDict()
@@ -119,11 +119,11 @@ class SessionManager:
             return 0.0
 
         try:
-            score = await self.gemini_service.score_topic_similarity(a, b)
+            score = await self.llm_service.score_topic_similarity(a, b)
             if score is not None:
                 return score
         except Exception:
-            logger.exception("Gemini similarity scoring failed; falling back to fuzzy match")
+            logger.exception("LLM similarity scoring failed; falling back to fuzzy match")
 
         return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
@@ -185,7 +185,7 @@ class SessionManager:
 
         system_prompt = BOT_PERSONA_PROMPT
 
-        assistant_model = self.gemini_service.create_assistant_model(system_prompt)
+        assistant_model = self.llm_service.create_assistant_model(system_prompt)
         chat = assistant_model.start_chat()
 
         self.sessions[session_key] = ChatSession(

@@ -207,7 +207,7 @@ class GeminiService:
 
                 # Track successful API request
                 duration_ms = (time.perf_counter() - request_start) * 1000
-                metrics.record_latency('gemini_api', duration_ms)
+                metrics.record_latency('llm_api', duration_ms)
                 metrics.increment_counter('api_requests_success')
 
                 if return_full_response:

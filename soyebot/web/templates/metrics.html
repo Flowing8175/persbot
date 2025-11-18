@@ -198,6 +198,7 @@
 
         function renderMetrics(data) {
             const container = document.getElementById('metrics-container');
+            const providerName = data.provider || 'LLM';
 
             const html = `
                 <div class="grid">
@@ -224,7 +225,7 @@
 
                     <!-- API Metrics -->
                     <div class="card">
-                        <h2>🌐 Gemini API</h2>
+                        <h2>🌐 ${providerName} API</h2>
                         <div class="metric-row">
                             <span class="metric-label">총 요청 수</span>
                             <span class="metric-value info">${data.counters.api_requests_total}</span>
@@ -272,19 +273,19 @@
                     <h2>⚡ 응답 시간 (Latency)</h2>
                     <table class="latency-table">
                         <tr>
-                            <td colspan="2"><strong>Gemini API 요청</strong></td>
+                            <td colspan="2"><strong>${providerName} API 요청</strong></td>
                         </tr>
                         <tr>
                             <td>&nbsp;&nbsp;&nbsp;&nbsp;평균</td>
-                            <td>${data.latencies.gemini_api.avg.toFixed(1)} ms</td>
+                            <td>${data.latencies.llm_api.avg.toFixed(1)} ms</td>
                         </tr>
                         <tr>
                             <td>&nbsp;&nbsp;&nbsp;&nbsp;최소 / 최대</td>
-                            <td>${data.latencies.gemini_api.min.toFixed(1)} / ${data.latencies.gemini_api.max.toFixed(1)} ms</td>
+                            <td>${data.latencies.llm_api.min.toFixed(1)} / ${data.latencies.llm_api.max.toFixed(1)} ms</td>
                         </tr>
                         <tr>
                             <td>&nbsp;&nbsp;&nbsp;&nbsp;P95 / P99</td>
-                            <td>${data.latencies.gemini_api.p95.toFixed(1)} / ${data.latencies.gemini_api.p99.toFixed(1)} ms</td>
+                            <td>${data.latencies.llm_api.p95.toFixed(1)} / ${data.latencies.llm_api.p99.toFixed(1)} ms</td>
                         </tr>
                         <tr>
                             <td colspan="2"><strong>메시지 처리</strong></td>

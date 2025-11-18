@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from config import load_config
-from services.gemini_service import GeminiService
+from services.llm_service import LLMService
 from services.database_service import DatabaseService
 from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
@@ -73,9 +73,9 @@ async def main(config):
     bot = commands.Bot(command_prefix=config.command_prefix, intents=intents, help_command=None)
 
     # Initialize services
-    gemini_service = GeminiService(config)
+    llm_service = LLMService(config)
     db_service = DatabaseService(config.database_path)
-    session_manager = SessionManager(config, gemini_service, db_service)
+    session_manager = SessionManager(config, llm_service, db_service)
 
     @bot.event
     async def on_ready():
@@ -88,11 +88,11 @@ async def main(config):
             logger.info("channel registered to reply: []")
 
         # Initialize cogs
-        await bot.add_cog(HelpCog(bot))
-        await bot.add_cog(SummarizerCog(bot, config, gemini_service))
-        await bot.add_cog(AssistantCog(bot, config, gemini_service, session_manager))
+        await bot.add_cog(HelpCog(bot, config))
+        await bot.add_cog(SummarizerCog(bot, config, llm_service))
+        await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager))
         if auto_channel_cog_cls:
-            await bot.add_cog(auto_channel_cog_cls(bot, config, gemini_service, session_manager))
+            await bot.add_cog(auto_channel_cog_cls(bot, config, llm_service, session_manager))
         logger.info("Cogs 로드 완료.")
 
     @bot.event

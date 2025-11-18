@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 import logging
 
+from config import AppConfig
 from utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
@@ -12,8 +13,11 @@ logger = logging.getLogger(__name__)
 class HelpCog(commands.Cog):
     """봇의 전체 기능을 설명하는 도움말 Cog"""
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot, config: AppConfig):
         self.bot = bot
+        self.config = config
+        provider = getattr(config, 'llm_provider', 'gemini')
+        self.ai_provider_label = "OpenAI API" if str(provider).lower() == 'openai' else "Google Gemini API"
 
     @commands.command(name='도움말', aliases=['help', 'h'])
     async def show_help(self, ctx: commands.Context, *args):
@@ -85,7 +89,7 @@ class HelpCog(commands.Cog):
                 name="🔧 시스템 정보",
                 value=f"봇 상태: 🟢 온라인\n"
                       f"프레임워크: Discord.py\n"
-                      f"AI 엔진: Google Gemini API\n\n"
+                      f"AI 엔진: {self.ai_provider_label}\n\n"
                       f"📊 **성능 모니터링:**\n"
                       f"실시간 메트릭 대시보드: http://localhost:5000\n"
                       f"(메모리, CPU, API 응답시간, 성공률 등)",
@@ -180,7 +184,7 @@ class HelpCog(commands.Cog):
             )
 
             features = [
-                ("🤖 AI 대화", "봇을 멘션하면 Google Gemini API를 통한 AI와 대화"),
+                ("🤖 AI 대화", f"봇을 멘션하면 {self.ai_provider_label}를 통한 AI와 대화"),
                 ("📝 요약 기능", "채팅 내용을 자동으로 요약"),
                 ("📊 통계 분석", "상호작용 패턴과 기본적인 선호 주제 분석"),
                 ("🌐 다국어 지원", "한글 명령어와 안내말"),
