@@ -8,7 +8,7 @@ import time
 from config import AppConfig
 from services.gemini_service import GeminiService
 from bot.session import SessionManager
-from utils import extract_message_content
+from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 from metrics import get_metrics
 
 logger = logging.getLogger(__name__)
@@ -27,16 +27,6 @@ class AssistantCog(commands.Cog):
         self.config = config
         self.gemini_service = gemini_service
         self.session_manager = session_manager
-
-    def _determine_session_id(self, message: discord.Message) -> str:
-        """Resolve a stable session key for deep reply chains."""
-        if message.reference and message.reference.message_id:
-            referenced_id = str(message.reference.message_id)
-            existing_session = self.session_manager.get_session_for_message(referenced_id)
-            if existing_session:
-                return existing_session
-            return referenced_id
-        return str(message.id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -62,19 +52,40 @@ class AssistantCog(commands.Cog):
             logger.info(f"Processing message from {message.author.name}: {user_message[:100]}")
 
             async with message.channel.typing():
-                session_id = self._determine_session_id(message)
+                reference_message_id = (
+                    str(message.reference.message_id)
+                    if message.reference and message.reference.message_id
+                    else None
+                )
 
-                # Get or create user session (async to prevent blocking)
+                resolution = await self.session_manager.resolve_session(
+                    channel_id=message.channel.id,
+                    author_id=message.author.id,
+                    username=message.author.name,
+                    message_id=str(message.id),
+                    message_content=user_message,
+                    reference_message_id=reference_message_id,
+                    created_at=message.created_at,
+                )
+
+                if not resolution.cleaned_message:
+                    await message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
+                    return
+
                 chat_session, session_key = await self.session_manager.get_or_create(
                     user_id=message.author.id,
                     username=message.author.name,
-                    message_id=str(session_id),
+                    session_key=resolution.session_key,
+                    channel_id=message.channel.id,
+                    message_content=resolution.cleaned_message,
+                    message_ts=message.created_at,
+                    message_id=str(message.id),
                 )
                 self.session_manager.link_message_to_session(str(message.id), session_key)
 
                 response_result = await self.gemini_service.generate_chat_response(
                     chat_session,
-                    user_message,
+                    resolution.cleaned_message,
                     message,
                 )
 
@@ -101,7 +112,7 @@ class AssistantCog(commands.Cog):
 
         except Exception as e:
             logger.error(f"메시지 처리 중 예상치 못한 오류 발생: {e}", exc_info=True)
-            await message.reply("❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요.", mention_author=False)
+            await message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
             # Track processing time even on error
             duration_ms = (time.perf_counter() - start_time) * 1000

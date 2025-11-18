@@ -5,6 +5,8 @@ import re
 import logging
 from typing import Optional
 
+GENERIC_ERROR_MESSAGE = "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요."
+
 logger = logging.getLogger(__name__)
 
 class DiscordUI:
