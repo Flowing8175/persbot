@@ -74,13 +74,7 @@ class AppConfig:
     log_level: int = logging.INFO
     # --- Session Management ---
     session_cache_limit: int = 200
-    session_inactive_minutes: int = 45
-    session_similarity_threshold: float = 0.7
-
-    # --- Session Management ---
-    session_cache_limit: int = 200
     session_inactive_minutes: int = 30
-    session_similarity_threshold: float = 0.2
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""

@@ -37,6 +37,3 @@ class LLMService:
     async def generate_chat_response(self, chat_session, user_message: str, discord_message):
         return await self.backend.generate_chat_response(chat_session, user_message, discord_message)
 
-    async def score_topic_similarity(self, text_a: str, text_b: str):
-        return await self.backend.score_topic_similarity(text_a, text_b)
-
