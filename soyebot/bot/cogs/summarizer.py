@@ -204,7 +204,10 @@ class SummarizerCog(commands.Cog):
         if isinstance(error, commands.BadArgument):
             await ctx.send("❌ 인수가 잘못되었어요. 숫자를 입력해야 하는 곳에 문자를 넣지 않았는지 확인해주세요.")
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f"❌ 명령어를 완성해주세요! `!도움말 {ctx.command.name}`으로 사용법을 볼 수 있어요.")
+            prefix = ctx.prefix or self.config.command_prefix
+            await ctx.send(
+                f"❌ 명령어를 완성해주세요! 예: `{prefix}요약 20분` 또는 `{prefix}요약 123456 이후 30분`"
+            )
         else:
             logger.error(f"요약 명령어 에러: {error}", exc_info=True)
             await ctx.send(GENERIC_ERROR_MESSAGE)

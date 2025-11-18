@@ -54,9 +54,7 @@ class AppConfig:
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     gemini_model_name: str = 'gemini-2.5-flash'
-    gemini_eval_model_name: str = 'gemini-2.5-flash-lite'
     openai_model_name: str = 'gpt-5-mini'
-    openai_eval_model_name: str = 'gpt-5-mini'
     assistant_model_name: str = 'gemini-2.5-flash'
     summarizer_model_name: str = 'gemini-2.5-flash'
     max_messages_per_fetch: int = 300
@@ -116,21 +114,21 @@ def load_config() -> AppConfig:
 
     # Provider별 모델 설정 (별도의 환경 변수를 통해 개별 오버라이드 가능)
     gemini_model_name = os.environ.get('GEMINI_MODEL_NAME') or 'gemini-2.5-flash'
-    gemini_eval_model_name = (
-        os.environ.get('GEMINI_EVAL_MODEL_NAME') or os.environ.get('GEMINI_SUMMARY_MODEL_NAME')
-        or 'gemini-2.5-flash-lite'
-    )
     openai_model_name = os.environ.get('OPENAI_MODEL_NAME') or 'gpt-5-mini'
-    openai_eval_model_name = (
-        os.environ.get('OPENAI_EVAL_MODEL_NAME')
-        or os.environ.get('OPENAI_SUMMARY_MODEL_NAME')
-        or 'gpt-5-mini'
-    )
 
     assistant_model_name = openai_model_name if assistant_llm_provider == 'openai' else gemini_model_name
-    summarizer_model_name = (
-        openai_eval_model_name if summarizer_llm_provider == 'openai' else gemini_eval_model_name
-    )
+    if summarizer_llm_provider == 'openai':
+        summarizer_model_name = (
+            os.environ.get('OPENAI_SUMMARY_MODEL_NAME')
+            or os.environ.get('OPENAI_MODEL_NAME')
+            or 'gpt-5-mini'
+        )
+    else:
+        summarizer_model_name = (
+            os.environ.get('GEMINI_SUMMARY_MODEL_NAME')
+            or os.environ.get('GEMINI_MODEL_NAME')
+            or 'gemini-2.5-flash'
+        )
 
     # 필수 키 검증
     if not discord_token:
@@ -183,9 +181,7 @@ def load_config() -> AppConfig:
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
         gemini_model_name=gemini_model_name,
-        gemini_eval_model_name=gemini_eval_model_name,
         openai_model_name=openai_model_name,
-        openai_eval_model_name=openai_eval_model_name,
         assistant_model_name=assistant_model_name,
         summarizer_model_name=summarizer_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,
