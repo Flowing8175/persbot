@@ -17,7 +17,6 @@ from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
 from bot.cogs.help import HelpCog
-from web.metrics_server import start_metrics_server_background
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +60,6 @@ async def main(config):
                 "AUTO_REPLY_CHANNEL_IDS가 설정되었지만 auto_channel Cog를 불러올 수 없습니다: %s",
                 exc,
             )
-
-    # Start metrics web UI server in background thread
-    start_metrics_server_background(host='0.0.0.0', port=5000)
 
     intents = discord.Intents.default()
     intents.messages = True

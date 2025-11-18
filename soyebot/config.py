@@ -63,6 +63,7 @@ class AppConfig:
     progress_update_interval: float = 0.5
     countdown_update_interval: int = 5
     command_prefix: str = '!'
+    service_tier: str = 'flex'
 
     # --- Database Configuration ---
     database_path: str = 'soyebot.db'
@@ -82,6 +83,7 @@ def load_config() -> AppConfig:
     llm_provider = os.environ.get('LLM_PROVIDER', 'gemini').strip().lower()
     gemini_api_key = os.environ.get('GEMINI_API_KEY')
     openai_api_key = os.environ.get('OPENAI_API_KEY')
+    service_tier = os.environ.get('SERVICE_TIER', 'flex')
 
     model_name_env = os.environ.get('MODEL_NAME')
     eval_model_name_env = os.environ.get('EVAL_MODEL_NAME')
@@ -90,8 +92,8 @@ def load_config() -> AppConfig:
         if not discord_token or not openai_api_key:
             logger.error("에러: DISCORD_TOKEN 또는 OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
             sys.exit(1)
-        model_name = model_name_env or 'gpt-4o-mini'
-        eval_model_name = eval_model_name_env or 'gpt-4o-mini'
+        model_name = model_name_env or 'gpt-5-mini'
+        eval_model_name = eval_model_name_env or 'gpt-5-mini'
     elif llm_provider == 'gemini':
         if not discord_token or not gemini_api_key:
             logger.error("에러: DISCORD_TOKEN 또는 GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
@@ -136,4 +138,5 @@ def load_config() -> AppConfig:
         eval_model_name=eval_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,
         log_level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
+        service_tier=service_tier,
     )

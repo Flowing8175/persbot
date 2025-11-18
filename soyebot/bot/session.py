@@ -2,11 +2,9 @@
 
 import logging
 import asyncio
-import re
-import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from config import AppConfig
@@ -65,53 +63,18 @@ class SessionManager:
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.message_sessions: OrderedDict[str, str] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
-        self.channel_recent_sessions: OrderedDict[int, str] = OrderedDict()
 
     def _evict_if_needed(self) -> None:
         """Ensure the session cache does not grow without bounds."""
         while len(self.sessions) > self.config.session_cache_limit:
             evicted_key, _ = self.sessions.popitem(last=False)
             logger.debug("Evicted chat session %s due to cache limit", evicted_key)
+        while len(self.message_sessions) > self.config.session_cache_limit:
+            evicted_key, _ = self.message_sessions.popitem(last=False)
+            logger.debug("Evicted message link %s due to cache limit", evicted_key)
         while len(self.session_contexts) > self.config.session_cache_limit:
             evicted_key, _ = self.session_contexts.popitem(last=False)
             logger.debug("Evicted session context %s due to cache limit", evicted_key)
-
-    def _slugify_topic(self, topic: str) -> str:
-        slug = re.sub(r"\s+", "-", topic.strip().lower())
-        slug = re.sub(r"[^a-z0-9\-]+", "", slug)
-        return slug or "untitled"
-
-    def _extract_explicit_topic(self, message: str) -> Tuple[Optional[str], str]:
-        """Return explicit topic name and cleaned message if present."""
-
-        stripped = message.strip()
-        lowered = stripped.lower()
-        for prefix in ("/topic", "!topic"):
-            if lowered.startswith(prefix):
-                parts = stripped.split(maxsplit=2)
-                if len(parts) >= 2:
-                    topic_name = parts[1]
-                    remainder = parts[2] if len(parts) > 2 else ""
-                    return topic_name, remainder.strip() or topic_name
-        return None, message
-
-    def _is_new_session_trigger(self, message: str) -> bool:
-        lowered = message.lower()
-        trigger_phrases = ["새 주제", "새로 시작"]
-        return any(trigger in lowered for trigger in trigger_phrases)
-
-    def _generate_session_id(self, channel_id: int) -> str:
-        return f"{channel_id}-{int(time.time() * 1000)}"
-
-    def _get_recent_session(self, channel_id: int) -> Optional[SessionContext]:
-        session_key = self.channel_recent_sessions.get(channel_id)
-        if session_key:
-            return self.session_contexts.get(session_key)
-        return None
-
-    def _is_stale(self, context: SessionContext, at: Optional[datetime]) -> bool:
-        reference_time = at or datetime.now(timezone.utc)
-        return reference_time - context.last_activity_at > timedelta(minutes=self.config.session_inactive_minutes)
 
     def _record_session_context(
         self,
@@ -141,7 +104,6 @@ class SessionManager:
                 last_message_preview=preview,
             )
 
-        self.channel_recent_sessions[channel_id] = session_key
         self._evict_if_needed()
 
     async def get_or_create(
@@ -221,17 +183,5 @@ class SessionManager:
             if existing_session:
                 return ResolvedSession(existing_session, cleaned_message)
 
-        topic_name, cleaned_after_topic = self._extract_explicit_topic(cleaned_message)
-        if topic_name:
-            topic_slug = self._slugify_topic(topic_name)
-            session_key = f"topic:{channel_id}:{topic_slug}"
-            return ResolvedSession(session_key, cleaned_after_topic)
-
-        if self._is_new_session_trigger(cleaned_message):
-            return ResolvedSession(self._generate_session_id(channel_id), cleaned_message)
-
-        recent = self._get_recent_session(channel_id)
-        if recent and not self._is_stale(recent, created_at):
-            return ResolvedSession(recent.session_id, cleaned_message)
-
-        return ResolvedSession(self._generate_session_id(channel_id), cleaned_message)
+        session_key = f"channel:{channel_id}"
+        return ResolvedSession(session_key, cleaned_message)
