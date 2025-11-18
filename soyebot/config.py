@@ -37,7 +37,7 @@ def _resolve_log_level(raw_level: str) -> int:
 
 
 logging.basicConfig(
-    level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -50,7 +50,8 @@ class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
     gemini_api_key: str
-    model_name: str = 'gemini-2.5-flash-lite'
+    model_name: str = 'gemini-2.5-flash'
+    eval_model_name: str = 'gemini-2.5-flash-lite'
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
@@ -73,6 +74,11 @@ class AppConfig:
     session_cache_limit: int = 200
     session_inactive_minutes: int = 45
     session_similarity_threshold: float = 0.7
+
+    # --- Session Management ---
+    session_cache_limit: int = 200
+    session_inactive_minutes: int = 30
+    session_similarity_threshold: float = 0.2
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
