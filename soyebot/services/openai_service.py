@@ -4,7 +4,8 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Optional, Tuple
+from collections import deque
+from typing import Any, Deque, Optional, Tuple
 
 import discord
 from openai import OpenAI
@@ -18,78 +19,141 @@ from utils import GENERIC_ERROR_MESSAGE
 logger = logging.getLogger(__name__)
 
 
-class OpenAIChatSession:
-    """Lightweight chat session wrapper for OpenAI responses."""
+class AssistantChatSession:
+    """Assistant API-backed chat session with a bounded context window."""
 
-    def __init__(self, client: OpenAI, model_name: str, system_instruction: str, temperature: float):
+    def __init__(
+        self,
+        client: OpenAI,
+        assistant_id: str,
+        temperature: float,
+        max_messages: int,
+        service_tier: str,
+        text_extractor,
+    ):
         self._client = client
-        self._model_name = model_name
+        self._assistant_id = assistant_id
         self._temperature = temperature
-        self._messages = [
-            {"role": "system", "content": system_instruction or BOT_PERSONA_PROMPT}
-        ]
+        self._max_messages = max_messages
+        self._service_tier = service_tier
+        self._text_extractor = text_extractor
+        self._thread_id = self._create_thread()
+        self._history: Deque[dict] = deque(maxlen=max_messages)
 
-    def send_message(self, user_message: str):
-        self._messages.append({"role": "user", "content": user_message})
-        response = self._client.chat.completions.create(
-            model=self._model_name,
-            messages=self._messages,
-            temperature=self._temperature,
+    def _create_thread(self) -> str:
+        thread = self._client.beta.threads.create(
+            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"}
         )
-        message_content = ""
-        if response.choices and response.choices[0].message:
-            message_content = response.choices[0].message.content or ""
-        self._messages.append({"role": "assistant", "content": message_content})
-        return response
+        return thread.id
 
     def get_history(self):
-        return self._messages
+        return list(self._history)
+
+    def _append_history(self, role: str, content: str) -> None:
+        self._history.append({"role": role, "content": content})
+
+    def send_message(self, user_message: str):
+        self._client.beta.threads.messages.create(
+            thread_id=self._thread_id,
+            role="user",
+            content=user_message,
+            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+        )
+        self._append_history("user", user_message)
+
+        run = self._client.beta.threads.runs.create_and_poll(
+            thread_id=self._thread_id,
+            assistant_id=self._assistant_id,
+            temperature=self._temperature,
+            truncation_strategy={"type": "last_messages", "last_messages": self._max_messages},
+            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+            extra_body={"service_tier": self._service_tier},
+        )
+
+        messages = self._client.beta.threads.messages.list(
+            thread_id=self._thread_id,
+            run_id=run.id,
+            order="desc",
+            limit=1,
+            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+        )
+
+        message_content = ""
+        for message in messages.data:
+            if message.role == "assistant":
+                message_content = self._text_extractor(message)
+                self._append_history("assistant", message_content)
+                break
+
+        return message_content, run
 
 
-class _OpenAIModel:
-    """Model wrapper to mirror Gemini's cached model API."""
+class _AssistantModel:
+    """Assistant wrapper mirroring the cached model API."""
 
-    def __init__(self, client: OpenAI, model_name: str, system_instruction: str, temperature: float):
+    def __init__(
+        self,
+        client: OpenAI,
+        assistant_id: str,
+        temperature: float,
+        max_messages: int,
+        service_tier: str,
+        text_extractor,
+    ):
         self._client = client
-        self._model_name = model_name
-        self._system_instruction = system_instruction
+        self._assistant_id = assistant_id
         self._temperature = temperature
+        self._max_messages = max_messages
+        self._service_tier = service_tier
+        self._text_extractor = text_extractor
 
     def start_chat(self):
-        return OpenAIChatSession(
+        return AssistantChatSession(
             self._client,
-            self._model_name,
-            self._system_instruction,
+            self._assistant_id,
             self._temperature,
+            self._max_messages,
+            self._service_tier,
+            self._text_extractor,
         )
 
 
 class OpenAIService:
     """OpenAI API와의 모든 상호작용을 관리합니다."""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
         self.config = config
         self.client = OpenAI(api_key=config.openai_api_key)
-        self._model_cache: dict[int, _OpenAIModel] = {}
+        self._assistant_cache: dict[int, _AssistantModel] = {}
+        self._max_messages = 10
+        self._assistant_model_name = assistant_model_name
+        self._summary_model_name = summary_model_name or assistant_model_name
 
-        # Preload default models
-        self.summary_model = self._get_or_create_model(self.config.model_name, SUMMARY_SYSTEM_INSTRUCTION)
-        self.assistant_model = self._get_or_create_model(self.config.model_name, BOT_PERSONA_PROMPT)
-        logger.info("OpenAI 모델 '%s' 로드 완료.", config.model_name)
+        # Preload default assistant
+        self.assistant_model = self._get_or_create_assistant(self._assistant_model_name, BOT_PERSONA_PROMPT)
+        logger.info("OpenAI Assistant '%s' 준비 완료.", self._assistant_model_name)
 
-    def _get_or_create_model(self, model_name: str, system_instruction: str) -> _OpenAIModel:
-        key = hash(system_instruction)
-        if key not in self._model_cache:
-            self._model_cache[key] = _OpenAIModel(
-                self.client,
-                model_name,
-                system_instruction,
-                getattr(self.config, 'temperature', 1.0),
+    def _get_or_create_assistant(self, model_name: str, system_instruction: str) -> _AssistantModel:
+        key = hash((model_name, system_instruction))
+        if key not in self._assistant_cache:
+            assistant = self.client.beta.assistants.create(
+                model=model_name,
+                instructions=system_instruction,
+                temperature=getattr(self.config, 'temperature', 1.0),
+                extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
             )
-        return self._model_cache[key]
+            self._assistant_cache[key] = _AssistantModel(
+                self.client,
+                assistant.id,
+                getattr(self.config, 'temperature', 1.0),
+                self._max_messages,
+                getattr(self.config, 'service_tier', 'flex'),
+                self._extract_text_from_message,
+            )
+        return self._assistant_cache[key]
 
-    def create_assistant_model(self, system_instruction: str) -> _OpenAIModel:
-        return self._get_or_create_model(self.config.model_name, system_instruction)
+    def create_assistant_model(self, system_instruction: str) -> _AssistantModel:
+        return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
         if isinstance(error, RateLimitError):
@@ -121,19 +185,7 @@ class OpenAIService:
             return
 
         try:
-            choices = getattr(response_obj, 'choices', []) or []
-            for idx, choice in enumerate(choices):
-                message = getattr(choice, 'message', None)
-                logger.debug(
-                    "[RAW API RESPONSE %s] Choice %s finish_reason=%s", attempt, idx, getattr(choice, 'finish_reason', 'unknown')
-                )
-                if message and getattr(message, 'content', None):
-                    logger.debug(
-                        "[RAW API RESPONSE %s] Choice %s text: %s",
-                        attempt,
-                        idx,
-                        str(message.content)[:200].replace('\n', ' '),
-                    )
+            logger.debug("[RAW API RESPONSE %s] %s", attempt, response_obj)
         except Exception:
             logger.exception("[RAW API RESPONSE %s] Error logging raw response", attempt)
 
@@ -241,6 +293,19 @@ class OpenAIService:
             logger.exception("Failed to extract text from OpenAI response")
             return ""
 
+    def _extract_text_from_message(self, message_obj) -> str:
+        try:
+            content_parts = getattr(message_obj, 'content', []) or []
+            text_fragments = []
+            for part in content_parts:
+                text_block = getattr(part, 'text', None)
+                if text_block and getattr(text_block, 'value', None):
+                    text_fragments.append(str(text_block.value))
+            return "\n".join(text_fragments).strip()
+        except Exception:
+            logger.exception("Failed to extract text from assistant message")
+            return ""
+
     def _extract_structured_json(self, response_obj) -> Optional[dict]:
         try:
             content = self._extract_text_from_response(response_obj)
@@ -257,12 +322,17 @@ class OpenAIService:
         prompt = f"Discord 대화 내용:\n{text}"
         return await self._api_request_with_retry(
             lambda: self.client.chat.completions.create(
-                model=self.config.model_name,
+                model=self._summary_model_name,
                 messages=[
-                    {"role": "system", "content": SUMMARY_SYSTEM_INSTRUCTION},
+                    {
+                        "role": "system",
+                        "content": SUMMARY_SYSTEM_INSTRUCTION,
+                        "cache_control": {"type": "ephemeral"},
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=getattr(self.config, 'temperature', 1.0),
+                service_tier=getattr(self.config, 'service_tier', 'flex'),
             ),
             "요약",
         )
@@ -285,6 +355,6 @@ class OpenAIService:
         if response_obj is None:
             return None
 
-        response_text = self._extract_text_from_response(response_obj)
-        return response_text, response_obj
+        response_text, run = response_obj
+        return response_text, run
 
