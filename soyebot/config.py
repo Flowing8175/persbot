@@ -1,14 +1,24 @@
 """Configuration loader for SoyeBot."""
 
+import logging
 import os
 import sys
-import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Tuple
+
 from dotenv import load_dotenv
 
 # --- 로딩 및 기본 설정 ---
-load_dotenv()
+# Load the local .env file from the project root to populate environment
+# variables. We intentionally avoid find_dotenv because the project is typically
+# run from the repository root and we want predictable loading behavior.
+_dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+if _dotenv_path.exists():
+    load_dotenv(_dotenv_path)
+    logging.getLogger(__name__).debug("Loaded environment variables from %s", _dotenv_path)
+else:
+    logging.getLogger(__name__).debug("No .env file found; relying on existing environment")
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -54,14 +64,34 @@ def load_config() -> AppConfig:
 
     auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
     auto_reply_channel_ids: Tuple[int, ...] = ()
-    if auto_channel_env.strip():
-        try:
-            auto_reply_channel_ids = tuple(
-                int(cid.strip()) for cid in auto_channel_env.split(',')
-                if cid.strip()
+    cleaned_env = auto_channel_env.strip()
+
+    # Support optional wrapping such as "(1, 2)" or "[1,2]" to mirror tuple-style
+    # values that might be pasted into the .env file.
+    if cleaned_env and len(cleaned_env) >= 2:
+        if (cleaned_env[0], cleaned_env[-1]) in {('(', ')'), ('[', ']'), ('{', '}')}:
+            cleaned_env = cleaned_env[1:-1].strip()
+
+    if cleaned_env:
+        valid_ids = []
+        invalid_entries = []
+        for cid in cleaned_env.split(','):
+            stripped = cid.strip()
+            if not stripped:
+                continue
+
+            try:
+                valid_ids.append(int(stripped))
+            except ValueError:
+                invalid_entries.append(stripped)
+
+        if invalid_entries:
+            logger.warning(
+                "AUTO_REPLY_CHANNEL_IDS 환경 변수에 잘못된 값이 있어 무시되었습니다: %s",
+                invalid_entries,
             )
-        except ValueError:
-            logger.warning("AUTO_REPLY_CHANNEL_IDS 환경 변수에 잘못된 값이 있어 무시되었습니다.")
+
+        auto_reply_channel_ids = tuple(valid_ids)
 
     return AppConfig(
         discord_token=discord_token,

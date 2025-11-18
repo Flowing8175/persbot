@@ -81,6 +81,11 @@ async def main():
         logger.info(f'로그인 완료: {bot.user.name} ({bot.user.id})')
         logger.info(f"봇이 준비되었습니다! '{config.command_prefix}' 또는 @mention으로 상호작용할 수 있습니다.")
 
+        if config.auto_reply_channel_ids:
+            logger.info("channel registered to reply: %s", list(config.auto_reply_channel_ids))
+        else:
+            logger.info("channel registered to reply: []")
+
         # Initialize cogs
         await bot.add_cog(HelpCog(bot))
         await bot.add_cog(SummarizerCog(bot, config, gemini_service))
