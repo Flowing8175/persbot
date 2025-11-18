@@ -8,7 +8,7 @@ import time
 from config import AppConfig
 from services.gemini_service import GeminiService
 from bot.session import SessionManager
-from utils import extract_message_content
+from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 from metrics import get_metrics
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ class AssistantCog(commands.Cog):
 
         except Exception as e:
             logger.error(f"메시지 처리 중 예상치 못한 오류 발생: {e}", exc_info=True)
-            await message.reply("❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요.", mention_author=False)
+            await message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
             # Track processing time even on error
             duration_ms = (time.perf_counter() - start_time) * 1000

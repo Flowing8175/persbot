@@ -9,7 +9,7 @@ from discord.ext import commands
 from config import AppConfig
 from services.gemini_service import GeminiService
 from bot.session import SessionManager
-from utils import extract_message_content
+from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 from metrics import get_metrics
 
 logger = logging.getLogger(__name__)
@@ -118,9 +118,7 @@ class AutoChannelCog(commands.Cog):
 
         except Exception as exc:
             logger.error("자동 응답 메시지 처리 중 오류 발생: %s", exc, exc_info=True)
-            await message.channel.send(
-                "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요."
-            )
+            await message.channel.send(GENERIC_ERROR_MESSAGE)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)

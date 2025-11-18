@@ -4,6 +4,8 @@ import discord
 from discord.ext import commands
 import logging
 
+from utils import GENERIC_ERROR_MESSAGE
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,7 +102,7 @@ class HelpCog(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to show help: {e}")
             await ctx.reply(
-                f"❌ 도움말을 표시하는 중 오류가 발생했습니다: {e}",
+                GENERIC_ERROR_MESSAGE,
                 mention_author=False,
             )
 
@@ -193,7 +195,7 @@ class HelpCog(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to show features: {e}")
             await ctx.reply(
-                f"❌ 기능 정보를 표시하는 중 오류가 발생했습니다: {e}",
+                GENERIC_ERROR_MESSAGE,
                 mention_author=False,
             )
 

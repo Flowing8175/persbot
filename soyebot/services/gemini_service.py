@@ -14,6 +14,7 @@ from google.genai import types as genai_types
 from config import AppConfig
 from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
 from metrics import get_metrics
+from utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,7 @@ class GeminiService:
                 logger.error(f"❌ 에러: API 요청 시간 초과")
                 metrics.increment_counter('api_requests_error')
                 if discord_message:
-                    await discord_message.reply("❌ Gemini API 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.", mention_author=False)
+                    await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
                 return None
             except Exception as e:
                 error_str = str(e)
@@ -251,7 +252,7 @@ class GeminiService:
 
                 if attempt >= self.config.api_max_retries:
                     if discord_message:
-                        await discord_message.reply(f"❌ API 요청 중 오류가 발생했습니다: {error_str}. 잠시 후 다시 시도해주세요.", mention_author=False)
+                        await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
                     break
                 logger.info(f"에러 발생, 재시도 중...")
                 await asyncio.sleep(2)
@@ -259,7 +260,7 @@ class GeminiService:
         logger.error(f"❌ 에러: 최대 재시도 횟수({self.config.api_max_retries})를 초과했습니다.")
         metrics.increment_counter('api_requests_error')
         if discord_message:
-            await discord_message.reply(f"❌ 최대 재시도 횟수({self.config.api_max_retries})를 초과하여 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", mention_author=False)
+            await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
         return None
 
     async def summarize_text(self, text: str) -> Optional[str]:
