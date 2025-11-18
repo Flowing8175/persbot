@@ -16,7 +16,7 @@ class HelpCog(commands.Cog):
     def __init__(self, bot: commands.Bot, config: AppConfig):
         self.bot = bot
         self.config = config
-        provider = getattr(config, 'assistant_llm_provider', getattr(config, 'llm_provider', 'gemini'))
+        provider = getattr(config, 'assistant_llm_provider', 'gemini')
         self.ai_provider_label = "OpenAI API" if str(provider).lower() == 'openai' else "Google Gemini API"
 
     @commands.command(name='도움말', aliases=['help', 'h'])

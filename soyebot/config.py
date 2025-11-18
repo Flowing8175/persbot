@@ -49,7 +49,6 @@ logger = logging.getLogger(__name__)
 class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
-    llm_provider: str = 'gemini'
     assistant_llm_provider: str = 'gemini'
     summarizer_llm_provider: str = 'gemini'
     gemini_api_key: Optional[str] = None
@@ -104,9 +103,12 @@ def load_config() -> AppConfig:
     service_tier = os.environ.get('SERVICE_TIER', 'flex')
 
     # Provider별 설정 (어시스턴트/요약 분리)
-    default_provider = _normalize_provider(os.environ.get('LLM_PROVIDER'), 'gemini')
     assistant_llm_provider = _validate_provider(
-        _normalize_provider(os.environ.get('ASSISTANT_LLM_PROVIDER'), default_provider)
+        _normalize_provider(
+            os.environ.get('ASSISTANT_LLM_PROVIDER')
+            or os.environ.get('LLM_PROVIDER'),
+            'gemini',
+        )
     )
     summarizer_llm_provider = _validate_provider(
         _normalize_provider(os.environ.get('SUMMARIZER_LLM_PROVIDER'), assistant_llm_provider)
@@ -176,7 +178,6 @@ def load_config() -> AppConfig:
 
     return AppConfig(
         discord_token=discord_token,
-        llm_provider=assistant_llm_provider,
         assistant_llm_provider=assistant_llm_provider,
         summarizer_llm_provider=summarizer_llm_provider,
         gemini_api_key=gemini_api_key,
