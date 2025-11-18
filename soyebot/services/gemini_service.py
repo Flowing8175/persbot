@@ -258,8 +258,6 @@ class GeminiService:
 
         logger.error(f"❌ 에러: 최대 재시도 횟수({self.config.api_max_retries})를 초과했습니다.")
         metrics.increment_counter('api_requests_error')
-        if discord_message:
-            await discord_message.reply(f"❌ 최대 재시도 횟수({self.config.api_max_retries})를 초과하여 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.", mention_author=False)
         return None
 
     async def summarize_text(self, text: str) -> Optional[str]:
