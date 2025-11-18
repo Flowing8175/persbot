@@ -1,6 +1,7 @@
 "Gemini API service for SoyeBot."
 
 import asyncio
+import json
 import time
 import re
 import logging
@@ -330,3 +331,82 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Failed to extract text from response: {e}", exc_info=True)
             return ""
+
+    def _extract_structured_json(self, response_obj) -> Optional[dict]:
+        """Extract JSON payload from a structured Gemini response."""
+
+        try:
+            if hasattr(response_obj, "candidates") and response_obj.candidates:
+                for candidate in response_obj.candidates:
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        for part in candidate.content.parts:
+                            text = getattr(part, "text", "")
+                            if text:
+                                return json.loads(text)
+        except Exception:
+            logger.exception("Failed to parse structured Gemini response")
+        return None
+
+    async def score_topic_similarity(self, text_a: str, text_b: str) -> Optional[float]:
+        """Score semantic similarity between two short Discord messages using structured output."""
+
+        if not text_a.strip() or not text_b.strip():
+            return 0.0
+
+        schema = genai_types.Schema(
+            type=genai_types.Type.OBJECT,
+            properties={
+                "similarity": genai_types.Schema(
+                    type=genai_types.Type.NUMBER,
+                    description="Semantic similarity between 0 and 1",
+                ),
+                "same_topic": genai_types.Schema(
+                    type=genai_types.Type.BOOLEAN,
+                    description="True when both messages are about the same topic",
+                ),
+                "reason": genai_types.Schema(
+                    type=genai_types.Type.STRING,
+                    description="Short explanation",
+                ),
+            },
+            required=["similarity", "same_topic"],
+        )
+
+        prompt = (
+            "Rate whether two Discord messages belong to the same conversation topic. "
+            "Return a similarity from 0 (unrelated) to 1 (identical topic). "
+            "Base the score on intent and subject matter, ignoring formatting differences."
+        )
+
+        def api_call():
+            return self.client.models.generate_content(
+                model=self.config.model_name,
+                contents=[
+                    prompt,
+                    f"Message A:\n{text_a}\n\nMessage B:\n{text_b}",
+                ],
+                config=genai_types.GenerateContentConfig(
+                    temperature=0,
+                    response_schema=schema,
+                    response_mime_type="application/json",
+                ),
+            )
+
+        response_obj = await self._api_request_with_retry(
+            api_call,
+            "세션 유사도 판정",
+            return_full_response=True,
+        )
+
+        if response_obj is None:
+            return None
+
+        parsed = self._extract_structured_json(response_obj)
+        if not parsed:
+            return None
+
+        similarity = parsed.get("similarity")
+        if isinstance(similarity, (int, float)):
+            return max(0.0, min(1.0, float(similarity)))
+
+        return None

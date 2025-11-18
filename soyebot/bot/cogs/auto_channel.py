@@ -42,6 +42,10 @@ class AutoChannelCog(commands.Cog):
         if message.content.startswith(self.config.command_prefix):
             return
 
+        # Allow users to bypass auto-response by prefixing a backslash
+        if message.content and message.content.lstrip().startswith("\\"):
+            return
+
         start_time = time.perf_counter()
         metrics = get_metrics()
 
