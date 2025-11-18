@@ -185,6 +185,9 @@ class GeminiService:
         request_start = time.perf_counter()
         metrics.increment_counter('api_requests_total')
 
+        error_notified = False
+        last_error: Optional[Exception] = None
+
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
 
@@ -212,18 +215,16 @@ class GeminiService:
                 else:
                     return response.text.strip()
             except asyncio.TimeoutError:
+                last_error = asyncio.TimeoutError()
                 logger.warning(f"Gemini API 타임아웃 ({attempt}/{self.config.api_max_retries})")
                 if attempt < self.config.api_max_retries:
                     logger.info(f"API 타임아웃, 재시도 중...")
                     continue
-                logger.error(f"❌ 에러: API 요청 시간 초과")
-                metrics.increment_counter('api_requests_error')
-                if discord_message:
-                    await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-                return None
+                break
             except Exception as e:
                 error_str = str(e)
                 logger.error(f"Gemini API 에러 ({attempt}/{self.config.api_max_retries}): {e}", exc_info=True)
+                last_error = e
 
                 if self._is_rate_limit_error(error_str):
                     delay = self._extract_retry_delay(error_str) or self.config.api_rate_limit_retry_after
@@ -251,16 +252,18 @@ class GeminiService:
                     continue
 
                 if attempt >= self.config.api_max_retries:
-                    if discord_message:
-                        await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
                     break
                 logger.info(f"에러 발생, 재시도 중...")
                 await asyncio.sleep(2)
 
-        logger.error(f"❌ 에러: 최대 재시도 횟수({self.config.api_max_retries})를 초과했습니다.")
+        if isinstance(last_error, asyncio.TimeoutError):
+            logger.error("❌ 에러: API 요청 시간 초과")
+        else:
+            logger.error(f"❌ 에러: 최대 재시도 횟수({self.config.api_max_retries})를 초과했습니다.")
         metrics.increment_counter('api_requests_error')
-        if discord_message:
+        if discord_message and not error_notified:
             await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+            error_notified = True
         return None
 
     async def summarize_text(self, text: str) -> Optional[str]:
