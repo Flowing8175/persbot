@@ -46,7 +46,7 @@ class MetricsCollector:
 
         # Latency tracking (in milliseconds)
         self.latencies: Dict[str, deque] = {
-            'gemini_api': deque(maxlen=max_history),
+            'llm_api': deque(maxlen=max_history),
             'message_processing': deque(maxlen=max_history),
             'database': deque(maxlen=max_history),
             'session_creation': deque(maxlen=max_history),
@@ -70,6 +70,9 @@ class MetricsCollector:
         }
         self._cache_ttl = 2.0  # Cache system metrics for 2 seconds
 
+        # Active LLM provider (for display only)
+        self.llm_provider: str = 'Gemini'
+
         # Process handle for psutil
         self._process = psutil.Process()
 
@@ -79,7 +82,7 @@ class MetricsCollector:
         """Record operation latency.
 
         Args:
-            operation: Operation name (e.g., 'gemini_api', 'database')
+            operation: Operation name (e.g., 'llm_api', 'database')
             duration_ms: Duration in milliseconds
             label: Optional label for categorization
         """
@@ -183,6 +186,7 @@ class MetricsCollector:
 
             summary = {
                 'timestamp': datetime.now(timezone.utc).isoformat(),
+                'provider': self.llm_provider,
                 'latencies': {
                     op: self.get_latency_stats(op)
                     for op in self.latencies.keys()
@@ -195,6 +199,12 @@ class MetricsCollector:
             }
 
             return summary
+
+    def set_llm_provider(self, provider_name: str) -> None:
+        """Set the active LLM provider name for display/metrics purposes."""
+
+        with self._lock:
+            self.llm_provider = provider_name
 
 
 # Global metrics instance
@@ -216,7 +226,7 @@ def measure_latency(operation: str, label: Optional[str] = None):
     """Decorator to measure function execution latency.
 
     Usage:
-        @measure_latency('gemini_api')
+        @measure_latency('llm_api')
         async def call_api():
             ...
 

@@ -7,11 +7,10 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from difflib import SequenceMatcher
 from typing import Optional, Tuple
 
 from config import AppConfig
-from services.gemini_service import GeminiService
+from services.llm_service import LLMService
 from services.database_service import DatabaseService
 from prompts import BOT_PERSONA_PROMPT
 from metrics import get_metrics
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChatSession:
-    """Represents a very short-lived Gemini chat tied to a session key."""
+    """Represents a very short-lived LLM chat tied to a session key."""
     chat: object
     user_id: str
     session_id: str
@@ -57,11 +56,11 @@ class SessionManager:
     def __init__(
         self,
         config: AppConfig,
-        gemini_service: GeminiService,
+        llm_service: LLMService,
         db_service: DatabaseService,
     ):
         self.config = config
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
         self.db_service = db_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.message_sessions: OrderedDict[str, str] = OrderedDict()
@@ -113,19 +112,6 @@ class SessionManager:
     def _is_stale(self, context: SessionContext, at: Optional[datetime]) -> bool:
         reference_time = at or datetime.now(timezone.utc)
         return reference_time - context.last_activity_at > timedelta(minutes=self.config.session_inactive_minutes)
-
-    async def _similarity(self, a: str, b: str) -> float:
-        if not a or not b:
-            return 0.0
-
-        try:
-            score = await self.gemini_service.score_topic_similarity(a, b)
-            if score is not None:
-                return score
-        except Exception:
-            logger.exception("Gemini similarity scoring failed; falling back to fuzzy match")
-
-        return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
     def _record_session_context(
         self,
@@ -185,7 +171,7 @@ class SessionManager:
 
         system_prompt = BOT_PERSONA_PROMPT
 
-        assistant_model = self.gemini_service.create_assistant_model(system_prompt)
+        assistant_model = self.llm_service.create_assistant_model(system_prompt)
         chat = assistant_model.start_chat()
 
         self.sessions[session_key] = ChatSession(
@@ -246,14 +232,6 @@ class SessionManager:
 
         recent = self._get_recent_session(channel_id)
         if recent and not self._is_stale(recent, created_at):
-            similarity = await self._similarity(cleaned_message, recent.last_message_preview)
-            if similarity >= self.config.session_similarity_threshold:
-                return ResolvedSession(recent.session_id, cleaned_message)
-            logger.debug(
-                "Similarity %.3f below threshold %.2f for channel %s; creating new session.",
-                similarity,
-                self.config.session_similarity_threshold,
-                channel_id,
-            )
+            return ResolvedSession(recent.session_id, cleaned_message)
 
         return ResolvedSession(self._generate_session_id(channel_id), cleaned_message)

@@ -207,7 +207,7 @@ class GeminiService:
 
                 # Track successful API request
                 duration_ms = (time.perf_counter() - request_start) * 1000
-                metrics.record_latency('gemini_api', duration_ms)
+                metrics.record_latency('llm_api', duration_ms)
                 metrics.increment_counter('api_requests_success')
 
                 if return_full_response:
@@ -377,79 +377,3 @@ class GeminiService:
             logger.exception("Failed to parse structured Gemini response")
         return None
 
-    async def score_topic_similarity(self, text_a: str, text_b: str) -> Optional[float]:
-        """Score semantic similarity between two short Discord messages using structured output."""
-
-        if not text_a.strip() or not text_b.strip():
-            return 0.0
-
-        schema = genai_types.Schema(
-            type=genai_types.Type.OBJECT,
-            properties={
-                "similarity": genai_types.Schema(
-                    type=genai_types.Type.NUMBER,
-                    description="Semantic similarity between 0 and 1",
-                ),
-                "same_topic": genai_types.Schema(
-                    type=genai_types.Type.BOOLEAN,
-                    description="True when both messages are about the same topic",
-                ),
-                "reason": genai_types.Schema(
-                    type=genai_types.Type.STRING,
-                    description="Short explanation",
-                ),
-            },
-            required=["similarity", "same_topic"],
-        )
-
-        prompt = (
-            "You are scoring whether two short Discord messages belong to the same conversation topic. "
-            "Return JSON that includes a similarity between 0 (unrelated) and 1 (identical topic) and a boolean same_topic. "
-            "Scoring rubric: 1.0 for the same ask or paraphrase; ~0.75 for clear follow-ups on the same task; ~0.5 when the main subject is shared but the request shifts; ~0.25 for only weak lexical overlap; 0.0 for unrelated topics. "
-            "Guidelines: focus on intent, subject matter, and entities (project, ticket, feature), not tone or emoji. Scheduling vs reminder about the same release is similar; release talk vs API error is not. "
-            "Examples: "
-            "A: '오늘 저녁에 뭐 먹을까?' / B: '파스타 어때?' => ~0.8-0.9, same_topic true. "
-            "A: '주말에 등산 갈래?' / B: '토요일 오전에 시간 괜찮아' => ~0.75-0.85, same_topic true. "
-            "A: '이번 주말 영화 볼래?' / B: '다음 주에 친구 결혼식 있어' => ~0.2, same_topic false. "
-            "A: '우산 챙겼어?' / B: '어제 본 드라마 재밌더라' => 0.0, same_topic false. "
-            "Be decisive and return a single numeric similarity in the 0-1 range."
-        )
-
-        def api_call():
-            return self.client.models.generate_content(
-                model=self.config.eval_model_name,
-                contents=[
-                    prompt,
-                    f"Message A:\n{text_a}\n\nMessage B:\n{text_b}",
-                ],
-                config=genai_types.GenerateContentConfig(
-                    temperature=0,
-                    response_schema=schema,
-                    response_mime_type="application/json",
-                ),
-            )
-
-        response_obj = await self._api_request_with_retry(
-            api_call,
-            "세션 유사도 판정",
-            return_full_response=True,
-        )
-
-        if response_obj is None:
-            return None
-
-        parsed = self._extract_structured_json(response_obj)
-        if not parsed:
-            return None
-
-        similarity = parsed.get("similarity")
-        if isinstance(similarity, str):
-            try:
-                similarity = float(similarity)
-            except ValueError:
-                similarity = None
-
-        if isinstance(similarity, (int, float)):
-            return max(0.0, min(1.0, float(similarity)))
-
-        return None

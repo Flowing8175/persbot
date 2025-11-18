@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 
 from config import AppConfig
-from services.gemini_service import GeminiService
+from services.llm_service import LLMService
 from bot.session import SessionManager
 from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 from metrics import get_metrics
@@ -22,12 +22,12 @@ class AutoChannelCog(commands.Cog):
         self,
         bot: commands.Bot,
         config: AppConfig,
-        gemini_service: GeminiService,
+        llm_service: LLMService,
         session_manager: SessionManager,
     ):
         self.bot = bot
         self.config = config
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
         self.session_manager = session_manager
 
     @commands.Cog.listener()
@@ -94,7 +94,7 @@ class AutoChannelCog(commands.Cog):
                 )
                 self.session_manager.link_message_to_session(str(message.id), session_key)
 
-                response_result = await self.gemini_service.generate_chat_response(
+                response_result = await self.llm_service.generate_chat_response(
                     chat_session,
                     resolution.cleaned_message,
                     message,
@@ -110,7 +110,7 @@ class AutoChannelCog(commands.Cog):
                                 session_key,
                             )
                     else:
-                        logger.debug("Gemini returned no text response for the auto-reply message.")
+                        logger.debug("LLM returned no text response for the auto-reply message.")
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
