@@ -53,7 +53,7 @@ async def main():
     auto_channel_cog_cls = None
     if config.auto_reply_channel_ids:
         try:
-            from bot.cogs.auto_channel import AutoChannelCog  # noqa: F401
+            from bot.cogs.auto_channel import AutoChannelCog
             auto_channel_cog_cls = AutoChannelCog
         except ModuleNotFoundError as exc:
             logger.error(
