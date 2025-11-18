@@ -69,7 +69,7 @@ class AutoChannelCog(commands.Cog):
                     else None
                 )
 
-                resolution = self.session_manager.resolve_session(
+                resolution = await self.session_manager.resolve_session(
                     channel_id=message.channel.id,
                     author_id=message.author.id,
                     username=message.author.name,
