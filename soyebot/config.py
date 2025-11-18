@@ -49,14 +49,14 @@ logger = logging.getLogger(__name__)
 class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
-    assistant_llm_provider: str = 'gemini'
+    assistant_llm_provider: str = 'openai'
     summarizer_llm_provider: str = 'gemini'
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     gemini_model_name: str = 'gemini-2.5-flash'
     openai_model_name: str = 'gpt-5-mini'
-    assistant_model_name: str = 'gemini-2.5-flash'
-    summarizer_model_name: str = 'gemini-2.5-flash'
+    assistant_model_name: str = 'gpt-5-mini'
+    summarizer_model_name: str = 'gemini-2.5-pro'
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
