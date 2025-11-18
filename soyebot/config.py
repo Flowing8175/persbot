@@ -55,13 +55,25 @@ def load_config() -> AppConfig:
     auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
     auto_reply_channel_ids: Tuple[int, ...] = ()
     if auto_channel_env.strip():
-        try:
-            auto_reply_channel_ids = tuple(
-                int(cid.strip()) for cid in auto_channel_env.split(',')
-                if cid.strip()
+        valid_ids = []
+        invalid_entries = []
+        for cid in auto_channel_env.split(','):
+            stripped = cid.strip()
+            if not stripped:
+                continue
+
+            try:
+                valid_ids.append(int(stripped))
+            except ValueError:
+                invalid_entries.append(stripped)
+
+        if invalid_entries:
+            logger.warning(
+                "AUTO_REPLY_CHANNEL_IDS 환경 변수에 잘못된 값이 있어 무시되었습니다: %s",
+                invalid_entries,
             )
-        except ValueError:
-            logger.warning("AUTO_REPLY_CHANNEL_IDS 환경 변수에 잘못된 값이 있어 무시되었습니다.")
+
+        auto_reply_channel_ids = tuple(valid_ids)
 
     return AppConfig(
         discord_token=discord_token,
