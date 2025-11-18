@@ -64,18 +64,10 @@ def load_config() -> AppConfig:
 
     auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
     auto_reply_channel_ids: Tuple[int, ...] = ()
-    cleaned_env = auto_channel_env.strip()
-
-    # Support optional wrapping such as "(1, 2)" or "[1,2]" to mirror tuple-style
-    # values that might be pasted into the .env file.
-    if cleaned_env and len(cleaned_env) >= 2:
-        if (cleaned_env[0], cleaned_env[-1]) in {('(', ')'), ('[', ']'), ('{', '}')}:
-            cleaned_env = cleaned_env[1:-1].strip()
-
-    if cleaned_env:
+    if auto_channel_env.strip():
         valid_ids = []
         invalid_entries = []
-        for cid in cleaned_env.split(','):
+        for cid in auto_channel_env.split(','):
             stripped = cid.strip()
             if not stripped:
                 continue
