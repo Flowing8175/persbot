@@ -16,7 +16,7 @@ class HelpCog(commands.Cog):
     def __init__(self, bot: commands.Bot, config: AppConfig):
         self.bot = bot
         self.config = config
-        provider = getattr(config, 'llm_provider', 'gemini')
+        provider = getattr(config, 'assistant_llm_provider', 'gemini')
         self.ai_provider_label = "OpenAI API" if str(provider).lower() == 'openai' else "Google Gemini API"
 
     @commands.command(name='도움말', aliases=['help', 'h'])
@@ -89,10 +89,7 @@ class HelpCog(commands.Cog):
                 name="🔧 시스템 정보",
                 value=f"봇 상태: 🟢 온라인\n"
                       f"프레임워크: Discord.py\n"
-                      f"AI 엔진: {self.ai_provider_label}\n\n"
-                      f"📊 **성능 모니터링:**\n"
-                      f"실시간 메트릭 대시보드: http://localhost:5000\n"
-                      f"(메모리, CPU, API 응답시간, 성공률 등)",
+                      f"AI 엔진: {self.ai_provider_label}",
                 inline=False,
             )
 

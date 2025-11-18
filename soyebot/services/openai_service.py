@@ -121,18 +121,20 @@ class _AssistantModel:
 class OpenAIService:
     """OpenAI API와의 모든 상호작용을 관리합니다."""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
         self.config = config
         self.client = OpenAI(api_key=config.openai_api_key)
         self._assistant_cache: dict[int, _AssistantModel] = {}
         self._max_messages = 10
+        self._assistant_model_name = assistant_model_name
+        self._summary_model_name = summary_model_name or assistant_model_name
 
         # Preload default assistant
-        self.assistant_model = self._get_or_create_assistant(self.config.model_name, BOT_PERSONA_PROMPT)
-        logger.info("OpenAI Assistant '%s' 준비 완료.", config.model_name)
+        self.assistant_model = self._get_or_create_assistant(self._assistant_model_name, BOT_PERSONA_PROMPT)
+        logger.info("OpenAI Assistant '%s' 준비 완료.", self._assistant_model_name)
 
     def _get_or_create_assistant(self, model_name: str, system_instruction: str) -> _AssistantModel:
-        key = hash(system_instruction)
+        key = hash((model_name, system_instruction))
         if key not in self._assistant_cache:
             assistant = self.client.beta.assistants.create(
                 model=model_name,
@@ -151,7 +153,7 @@ class OpenAIService:
         return self._assistant_cache[key]
 
     def create_assistant_model(self, system_instruction: str) -> _AssistantModel:
-        return self._get_or_create_assistant(self.config.model_name, system_instruction)
+        return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
         if isinstance(error, RateLimitError):
@@ -320,7 +322,7 @@ class OpenAIService:
         prompt = f"Discord 대화 내용:\n{text}"
         return await self._api_request_with_retry(
             lambda: self.client.chat.completions.create(
-                model=self.config.model_name,
+                model=self._summary_model_name,
                 messages=[
                     {
                         "role": "system",

@@ -49,21 +49,27 @@ class _CachedModel:
 class GeminiService:
     """Gemini API와의 모든 상호작용을 관리합니다."""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
         self.config = config
         self.client = genai.Client(api_key=config.gemini_api_key)
+        self._assistant_model_name = assistant_model_name
+        self._summary_model_name = summary_model_name or assistant_model_name
 
         # Cache wrapper instances keyed by system instruction hash
         self._model_cache: dict[int, _CachedModel] = {}
 
         # Pre-load default models using cache
         self.summary_model = self._get_or_create_model(
-            config.model_name, SUMMARY_SYSTEM_INSTRUCTION
+            self._summary_model_name, SUMMARY_SYSTEM_INSTRUCTION
         )
         self.assistant_model = self._get_or_create_model(
-            config.model_name, BOT_PERSONA_PROMPT
+            self._assistant_model_name, BOT_PERSONA_PROMPT
         )
-        logger.info(f"Gemini 모델 '{config.model_name}' 로드 완료. (구성 캐시 활성화)")
+        logger.info(
+            "Gemini 모델 assistant='%s', summary='%s' 로드 완료. (구성 캐시 활성화)",
+            self._assistant_model_name,
+            self._summary_model_name,
+        )
 
     def _get_or_create_model(self, model_name: str, system_instruction: str) -> _CachedModel:
         """Get cached model instance or create new one.
@@ -75,15 +81,14 @@ class GeminiService:
         Returns:
             Cached or newly created model wrapper instance
         """
-        key = hash(system_instruction)
+        key = hash((model_name, system_instruction))
         if key not in self._model_cache:
             config = genai_types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=getattr(self.config, 'temperature', 1.0),
             )
             self._model_cache[key] = _CachedModel(self.client, model_name, config)
-        else:
-            return self._model_cache[key]
+        return self._model_cache[key]
 
     def create_assistant_model(self, system_instruction: str) -> _CachedModel:
         """Create or retrieve a cached assistant model with custom system instruction.
@@ -94,7 +99,7 @@ class GeminiService:
         Returns:
             Model wrapper instance with the custom instruction (cached if possible)
         """
-        return self._get_or_create_model(self.config.model_name, system_instruction)
+        return self._get_or_create_model(self._assistant_model_name, system_instruction)
 
     def _is_rate_limit_error(self, error_str: str) -> bool:
         return ("429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower())
