@@ -17,7 +17,6 @@ from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
 from bot.cogs.help import HelpCog
-from bot.cogs.auto_channel import AutoChannelCog
 from web.metrics_server import start_metrics_server_background
 
 logger = logging.getLogger(__name__)
@@ -51,6 +50,16 @@ def setup_logging():
 async def main():
     """Initializes and runs the bot."""
     config = load_config()
+    auto_channel_cog_cls = None
+    if config.auto_reply_channel_ids:
+        try:
+            from bot.cogs.auto_channel import AutoChannelCog  # noqa: F401
+            auto_channel_cog_cls = AutoChannelCog
+        except ModuleNotFoundError as exc:
+            logger.error(
+                "AUTO_REPLY_CHANNEL_IDS가 설정되었지만 auto_channel Cog를 불러올 수 없습니다: %s",
+                exc,
+            )
 
     # Start metrics web UI server in background thread
     start_metrics_server_background(host='0.0.0.0', port=5000)
@@ -76,8 +85,8 @@ async def main():
         await bot.add_cog(HelpCog(bot))
         await bot.add_cog(SummarizerCog(bot, config, gemini_service))
         await bot.add_cog(AssistantCog(bot, config, gemini_service, session_manager))
-        if config.auto_reply_channel_ids:
-            await bot.add_cog(AutoChannelCog(bot, config, gemini_service, session_manager))
+        if auto_channel_cog_cls:
+            await bot.add_cog(auto_channel_cog_cls(bot, config, gemini_service, session_manager))
         logger.info("Cogs 로드 완료.")
 
     @bot.event
