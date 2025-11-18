@@ -1,14 +1,24 @@
 """Configuration loader for SoyeBot."""
 
+import logging
 import os
 import sys
-import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Tuple
+
 from dotenv import load_dotenv
 
 # --- 로딩 및 기본 설정 ---
-load_dotenv()
+# Load the local .env file from the project root to populate environment
+# variables. We intentionally avoid find_dotenv because the project is typically
+# run from the repository root and we want predictable loading behavior.
+_dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+if _dotenv_path.exists():
+    load_dotenv(_dotenv_path)
+    logging.getLogger(__name__).debug("Loaded environment variables from %s", _dotenv_path)
+else:
+    logging.getLogger(__name__).debug("No .env file found; relying on existing environment")
 
 logging.basicConfig(
     level=logging.DEBUG,
