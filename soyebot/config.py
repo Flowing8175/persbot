@@ -52,6 +52,10 @@ class AppConfig:
     temperature: float = 1.0
     # Channels where every message should be auto-processed by Gemini
     auto_reply_channel_ids: Tuple[int, ...] = ()
+    # --- Session Management ---
+    session_cache_limit: int = 200
+    session_inactive_minutes: int = 45
+    session_similarity_threshold: float = 0.7
 
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
