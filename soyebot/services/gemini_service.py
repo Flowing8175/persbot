@@ -336,13 +336,43 @@ class GeminiService:
         """Extract JSON payload from a structured Gemini response."""
 
         try:
-            if hasattr(response_obj, "candidates") and response_obj.candidates:
-                for candidate in response_obj.candidates:
-                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                        for part in candidate.content.parts:
-                            text = getattr(part, "text", "")
-                            if text:
-                                return json.loads(text)
+            if not hasattr(response_obj, "candidates") or not response_obj.candidates:
+                return None
+
+            for candidate in response_obj.candidates:
+                content = getattr(candidate, "content", None)
+                if not content or not hasattr(content, "parts"):
+                    continue
+
+                for part in content.parts:
+                    text = getattr(part, "text", "")
+                    if text:
+                        try:
+                            return json.loads(text)
+                        except Exception:
+                            logger.debug("Structured response text was not valid JSON: %s", text)
+
+                    func_call = getattr(part, "function_call", None)
+                    if func_call:
+                        args = getattr(func_call, "args", None)
+                        if isinstance(args, dict):
+                            return args
+                        args_json = getattr(func_call, "args_json", None)
+                        if isinstance(args_json, str):
+                            try:
+                                return json.loads(args_json)
+                            except Exception:
+                                logger.debug("Function call args_json not parseable: %s", args_json)
+
+                    inline = getattr(part, "inline_data", None)
+                    if inline and hasattr(inline, "data"):
+                        data = getattr(inline, "data")
+                        if data:
+                            try:
+                                return json.loads(data)
+                            except Exception:
+                                logger.debug("Inline data not parseable as JSON")
+
         except Exception:
             logger.exception("Failed to parse structured Gemini response")
         return None
@@ -373,9 +403,16 @@ class GeminiService:
         )
 
         prompt = (
-            "Rate whether two Discord messages belong to the same conversation topic. "
-            "Return a similarity from 0 (unrelated) to 1 (identical topic). "
-            "Base the score on intent and subject matter, ignoring formatting differences."
+            "You are scoring whether two short Discord messages belong to the same conversation topic. "
+            "Return JSON that includes a similarity between 0 (unrelated) and 1 (identical topic) and a boolean same_topic. "
+            "Scoring rubric: 1.0 for the same ask or paraphrase; ~0.75 for clear follow-ups on the same task; ~0.5 when the main subject is shared but the request shifts; ~0.25 for only weak lexical overlap; 0.0 for unrelated topics. "
+            "Guidelines: focus on intent, subject matter, and entities (project, ticket, feature), not tone or emoji. Scheduling vs reminder about the same release is similar; release talk vs API error is not. "
+            "Examples: "
+            "A: '오늘 저녁에 뭐 먹을까?' / B: '파스타 어때?' => ~0.8-0.9, same_topic true. "
+            "A: '주말에 등산 갈래?' / B: '토요일 오전에 시간 괜찮아' => ~0.75-0.85, same_topic true. "
+            "A: '이번 주말 영화 볼래?' / B: '다음 주에 친구 결혼식 있어' => ~0.2, same_topic false. "
+            "A: '우산 챙겼어?' / B: '어제 본 드라마 재밌더라' => 0.0, same_topic false. "
+            "Be decisive and return a single numeric similarity in the 0-1 range."
         )
 
         def api_call():
@@ -406,6 +443,12 @@ class GeminiService:
             return None
 
         similarity = parsed.get("similarity")
+        if isinstance(similarity, str):
+            try:
+                similarity = float(similarity)
+            except ValueError:
+                similarity = None
+
         if isinstance(similarity, (int, float)):
             return max(0.0, min(1.0, float(similarity)))
 
