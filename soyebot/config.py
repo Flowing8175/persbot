@@ -5,7 +5,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -49,7 +49,9 @@ logger = logging.getLogger(__name__)
 class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
-    gemini_api_key: str
+    llm_provider: str = 'gemini'
+    gemini_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
     model_name: str = 'gemini-2.5-flash'
     eval_model_name: str = 'gemini-2.5-flash-lite'
     max_messages_per_fetch: int = 300
@@ -83,10 +85,27 @@ class AppConfig:
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
     discord_token = os.environ.get('DISCORD_TOKEN')
+    llm_provider = os.environ.get('LLM_PROVIDER', 'gemini').strip().lower()
     gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
 
-    if not discord_token or not gemini_api_key:
-        logger.error("에러: DISCORD_TOKEN 또는 GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
+    model_name_env = os.environ.get('MODEL_NAME')
+    eval_model_name_env = os.environ.get('EVAL_MODEL_NAME')
+
+    if llm_provider == 'openai':
+        if not discord_token or not openai_api_key:
+            logger.error("에러: DISCORD_TOKEN 또는 OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+            sys.exit(1)
+        model_name = model_name_env or 'gpt-4o-mini'
+        eval_model_name = eval_model_name_env or 'gpt-4o-mini'
+    elif llm_provider == 'gemini':
+        if not discord_token or not gemini_api_key:
+            logger.error("에러: DISCORD_TOKEN 또는 GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
+            sys.exit(1)
+        model_name = model_name_env or 'gemini-2.5-flash'
+        eval_model_name = eval_model_name_env or 'gemini-2.5-flash-lite'
+    else:
+        logger.error("에러: LLM_PROVIDER는 'gemini' 또는 'openai'여야 합니다.")
         sys.exit(1)
 
     auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
@@ -112,9 +131,15 @@ def load_config() -> AppConfig:
 
         auto_reply_channel_ids = tuple(valid_ids)
 
+    logger.info("LLM_PROVIDER=%s, model=%s, eval_model=%s", llm_provider, model_name, eval_model_name)
+
     return AppConfig(
         discord_token=discord_token,
+        llm_provider=llm_provider,
         gemini_api_key=gemini_api_key,
+        openai_api_key=openai_api_key,
+        model_name=model_name,
+        eval_model_name=eval_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,
         log_level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
     )

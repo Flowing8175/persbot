@@ -8,7 +8,7 @@ import logging
 from typing import Literal
 
 from config import AppConfig
-from services.gemini_service import GeminiService
+from services.llm_service import LLMService
 from utils import GENERIC_ERROR_MESSAGE, DiscordUI, parse_korean_time
 
 logger = logging.getLogger(__name__)
@@ -20,11 +20,11 @@ class SummarizerCog(commands.Cog):
         self,
         bot: commands.Bot,
         config: AppConfig,
-        gemini_service: GeminiService,
+        llm_service: LLMService,
     ):
         self.bot = bot
         self.config = config
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
 
     async def _fetch_messages(
         self,
@@ -131,7 +131,7 @@ class SummarizerCog(commands.Cog):
                 await DiscordUI.safe_send(ctx.channel, f"ℹ️ 최근 {minutes}분 동안 메시지가 없어요.")
                 return
 
-            summary = await self.gemini_service.summarize_text(full_text)
+            summary = await self.llm_service.summarize_text(full_text)
             if summary:
                 await DiscordUI.safe_send(ctx.channel, f"**최근 {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
             else:
@@ -158,7 +158,7 @@ class SummarizerCog(commands.Cog):
                 await DiscordUI.safe_send(ctx.channel, f"ℹ️ 메시지 ID `{message_id}` 이후 메시지가 없어요.")
                 return
 
-            summary = await self.gemini_service.summarize_text(full_text)
+            summary = await self.llm_service.summarize_text(full_text)
             if summary:
                 await DiscordUI.safe_send(ctx.channel, f"**메시지 ID `{message_id}` 이후 {count}개 메시지 요약:**\n>>> {summary}")
             else:
@@ -193,7 +193,7 @@ class SummarizerCog(commands.Cog):
                 await DiscordUI.safe_send(ctx.channel, f"ℹ️ 해당 범위에 메시지가 없어요.")
                 return
 
-            summary = await self.gemini_service.summarize_text(full_text)
+            summary = await self.llm_service.summarize_text(full_text)
             if summary:
                 await DiscordUI.safe_send(ctx.channel, f"**메시지 ID `{message_id}` {direction} {minutes}분 {count}개 메시지 요약:**\n>>> {summary}")
             else:
