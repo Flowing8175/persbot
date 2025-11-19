@@ -163,6 +163,34 @@ class SessionManager:
             return None
         return self.message_sessions.get(str(message_id))
 
+    def reset_session_by_channel(self, channel_id: int) -> bool:
+        """Clear cached session and metadata for a channel, if present."""
+        session_key = f"channel:{channel_id}"
+        removed = False
+
+        if session_key in self.sessions:
+            del self.sessions[session_key]
+            removed = True
+
+        if session_key in self.session_contexts:
+            del self.session_contexts[session_key]
+            removed = True
+
+        message_ids_to_remove = [
+            message_id
+            for message_id, mapped_session_key in self.message_sessions.items()
+            if mapped_session_key == session_key
+        ]
+
+        for message_id in message_ids_to_remove:
+            del self.message_sessions[message_id]
+            removed = True
+
+        if removed:
+            logger.info("Session %s reset for channel %s", session_key, channel_id)
+
+        return removed
+
     async def resolve_session(
         self,
         *,
