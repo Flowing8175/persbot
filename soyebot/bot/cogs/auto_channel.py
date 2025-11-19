@@ -6,11 +6,12 @@ import time
 import discord
 from discord.ext import commands
 
-from config import AppConfig
-from services.llm_service import LLMService
+from bot.chat_handler import create_chat_reply, resolve_session_for_message
 from bot.session import SessionManager
-from utils import GENERIC_ERROR_MESSAGE, extract_message_content
+from config import AppConfig
 from metrics import get_metrics
+from services.llm_service import LLMService
+from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +31,29 @@ class AutoChannelCog(commands.Cog):
         self.llm_service = llm_service
         self.session_manager = session_manager
 
+    def _should_ignore_message(self, message: discord.Message) -> bool:
+        if message.author.bot:
+            return True
+        if message.channel.id not in self.config.auto_reply_channel_ids:
+            return True
+        if message.content.startswith(self.config.command_prefix):
+            return True
+        if message.content and message.content.lstrip().startswith("\\"):
+            return True
+        return False
+
+    async def _send_auto_reply(self, message: discord.Message, reply_text: str, session_key: str) -> None:
+        if not reply_text:
+            logger.debug("LLM returned no text response for the auto-reply message.")
+            return
+
+        sent_message = await message.channel.send(reply_text)
+        if sent_message:
+            self.session_manager.link_message_to_session(str(sent_message.id), session_key)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Skip bot messages or messages outside configured channels
-        if message.author.bot:
-            return
-        if message.channel.id not in self.config.auto_reply_channel_ids:
-            return
-
-        # Skip command messages to avoid interfering with prefix commands
-        if message.content.startswith(self.config.command_prefix):
-            return
-
-        # Allow users to bypass auto-response by prefixing a backslash
-        if message.content and message.content.lstrip().startswith("\\"):
+        if self._should_ignore_message(message):
             return
 
         start_time = time.perf_counter()
@@ -63,54 +73,25 @@ class AutoChannelCog(commands.Cog):
             )
 
             async with message.channel.typing():
-                reference_message_id = (
-                    str(message.reference.message_id)
-                    if message.reference and message.reference.message_id
-                    else None
+                resolution = await resolve_session_for_message(
+                    message,
+                    user_message,
+                    session_manager=self.session_manager,
                 )
 
-                resolution = await self.session_manager.resolve_session(
-                    channel_id=message.channel.id,
-                    author_id=message.author.id,
-                    username=message.author.name,
-                    message_id=str(message.id),
-                    message_content=user_message,
-                    reference_message_id=reference_message_id,
-                    created_at=message.created_at,
-                )
-
-                if not resolution.cleaned_message:
+                if not resolution:
                     await message.channel.send("❌ 메시지 내용이 없는데요.")
                     return
 
-                chat_session, session_key = await self.session_manager.get_or_create(
-                    user_id=message.author.id,
-                    username=message.author.name,
-                    session_key=resolution.session_key,
-                    channel_id=message.channel.id,
-                    message_content=resolution.cleaned_message,
-                    message_ts=message.created_at,
-                    message_id=str(message.id),
-                )
-                self.session_manager.link_message_to_session(str(message.id), session_key)
-
-                response_result = await self.llm_service.generate_chat_response(
-                    chat_session,
-                    resolution.cleaned_message,
+                reply = await create_chat_reply(
                     message,
+                    resolution=resolution,
+                    llm_service=self.llm_service,
+                    session_manager=self.session_manager,
                 )
 
-                if response_result:
-                    response_text, _response_obj = response_result
-                    if response_text:
-                        sent_message = await message.channel.send(response_text)
-                        if sent_message:
-                            self.session_manager.link_message_to_session(
-                                str(sent_message.id),
-                                session_key,
-                            )
-                    else:
-                        logger.debug("LLM returned no text response for the auto-reply message.")
+                if reply:
+                    await self._send_auto_reply(message, reply.text, reply.session_key)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
@@ -119,6 +100,5 @@ class AutoChannelCog(commands.Cog):
         except Exception as exc:
             logger.error("자동 응답 메시지 처리 중 오류 발생: %s", exc, exc_info=True)
             await message.channel.send(GENERIC_ERROR_MESSAGE)
-
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)

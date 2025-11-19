@@ -1,15 +1,17 @@
 """Assistant Cog for SoyeBot."""
 
-import discord
-from discord.ext import commands
 import logging
 import time
 
-from config import AppConfig
-from services.llm_service import LLMService
+import discord
+from discord.ext import commands
+
+from bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message
 from bot.session import SessionManager
-from utils import GENERIC_ERROR_MESSAGE, extract_message_content
+from config import AppConfig
 from metrics import get_metrics
+from services.llm_service import LLMService
+from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +30,29 @@ class AssistantCog(commands.Cog):
         self.llm_service = llm_service
         self.session_manager = session_manager
 
+    def _should_ignore_message(self, message: discord.Message) -> bool:
+        """Return True when the bot should not process the message."""
+
+        if message.author.bot:
+            return True
+        if not self.bot.user or not self.bot.user.mentioned_in(message):
+            return True
+        return message.mention_everyone
+
+    async def _send_llm_reply(self, message: discord.Message, reply: ChatReply) -> None:
+        if not reply.text:
+            logger.debug("LLM returned no text response for the mention.")
+            return
+
+        reply_message = await message.reply(reply.text, mention_author=False)
+        if reply_message:
+            self.session_manager.link_message_to_session(str(reply_message.id), reply.session_key)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignore bot messages, messages without bot mention, or @everyone/@here mentions
-        if message.author.bot or not self.bot.user.mentioned_in(message):
-            return
-        
-        # Ignore @everyone and @here mentions
-        if message.mention_everyone:
+        if self._should_ignore_message(message):
             return
 
-
-        # Track message processing latency
         start_time = time.perf_counter()
         metrics = get_metrics()
 
@@ -49,72 +62,36 @@ class AssistantCog(commands.Cog):
                 await message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
                 return
 
-            logger.info(f"Processing message from {message.author.name}: {user_message[:100]}")
+            logger.info("Processing message from %s: %s", message.author.name, user_message[:100])
 
             async with message.channel.typing():
-                reference_message_id = (
-                    str(message.reference.message_id)
-                    if message.reference and message.reference.message_id
-                    else None
+                resolution = await resolve_session_for_message(
+                    message,
+                    user_message,
+                    session_manager=self.session_manager,
                 )
 
-                resolution = await self.session_manager.resolve_session(
-                    channel_id=message.channel.id,
-                    author_id=message.author.id,
-                    username=message.author.name,
-                    message_id=str(message.id),
-                    message_content=user_message,
-                    reference_message_id=reference_message_id,
-                    created_at=message.created_at,
-                )
-
-                if not resolution.cleaned_message:
+                if not resolution:
                     await message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
                     return
 
-                chat_session, session_key = await self.session_manager.get_or_create(
-                    user_id=message.author.id,
-                    username=message.author.name,
-                    session_key=resolution.session_key,
-                    channel_id=message.channel.id,
-                    message_content=resolution.cleaned_message,
-                    message_ts=message.created_at,
-                    message_id=str(message.id),
-                )
-                self.session_manager.link_message_to_session(str(message.id), session_key)
-
-                response_result = await self.llm_service.generate_chat_response(
-                    chat_session,
-                    resolution.cleaned_message,
+                reply = await create_chat_reply(
                     message,
+                    resolution=resolution,
+                    llm_service=self.llm_service,
+                    session_manager=self.session_manager,
                 )
 
-                if response_result:
-                    response_text, response_obj = response_result
+                if reply:
+                    await self._send_llm_reply(message, reply)
 
-                    # Only reply if there's text content
-                    # (Some responses may be non-text, so skip replying)
-                    if response_text:
-                        reply_message = await message.reply(response_text, mention_author=False)
-                        if reply_message:
-                            self.session_manager.link_message_to_session(
-                                str(reply_message.id),
-                                session_key,
-                            )
-                    else:
-                        logger.debug("LLM returned no text response for the mention.")
-                # else: The error message is now handled by llm_service._api_request_with_retry
-
-            # Track successful message processing
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
             metrics.increment_counter('messages_processed')
 
         except Exception as e:
-            logger.error(f"메시지 처리 중 예상치 못한 오류 발생: {e}", exc_info=True)
+            logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
             await message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-
-            # Track processing time even on error
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
 

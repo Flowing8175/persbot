@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from collections import deque
-from typing import Any, Deque, Optional, Tuple
+from typing import Any, Awaitable, Callable, Deque, Optional, Tuple
 
 import discord
 from openai import OpenAI
@@ -194,7 +194,7 @@ class OpenAIService:
 
     async def _api_request_with_retry(
         self,
-        model_call,
+        model_call: Callable[[], Any] | Callable[[], Awaitable[Any]],
         error_prefix: str = "요청",
         return_full_response: bool = False,
         discord_message: Optional[discord.Message] = None,
@@ -206,14 +206,10 @@ class OpenAIService:
         last_error: Optional[Exception] = None
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
-                if asyncio.iscoroutinefunction(model_call):
-                    response = await asyncio.wait_for(
-                        model_call(), timeout=self.config.api_request_timeout
-                    )
-                else:
-                    response = await asyncio.wait_for(
-                        asyncio.to_thread(model_call), timeout=self.config.api_request_timeout
-                    )
+                response = await asyncio.wait_for(
+                    self._execute_model_call(model_call),
+                    timeout=self.config.api_request_timeout,
+                )
 
                 self._log_raw_response(response, attempt)
 
@@ -233,32 +229,19 @@ class OpenAIService:
                 break
             except Exception as e:
                 last_error = e
-                logger.error("OpenAI API 에러 (%s/%s): %s", attempt, self.config.api_max_retries, e, exc_info=True)
+                logger.error(
+                    "OpenAI API 에러 (%s/%s): %s",
+                    attempt,
+                    self.config.api_max_retries,
+                    e,
+                    exc_info=True,
+                )
 
                 if self._is_rate_limit_error(e):
-                    delay = self.config.api_rate_limit_retry_after
-                    logger.info("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
-                    sent_message = None
-                    if discord_message:
-                        sent_message = await discord_message.reply(
-                            f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
-                            mention_author=False,
-                        )
-
-                    remaining = int(delay)
-                    while remaining > 0:
-                        if remaining % 10 == 0 or remaining <= 3:
-                            countdown = (
-                                f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
-                            )
-                            if sent_message:
-                                await sent_message.edit(content=countdown)
-                            logger.info(countdown)
-                        await asyncio.sleep(1)
-                        remaining -= 1
-
-                    if sent_message:
-                        await sent_message.delete()
+                    await self._wait_with_countdown(
+                        self.config.api_rate_limit_retry_after,
+                        discord_message,
+                    )
                     continue
 
                 if attempt >= self.config.api_max_retries:
@@ -283,6 +266,40 @@ class OpenAIService:
         if discord_message:
             await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
         return None
+
+    async def _execute_model_call(self, model_call):
+        if asyncio.iscoroutinefunction(model_call):
+            return await model_call()
+        return await asyncio.to_thread(model_call)
+
+    async def _wait_with_countdown(
+        self,
+        delay: float,
+        discord_message: Optional[discord.Message],
+    ) -> None:
+        if delay <= 0:
+            return
+
+        logger.info("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
+        sent_message: Optional[discord.Message] = None
+        if discord_message:
+            sent_message = await discord_message.reply(
+                f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
+                mention_author=False,
+            )
+
+        remaining = int(delay)
+        while remaining > 0:
+            if remaining % 10 == 0 or remaining <= 3:
+                countdown = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
+                if sent_message:
+                    await sent_message.edit(content=countdown)
+                logger.info(countdown)
+            await asyncio.sleep(1)
+            remaining -= 1
+
+        if sent_message:
+            await sent_message.delete()
 
     def _extract_text_from_response(self, response_obj) -> str:
         try:

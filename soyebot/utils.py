@@ -1,13 +1,17 @@
 """Utility classes and functions for SoyeBot."""
 
-import discord
-import re
 import logging
+import re
 from typing import Optional
+
+import discord
 
 GENERIC_ERROR_MESSAGE = "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요."
 
 logger = logging.getLogger(__name__)
+
+_TIME_TOKEN_PATTERN = re.compile(r"(\d+)\s*(시간|분)")
+
 
 class DiscordUI:
     """Discord UI 상호작용을 위한 헬퍼 클래스"""
@@ -37,16 +41,18 @@ class DiscordUI:
             return None
 
 def parse_korean_time(time_str: str) -> Optional[int]:
-    """'1시간30분' 같은 한국어 시간을 분으로 변환합니다."""
-    time_str = time_str.strip()
+    """Convert strings such as '1시간30분' into minutes."""
+
+    if not time_str:
+        return None
+
+    units = {"시간": 60, "분": 1}
     total_minutes = 0
-    hour_match = re.search(r'(\d+)\s*시간', time_str)
-    if hour_match:
-        total_minutes += int(hour_match.group(1)) * 60
-    minute_match = re.search(r'(\d+)\s*분', time_str)
-    if minute_match:
-        total_minutes += int(minute_match.group(1))
-    return total_minutes if total_minutes > 0 else None
+
+    for value, unit in _TIME_TOKEN_PATTERN.findall(time_str):
+        total_minutes += int(value) * units[unit]
+
+    return total_minutes or None
 
 def extract_message_content(message: discord.Message) -> str:
     """메시지에서 봇 mention을 제거한 내용을 추출합니다."""

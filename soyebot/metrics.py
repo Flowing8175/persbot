@@ -1,18 +1,16 @@
-"""Performance metrics collection for SoyeBot.
+"""Performance metrics collection utilities for SoyeBot."""
 
-Lightweight metrics system designed for 1GB RAM environments.
-Thread-safe and minimal overhead.
-"""
-
-import time
-import psutil
+import asyncio
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+import time
 from collections import deque
-from threading import Lock
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import wraps
+from threading import Lock
+from typing import Dict, Optional
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -239,8 +237,7 @@ def measure_latency(operation: str, label: Optional[str] = None):
         async def async_wrapper(*args, **kwargs):
             start = time.perf_counter()
             try:
-                result = await func(*args, **kwargs)
-                return result
+                return await func(*args, **kwargs)
             finally:
                 duration_ms = (time.perf_counter() - start) * 1000
                 get_metrics().record_latency(operation, duration_ms, label)
@@ -249,17 +246,11 @@ def measure_latency(operation: str, label: Optional[str] = None):
         def sync_wrapper(*args, **kwargs):
             start = time.perf_counter()
             try:
-                result = func(*args, **kwargs)
-                return result
+                return func(*args, **kwargs)
             finally:
                 duration_ms = (time.perf_counter() - start) * 1000
                 get_metrics().record_latency(operation, duration_ms, label)
 
-        # Return appropriate wrapper based on function type
-        import asyncio
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
