@@ -117,3 +117,14 @@ class AssistantCog(commands.Cog):
             # Track processing time even on error
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
+
+    @commands.command(name='초기화', aliases=['reset'])
+    async def reset_session(self, ctx: commands.Context):
+        """현재 채널의 대화 세션을 수동으로 초기화합니다."""
+
+        try:
+            self.session_manager.reset_session_by_channel(ctx.channel.id)
+            await ctx.reply("✅", mention_author=False)
+        except Exception as exc:
+            logger.error("세션 초기화 실패: %s", exc, exc_info=True)
+            await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
