@@ -128,12 +128,38 @@ class OpenAIService:
         self._max_messages = 10
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
+        self._assistant_id_override = getattr(config, 'openai_assistant_id', None)
 
         # Preload default assistant
         self.assistant_model = self._get_or_create_assistant(self._assistant_model_name, BOT_PERSONA_PROMPT)
-        logger.info("OpenAI Assistant '%s' 준비 완료.", self._assistant_model_name)
+        if self._assistant_id_override:
+            logger.info("OpenAI Assistant ID '%s' 준비 완료.", self._assistant_id_override)
+        else:
+            logger.info("OpenAI Assistant '%s' 준비 완료.", self._assistant_model_name)
 
     def _get_or_create_assistant(self, model_name: str, system_instruction: str) -> _AssistantModel:
+        if self._assistant_id_override:
+            key = hash(("provided", self._assistant_id_override))
+            if key not in self._assistant_cache:
+                try:
+                    self.client.beta.assistants.retrieve(
+                        self._assistant_id_override,
+                        extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+                    )
+                except Exception:
+                    logger.exception("OPENAI_ASSISTANT_ID 확인 중 오류가 발생했습니다.")
+                    raise
+
+                self._assistant_cache[key] = _AssistantModel(
+                    self.client,
+                    self._assistant_id_override,
+                    getattr(self.config, 'temperature', 1.0),
+                    self._max_messages,
+                    getattr(self.config, 'service_tier', 'flex'),
+                    self._extract_text_from_message,
+                )
+            return self._assistant_cache[key]
+
         key = hash((model_name, system_instruction))
         if key not in self._assistant_cache:
             assistant = self.client.beta.assistants.create(

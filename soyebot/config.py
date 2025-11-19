@@ -59,6 +59,7 @@ class AppConfig:
     summarizer_llm_provider: str = 'gemini'
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    openai_assistant_id: Optional[str] = None
     gemini_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
     openai_model_name: str = DEFAULT_OPENAI_ASSISTANT_MODEL
     assistant_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
@@ -132,6 +133,7 @@ def load_config() -> AppConfig:
     discord_token = os.environ.get('DISCORD_TOKEN')
     gemini_api_key = os.environ.get('GEMINI_API_KEY')
     openai_api_key = os.environ.get('OPENAI_API_KEY')
+    openai_assistant_id = os.environ.get('OPENAI_ASSISTANT_ID')
     service_tier = os.environ.get('SERVICE_TIER', 'flex')
 
     # Provider별 설정 (어시스턴트/요약 분리)
@@ -164,9 +166,26 @@ def load_config() -> AppConfig:
         logger.error("에러: GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 
-    if 'openai' in {assistant_llm_provider, summarizer_llm_provider} and not openai_api_key:
+    uses_openai = 'openai' in {assistant_llm_provider, summarizer_llm_provider}
+
+    if uses_openai and not openai_api_key:
         logger.error("에러: OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
+
+    if uses_openai:
+        if not openai_assistant_id:
+            logger.error(
+                "에러: OPENAI_ASSISTANT_ID 환경 변수가 설정되지 않았습니다. (형식: asst_...)"
+            )
+            sys.exit(1)
+        openai_assistant_id = openai_assistant_id.strip()
+        if not openai_assistant_id.startswith('asst_'):
+            logger.warning(
+                "OPENAI_ASSISTANT_ID 값이 예상 형식(asst_...)과 다릅니다: %s",
+                openai_assistant_id,
+            )
+    else:
+        openai_assistant_id = None
 
     auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
     auto_reply_channel_ids: Tuple[int, ...] = ()
@@ -207,6 +226,7 @@ def load_config() -> AppConfig:
         openai_api_key=openai_api_key,
         gemini_model_name=gemini_model_name,
         openai_model_name=openai_model_name,
+        openai_assistant_id=openai_assistant_id,
         assistant_model_name=assistant_model_name,
         summarizer_model_name=summarizer_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,
