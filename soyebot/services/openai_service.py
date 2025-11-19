@@ -57,7 +57,7 @@ class ResponseChatSession:
                     "role": "system",
                     "content": [
                         {
-                            "type": "text",
+                            "type": "input_text",
                             "text": self._system_instruction,
                         }
                     ],
@@ -70,7 +70,7 @@ class ResponseChatSession:
                     "role": entry["role"],
                     "content": [
                         {
-                            "type": "text",
+                            "type": "input_text",
                             "text": entry["content"],
                         }
                     ],
