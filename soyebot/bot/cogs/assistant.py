@@ -124,7 +124,7 @@ class AssistantCog(commands.Cog):
 
         try:
             self.session_manager.reset_session_by_channel(ctx.channel.id)
-            await ctx.reply("✅", mention_author=False)
+            await ctx.message.add_reaction("✅")
         except Exception as exc:
             logger.error("세션 초기화 실패: %s", exc, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
