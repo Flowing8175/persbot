@@ -137,10 +137,11 @@ def load_config() -> AppConfig:
     service_tier = os.environ.get('SERVICE_TIER', 'flex')
 
     # Provider별 설정 (어시스턴트/요약 분리)
+    default_assistant_provider = AppConfig.__dataclass_fields__['assistant_llm_provider'].default
     assistant_llm_provider = _validate_provider(
         _normalize_provider(
             os.environ.get('ASSISTANT_LLM_PROVIDER') or os.environ.get('LLM_PROVIDER'),
-            'gemini',
+            default_assistant_provider,
         )
     )
     summarizer_llm_provider = _validate_provider(

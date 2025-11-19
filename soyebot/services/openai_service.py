@@ -16,6 +16,8 @@ from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
 from metrics import get_metrics
 from utils import GENERIC_ERROR_MESSAGE
 
+OPENAI_BETA_HEADER = {"OpenAI-Beta": "assistants=v2"}
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,9 +43,7 @@ class AssistantChatSession:
         self._history: Deque[dict] = deque(maxlen=max_messages)
 
     def _create_thread(self) -> str:
-        thread = self._client.beta.threads.create(
-            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"}
-        )
+        thread = self._client.beta.threads.create(extra_headers=OPENAI_BETA_HEADER)
         return thread.id
 
     def get_history(self):
@@ -57,7 +57,7 @@ class AssistantChatSession:
             thread_id=self._thread_id,
             role="user",
             content=user_message,
-            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+            extra_headers=OPENAI_BETA_HEADER,
         )
         self._append_history("user", user_message)
 
@@ -66,7 +66,7 @@ class AssistantChatSession:
             assistant_id=self._assistant_id,
             temperature=self._temperature,
             truncation_strategy={"type": "last_messages", "last_messages": self._max_messages},
-            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+            extra_headers=OPENAI_BETA_HEADER,
             extra_body={"service_tier": self._service_tier},
         )
 
@@ -75,7 +75,7 @@ class AssistantChatSession:
             run_id=run.id,
             order="desc",
             limit=1,
-            extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+            extra_headers=OPENAI_BETA_HEADER,
         )
 
         message_content = ""
@@ -144,7 +144,7 @@ class OpenAIService:
                 try:
                     self.client.beta.assistants.retrieve(
                         self._assistant_id_override,
-                        extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+                        extra_headers=OPENAI_BETA_HEADER,
                     )
                 except Exception:
                     logger.exception("OPENAI_ASSISTANT_ID 확인 중 오류가 발생했습니다.")
@@ -166,7 +166,7 @@ class OpenAIService:
                 model=model_name,
                 instructions=system_instruction,
                 temperature=getattr(self.config, 'temperature', 1.0),
-                extra_headers={"OpenAI-Beta": "assistants=v2,prompt-caching=1"},
+                extra_headers=OPENAI_BETA_HEADER,
             )
             self._assistant_cache[key] = _AssistantModel(
                 self.client,
