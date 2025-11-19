@@ -16,101 +16,109 @@ from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
 from metrics import get_metrics
 from utils import GENERIC_ERROR_MESSAGE
 
-OPENAI_BETA_HEADER = {"OpenAI-Beta": "assistants=v2"}
-
 logger = logging.getLogger(__name__)
 
 
-class AssistantChatSession:
-    """Assistant API-backed chat session with a bounded context window."""
+class ResponseChatSession:
+    """Response API-backed chat session with a bounded context window."""
 
     def __init__(
         self,
         client: OpenAI,
-        assistant_id: str,
+        model_name: str,
+        system_instruction: str,
         temperature: float,
         max_messages: int,
         service_tier: str,
         text_extractor,
     ):
         self._client = client
-        self._assistant_id = assistant_id
+        self._model_name = model_name
+        self._system_instruction = system_instruction
         self._temperature = temperature
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
-        self._thread_id = self._create_thread()
         self._history: Deque[dict] = deque(maxlen=max_messages)
-
-    def _create_thread(self) -> str:
-        thread = self._client.beta.threads.create(extra_headers=OPENAI_BETA_HEADER)
-        return thread.id
 
     def get_history(self):
         return list(self._history)
 
     def _append_history(self, role: str, content: str) -> None:
+        if not content:
+            return
         self._history.append({"role": role, "content": content})
 
+    def _build_input_payload(self) -> list:
+        payload = []
+        if self._system_instruction:
+            payload.append(
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": self._system_instruction,
+                        }
+                    ],
+                }
+            )
+
+        for entry in self._history:
+            payload.append(
+                {
+                    "role": entry["role"],
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": entry["content"],
+                        }
+                    ],
+                }
+            )
+        return payload
+
     def send_message(self, user_message: str):
-        self._client.beta.threads.messages.create(
-            thread_id=self._thread_id,
-            role="user",
-            content=user_message,
-            extra_headers=OPENAI_BETA_HEADER,
-        )
         self._append_history("user", user_message)
 
-        run = self._client.beta.threads.runs.create_and_poll(
-            thread_id=self._thread_id,
-            assistant_id=self._assistant_id,
+        response = self._client.responses.create(
+            model=self._model_name,
+            input=self._build_input_payload(),
             temperature=self._temperature,
-            truncation_strategy={"type": "last_messages", "last_messages": self._max_messages},
-            extra_headers=OPENAI_BETA_HEADER,
-            extra_body={"service_tier": self._service_tier},
+            service_tier=self._service_tier,
         )
 
-        messages = self._client.beta.threads.messages.list(
-            thread_id=self._thread_id,
-            run_id=run.id,
-            order="desc",
-            limit=1,
-            extra_headers=OPENAI_BETA_HEADER,
-        )
-
-        message_content = ""
-        for message in messages.data:
-            if message.role == "assistant":
-                message_content = self._text_extractor(message)
-                self._append_history("assistant", message_content)
-                break
-
-        return message_content, run
+        message_content = self._text_extractor(response)
+        self._append_history("assistant", message_content)
+        return message_content, response
 
 
-class _AssistantModel:
-    """Assistant wrapper mirroring the cached model API."""
+class _ResponseModel:
+    """Response API wrapper mirroring the cached model API."""
 
     def __init__(
         self,
         client: OpenAI,
-        assistant_id: str,
+        model_name: str,
+        system_instruction: str,
         temperature: float,
         max_messages: int,
         service_tier: str,
         text_extractor,
     ):
         self._client = client
-        self._assistant_id = assistant_id
+        self._model_name = model_name
+        self._system_instruction = system_instruction
         self._temperature = temperature
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
 
     def start_chat(self):
-        return AssistantChatSession(
+        return ResponseChatSession(
             self._client,
-            self._assistant_id,
+            self._model_name,
+            self._system_instruction,
             self._temperature,
             self._max_messages,
             self._service_tier,
@@ -124,61 +132,30 @@ class OpenAIService:
     def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
         self.config = config
         self.client = OpenAI(api_key=config.openai_api_key)
-        self._assistant_cache: dict[int, _AssistantModel] = {}
+        self._assistant_cache: dict[int, _ResponseModel] = {}
         self._max_messages = 10
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
-        self._assistant_id_override = getattr(config, 'openai_assistant_id', None)
 
-        # Preload default assistant
+        # Preload default response model
         self.assistant_model = self._get_or_create_assistant(self._assistant_model_name, BOT_PERSONA_PROMPT)
-        if self._assistant_id_override:
-            logger.info("OpenAI Assistant ID '%s' 준비 완료.", self._assistant_id_override)
-        else:
-            logger.info("OpenAI Assistant '%s' 준비 완료.", self._assistant_model_name)
+        logger.info("OpenAI Response 모델 '%s' 준비 완료.", self._assistant_model_name)
 
-    def _get_or_create_assistant(self, model_name: str, system_instruction: str) -> _AssistantModel:
-        if self._assistant_id_override:
-            key = hash(("provided", self._assistant_id_override))
-            if key not in self._assistant_cache:
-                try:
-                    self.client.beta.assistants.retrieve(
-                        self._assistant_id_override,
-                        extra_headers=OPENAI_BETA_HEADER,
-                    )
-                except Exception:
-                    logger.exception("OPENAI_ASSISTANT_ID 확인 중 오류가 발생했습니다.")
-                    raise
-
-                self._assistant_cache[key] = _AssistantModel(
-                    self.client,
-                    self._assistant_id_override,
-                    getattr(self.config, 'temperature', 1.0),
-                    self._max_messages,
-                    getattr(self.config, 'service_tier', 'flex'),
-                    self._extract_text_from_message,
-                )
-            return self._assistant_cache[key]
-
+    def _get_or_create_assistant(self, model_name: str, system_instruction: str) -> _ResponseModel:
         key = hash((model_name, system_instruction))
         if key not in self._assistant_cache:
-            assistant = self.client.beta.assistants.create(
-                model=model_name,
-                instructions=system_instruction,
-                temperature=getattr(self.config, 'temperature', 1.0),
-                extra_headers=OPENAI_BETA_HEADER,
-            )
-            self._assistant_cache[key] = _AssistantModel(
+            self._assistant_cache[key] = _ResponseModel(
                 self.client,
-                assistant.id,
+                model_name,
+                system_instruction,
                 getattr(self.config, 'temperature', 1.0),
                 self._max_messages,
                 getattr(self.config, 'service_tier', 'flex'),
-                self._extract_text_from_message,
+                self._extract_text_from_response_output,
             )
         return self._assistant_cache[key]
 
-    def create_assistant_model(self, system_instruction: str) -> _AssistantModel:
+    def create_assistant_model(self, system_instruction: str) -> _ResponseModel:
         return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
@@ -314,23 +291,35 @@ class OpenAIService:
                 message = getattr(choice, 'message', None)
                 if message and getattr(message, 'content', None):
                     return str(message.content).strip()
-            return ""
         except Exception:
             logger.exception("Failed to extract text from OpenAI response")
-            return ""
 
-    def _extract_text_from_message(self, message_obj) -> str:
+        return self._extract_text_from_response_output(response_obj)
+
+    def _extract_text_from_response_output(self, response_obj) -> str:
         try:
-            content_parts = getattr(message_obj, 'content', []) or []
             text_fragments = []
-            for part in content_parts:
-                text_block = getattr(part, 'text', None)
-                if text_block and getattr(text_block, 'value', None):
-                    text_fragments.append(str(text_block.value))
-            return "\n".join(text_fragments).strip()
+            output_text = getattr(response_obj, 'output_text', None)
+            if output_text:
+                if isinstance(output_text, str):
+                    text_fragments.append(output_text)
+                else:
+                    try:
+                        text_fragments.extend(str(part) for part in output_text if part)
+                    except TypeError:
+                        text_fragments.append(str(output_text))
+
+            output_items = getattr(response_obj, 'output', None) or []
+            for item in output_items:
+                content_list = getattr(item, 'content', None) or []
+                for content in content_list:
+                    text_value = getattr(content, 'text', None)
+                    if text_value:
+                        text_fragments.append(str(text_value))
+            return "\n".join(fragment.strip() for fragment in text_fragments if fragment).strip()
         except Exception:
-            logger.exception("Failed to extract text from assistant message")
-            return ""
+            logger.exception("Failed to extract text from response output")
+        return ""
 
     def _extract_structured_json(self, response_obj) -> Optional[dict]:
         try:
@@ -381,6 +370,6 @@ class OpenAIService:
         if response_obj is None:
             return None
 
-        response_text, run = response_obj
-        return response_text, run
+        response_text, response = response_obj
+        return response_text, response
 
