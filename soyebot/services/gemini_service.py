@@ -2,10 +2,10 @@
 
 import asyncio
 import json
-import time
-import re
 import logging
-from typing import Optional, Tuple, Any
+import re
+import time
+from typing import Any, Awaitable, Callable, Optional, Tuple
 
 import discord
 import google.genai as genai
@@ -176,100 +176,97 @@ class GeminiService:
         return_full_response: bool = False,
         discord_message: Optional[discord.Message] = None,
     ) -> Optional[Any]:
-        """재시도 및 에러 처리를 포함한 API 요청 래퍼
+        """Execute the API call with retries, logging, and countdown notifications."""
 
-        Args:
-            model_call: The function to call
-            error_prefix: Error message prefix
-            return_full_response: If True, return full response object; if False, return text only
-
-        Returns:
-            Response text (str) or full response object depending on return_full_response flag
-        """
         metrics = get_metrics()
         request_start = time.perf_counter()
         metrics.increment_counter('api_requests_total')
 
-        error_notified = False
         last_error: Optional[Exception] = None
 
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
-
-                # If the call is async, await it directly; otherwise run the blocking call off the loop
-                if asyncio.iscoroutinefunction(model_call):
-                    response = await asyncio.wait_for(
-                        model_call(),
-                        timeout=self.config.api_request_timeout,
-                    )
-                else:
-                    response = await asyncio.wait_for(
-                        asyncio.to_thread(model_call),
-                        timeout=self.config.api_request_timeout,
-                    )
+                response = await asyncio.wait_for(
+                    self._execute_model_call(model_call),
+                    timeout=self.config.api_request_timeout,
+                )
 
                 self._log_raw_response(response, attempt)
-
-                # Track successful API request
                 duration_ms = (time.perf_counter() - request_start) * 1000
                 metrics.record_latency('llm_api', duration_ms)
                 metrics.increment_counter('api_requests_success')
 
                 if return_full_response:
                     return response
-                else:
-                    return response.text.strip()
+                return response.text.strip()
             except asyncio.TimeoutError:
                 last_error = asyncio.TimeoutError()
-                logger.warning(f"Gemini API 타임아웃 ({attempt}/{self.config.api_max_retries})")
+                logger.warning("Gemini API 타임아웃 (%s/%s)", attempt, self.config.api_max_retries)
                 if attempt < self.config.api_max_retries:
-                    logger.info(f"API 타임아웃, 재시도 중...")
+                    logger.info("API 타임아웃, 재시도 중...")
                     continue
                 break
             except Exception as e:
                 error_str = str(e)
-                logger.error(f"Gemini API 에러 ({attempt}/{self.config.api_max_retries}): {e}", exc_info=True)
+                logger.error(
+                    "Gemini API 에러 (%s/%s): %s",
+                    attempt,
+                    self.config.api_max_retries,
+                    e,
+                    exc_info=True,
+                )
                 last_error = e
 
                 if self._is_rate_limit_error(error_str):
                     delay = self._extract_retry_delay(error_str) or self.config.api_rate_limit_retry_after
-                    logger.info(f"⏳ 레이트 제한 감지. {int(delay)}초 대기 중...")
-                    sent_message = None
-                    if discord_message:
-                        sent_message = await discord_message.reply(
-                            f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
-                            mention_author=False
-                        )
-
-                    # Wait for the delay, updating Discord only every 10 seconds or final 3 seconds
-                    remaining = int(delay)
-                    while remaining > 0:
-                        if remaining % 10 == 0 or remaining <= 3:
-                            countdown_message = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
-                            if sent_message:
-                                await sent_message.edit(content=countdown_message)
-                            logger.info(countdown_message)
-                        await asyncio.sleep(1)
-                        remaining -= 1
-
-                    if sent_message:
-                        await sent_message.delete()  # Delete the countdown message after it finishes
+                    await self._wait_with_countdown(delay, discord_message)
                     continue
 
                 if attempt >= self.config.api_max_retries:
                     break
-                logger.info(f"에러 발생, 재시도 중...")
+                logger.info("에러 발생, 재시도 중...")
                 await asyncio.sleep(2)
 
         if isinstance(last_error, asyncio.TimeoutError):
             logger.error("❌ 에러: API 요청 시간 초과")
         else:
-            logger.error(f"❌ 에러: 최대 재시도 횟수({self.config.api_max_retries})를 초과했습니다.")
+            logger.error("❌ 에러: 최대 재시도 횟수(%s)를 초과했습니다.", self.config.api_max_retries)
         metrics.increment_counter('api_requests_error')
-        if discord_message and not error_notified:
+        if discord_message:
             await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-            error_notified = True
         return None
+
+    async def _execute_model_call(self, model_call):
+        if asyncio.iscoroutinefunction(model_call):
+            return await model_call()
+        return await asyncio.to_thread(model_call)
+
+    async def _wait_with_countdown(self, delay: float, discord_message: Optional[discord.Message]) -> None:
+        if delay <= 0:
+            return
+
+        logger.info("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
+        sent_message: Optional[discord.Message] = None
+        if discord_message:
+            sent_message = await discord_message.reply(
+                f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
+                mention_author=False,
+            )
+
+        remaining = int(delay)
+        while remaining > 0:
+            if remaining % 10 == 0 or remaining <= 3:
+                countdown_message = (
+                    f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
+                )
+                if sent_message:
+                    await sent_message.edit(content=countdown_message)
+                logger.info(countdown_message)
+            await asyncio.sleep(1)
+            remaining -= 1
+
+        if sent_message:
+            await sent_message.delete()
 
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():

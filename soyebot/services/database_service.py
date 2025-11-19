@@ -1,10 +1,12 @@
 """Database service for SoyeBot."""
 
 import logging
+from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Iterator, Optional
+
 from sqlalchemy import create_engine, func
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from database.models import Base, User, InteractionPattern
@@ -47,6 +49,14 @@ class DatabaseService:
         """Get a new database session."""
         return self.SessionLocal()
 
+    @contextmanager
+    def _session_scope(self) -> Iterator[Session]:
+        session = self.get_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
     def close(self) -> None:
         """Close database connection."""
         self.engine.dispose()
@@ -63,20 +73,17 @@ class DatabaseService:
         Returns:
             User object
         """
-        session = self.get_session()
-        try:
+        with self._session_scope() as session:
             user = session.query(User).filter_by(user_id=str(user_id)).first()
             if not user:
                 user = User(user_id=str(user_id), username=username)
                 session.add(user)
                 session.commit()
-                logger.info(f"Created new user: {user_id}")
+                logger.info("Created new user: %s", user_id)
             else:
                 user.last_seen = datetime.utcnow()
                 session.commit()
             return user
-        finally:
-            session.close()
 
     def get_user(self, user_id: str) -> Optional[User]:
         """Get user by ID.
@@ -87,11 +94,8 @@ class DatabaseService:
         Returns:
             User object or None
         """
-        session = self.get_session()
-        try:
+        with self._session_scope() as session:
             return session.query(User).filter_by(user_id=str(user_id)).first()
-        finally:
-            session.close()
 
     def update_user_last_seen(self, user_id: str) -> None:
         """Update user's last seen timestamp.
@@ -99,14 +103,11 @@ class DatabaseService:
         Args:
             user_id: Discord user ID
         """
-        session = self.get_session()
-        try:
+        with self._session_scope() as session:
             user = session.query(User).filter_by(user_id=str(user_id)).first()
             if user:
                 user.last_seen = datetime.utcnow()
                 session.commit()
-        finally:
-            session.close()
 
     # --- Interaction Pattern Operations ---
 
@@ -119,16 +120,13 @@ class DatabaseService:
         Returns:
             InteractionPattern object
         """
-        session = self.get_session()
-        try:
+        with self._session_scope() as session:
             pattern = session.query(InteractionPattern).filter_by(user_id=str(user_id)).first()
             if not pattern:
                 pattern = InteractionPattern(user_id=str(user_id))
                 session.add(pattern)
                 session.commit()
             return pattern
-        finally:
-            session.close()
 
     def update_interaction_pattern(
         self,
@@ -143,8 +141,7 @@ class DatabaseService:
             topic: Topic to add to favorites (optional)
             sentiment: Sentiment value to include in average (optional)
         """
-        session = self.get_session()
-        try:
+        with self._session_scope() as session:
             pattern = session.query(InteractionPattern).filter_by(user_id=str(user_id)).first()
             if not pattern:
                 pattern = InteractionPattern(user_id=str(user_id))
@@ -159,14 +156,11 @@ class DatabaseService:
                 pattern.set_favorite_topics(topics)
 
             if sentiment is not None:
-                # Update rolling average
                 old_avg = pattern.sentiment_avg
                 new_avg = (old_avg * (pattern.total_messages - 1) + sentiment) / pattern.total_messages
                 pattern.sentiment_avg = new_avg
 
             session.commit()
-        finally:
-            session.close()
 
     def get_interaction_pattern(self, user_id: str) -> Optional[InteractionPattern]:
         """Get interaction pattern for user.
@@ -177,11 +171,8 @@ class DatabaseService:
         Returns:
             InteractionPattern object or None
         """
-        session = self.get_session()
-        try:
+        with self._session_scope() as session:
             return session.query(InteractionPattern).filter_by(user_id=str(user_id)).first()
-        finally:
-            session.close()
 
     # --- Database Maintenance ---
 
@@ -201,11 +192,8 @@ class DatabaseService:
         Returns:
             Dictionary with database stats
         """
-        session = self.get_session()
-        try:
+        with self._session_scope() as session:
             return {
                 'total_users': session.query(func.count(User.id)).scalar(),
                 'users_with_patterns': session.query(func.count(InteractionPattern.id)).scalar(),
             }
-        finally:
-            session.close()
