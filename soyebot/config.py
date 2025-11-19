@@ -45,18 +45,24 @@ logger = logging.getLogger(__name__)
 
 
 # --- 설정 ---
+DEFAULT_GEMINI_ASSISTANT_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_SUMMARY_MODEL = "gemini-2.5-pro"
+DEFAULT_OPENAI_ASSISTANT_MODEL = "gpt-5-mini"
+DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-5-mini"
+
+
 @dataclass(frozen=True)
 class AppConfig:
     """애플리케이션 설정"""
     discord_token: str
-    assistant_llm_provider: str = 'openai'
+    assistant_llm_provider: str = 'gemini'
     summarizer_llm_provider: str = 'gemini'
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
-    gemini_model_name: str = 'gemini-2.5-flash'
-    openai_model_name: str = 'gpt-5-mini'
-    assistant_model_name: str = 'gpt-5-mini'
-    summarizer_model_name: str = 'gemini-2.5-pro'
+    gemini_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
+    openai_model_name: str = DEFAULT_OPENAI_ASSISTANT_MODEL
+    assistant_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
+    summarizer_model_name: str = DEFAULT_GEMINI_SUMMARY_MODEL
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
@@ -93,6 +99,34 @@ def _validate_provider(provider: str) -> str:
     return provider
 
 
+def _first_nonempty_env(*names: str) -> Optional[str]:
+    for name in names:
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
+def _resolve_model_name(provider: str, *, role: str) -> str:
+    """Return the model name for the given provider/role using clear priority.
+
+    Priority order:
+    1. Role-specific override (e.g., OPENAI_ASSISTANT_MODEL_NAME)
+    2. Provider-wide override (e.g., OPENAI_MODEL_NAME)
+    3. Sensible provider defaults
+    """
+
+    if provider == 'openai':
+        if role == 'assistant':
+            return _first_nonempty_env('OPENAI_ASSISTANT_MODEL_NAME', 'OPENAI_MODEL_NAME') or DEFAULT_OPENAI_ASSISTANT_MODEL
+        return _first_nonempty_env('OPENAI_SUMMARY_MODEL_NAME', 'OPENAI_MODEL_NAME') or DEFAULT_OPENAI_SUMMARY_MODEL
+
+    # Gemini
+    if role == 'assistant':
+        return _first_nonempty_env('GEMINI_ASSISTANT_MODEL_NAME', 'GEMINI_MODEL_NAME') or DEFAULT_GEMINI_ASSISTANT_MODEL
+    return _first_nonempty_env('GEMINI_SUMMARY_MODEL_NAME', 'GEMINI_MODEL_NAME') or DEFAULT_GEMINI_SUMMARY_MODEL
+
+
 def load_config() -> AppConfig:
     """환경 변수에서 설정을 로드합니다."""
     discord_token = os.environ.get('DISCORD_TOKEN')
@@ -103,32 +137,23 @@ def load_config() -> AppConfig:
     # Provider별 설정 (어시스턴트/요약 분리)
     assistant_llm_provider = _validate_provider(
         _normalize_provider(
-            os.environ.get('ASSISTANT_LLM_PROVIDER')
-            or os.environ.get('LLM_PROVIDER'),
+            os.environ.get('ASSISTANT_LLM_PROVIDER') or os.environ.get('LLM_PROVIDER'),
             'gemini',
         )
     )
     summarizer_llm_provider = _validate_provider(
-        _normalize_provider(os.environ.get('SUMMARIZER_LLM_PROVIDER'), assistant_llm_provider)
+        _normalize_provider(
+            os.environ.get('SUMMARIZER_LLM_PROVIDER'),
+            assistant_llm_provider,
+        )
     )
 
-    # Provider별 모델 설정 (별도의 환경 변수를 통해 개별 오버라이드 가능)
-    gemini_model_name = os.environ.get('GEMINI_MODEL_NAME') or 'gemini-2.5-flash'
-    openai_model_name = os.environ.get('OPENAI_MODEL_NAME') or 'gpt-5-mini'
+    # Provider별 모델 설정 (역할별 우선순위 명확화)
+    gemini_model_name = _first_nonempty_env('GEMINI_MODEL_NAME') or DEFAULT_GEMINI_ASSISTANT_MODEL
+    openai_model_name = _first_nonempty_env('OPENAI_MODEL_NAME') or DEFAULT_OPENAI_ASSISTANT_MODEL
 
-    assistant_model_name = openai_model_name if assistant_llm_provider == 'openai' else gemini_model_name
-    if summarizer_llm_provider == 'openai':
-        summarizer_model_name = (
-            os.environ.get('OPENAI_SUMMARY_MODEL_NAME')
-            or os.environ.get('OPENAI_MODEL_NAME')
-            or 'gpt-5-mini'
-        )
-    else:
-        summarizer_model_name = (
-            os.environ.get('GEMINI_SUMMARY_MODEL_NAME')
-            or os.environ.get('GEMINI_MODEL_NAME')
-            or 'gemini-2.5-flash'
-        )
+    assistant_model_name = _resolve_model_name(assistant_llm_provider, role='assistant')
+    summarizer_model_name = _resolve_model_name(summarizer_llm_provider, role='summary')
 
     # 필수 키 검증
     if not discord_token:
