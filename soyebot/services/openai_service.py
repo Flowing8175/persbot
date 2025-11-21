@@ -65,12 +65,13 @@ class ResponseChatSession:
             )
 
         for entry in self._history:
+            content_type = "output_text" if entry["role"] == "assistant" else "input_text"
             payload.append(
                 {
                     "role": entry["role"],
                     "content": [
                         {
-                            "type": "input_text",
+                            "type": content_type,
                             "text": entry["content"],
                         }
                     ],
@@ -316,15 +317,26 @@ class OpenAIService:
     def _extract_text_from_response_output(self, response_obj) -> str:
         try:
             text_fragments = []
+            seen_fragments = set()
             output_text = getattr(response_obj, 'output_text', None)
             if output_text:
                 if isinstance(output_text, str):
-                    text_fragments.append(output_text)
+                    normalized = str(output_text).strip()
+                    if normalized and normalized not in seen_fragments:
+                        text_fragments.append(normalized)
+                        seen_fragments.add(normalized)
                 else:
                     try:
-                        text_fragments.extend(str(part) for part in output_text if part)
+                        for part in output_text:
+                            normalized = str(part).strip()
+                            if normalized and normalized not in seen_fragments:
+                                text_fragments.append(normalized)
+                                seen_fragments.add(normalized)
                     except TypeError:
-                        text_fragments.append(str(output_text))
+                        normalized = str(output_text).strip()
+                        if normalized and normalized not in seen_fragments:
+                            text_fragments.append(normalized)
+                            seen_fragments.add(normalized)
 
             output_items = getattr(response_obj, 'output', None) or []
             for item in output_items:
@@ -332,8 +344,11 @@ class OpenAIService:
                 for content in content_list:
                     text_value = getattr(content, 'text', None)
                     if text_value:
-                        text_fragments.append(str(text_value))
-            return "\n".join(fragment.strip() for fragment in text_fragments if fragment).strip()
+                        normalized = str(text_value).strip()
+                        if normalized and normalized not in seen_fragments:
+                            text_fragments.append(normalized)
+                            seen_fragments.add(normalized)
+            return "\n".join(text_fragments).strip()
         except Exception:
             logger.exception("Failed to extract text from response output")
         return ""
