@@ -65,12 +65,13 @@ class ResponseChatSession:
             )
 
         for entry in self._history:
+            content_type = "output_text" if entry["role"] == "assistant" else "input_text"
             payload.append(
                 {
                     "role": entry["role"],
                     "content": [
                         {
-                            "type": "input_text",
+                            "type": content_type,
                             "text": entry["content"],
                         }
                     ],
