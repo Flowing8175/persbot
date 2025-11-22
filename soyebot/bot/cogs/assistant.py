@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message
 from bot.session import SessionManager
+from bot.buffer import MessageBuffer
 from config import AppConfig
 from metrics import get_metrics
 from services.llm_service import LLMService
@@ -29,6 +30,7 @@ class AssistantCog(commands.Cog):
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
+        self.message_buffer = MessageBuffer()
 
     def _should_ignore_message(self, message: discord.Message) -> bool:
         """Return True when the bot should not process the message."""
@@ -53,37 +55,58 @@ class AssistantCog(commands.Cog):
         if self._should_ignore_message(message):
             return
 
+        await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+
+    async def _process_batch(self, messages: list[discord.Message]):
+        if not messages:
+            return
+
+        # Use the first message for context/reply target, but could be improved
+        primary_message = messages[0]
         start_time = time.perf_counter()
         metrics = get_metrics()
 
         try:
-            user_message = extract_message_content(message)
-            if not user_message:
-                await message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
+            # Combine contents
+            combined_content = []
+            for msg in messages:
+                content = extract_message_content(msg)
+                if content:
+                    if len(messages) > 1 and msg.author.name:
+                         combined_content.append(f"{msg.author.name}: {content}")
+                    else:
+                         combined_content.append(content)
+
+            full_text = "\n".join(combined_content)
+
+            if not full_text:
+                await primary_message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
                 return
 
-            logger.info("Processing message from %s: %s", message.author.name, user_message[:100])
+            logger.info("Processing batch of %d messages from %s: %s", len(messages), primary_message.author.name, full_text[:100])
 
-            async with message.channel.typing():
+            async with primary_message.channel.typing():
                 resolution = await resolve_session_for_message(
-                    message,
-                    user_message,
+                    primary_message,
+                    full_text,
                     session_manager=self.session_manager,
                 )
 
                 if not resolution:
-                    await message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
+                    await primary_message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
                     return
 
                 reply = await create_chat_reply(
-                    message,
+                    primary_message,
                     resolution=resolution,
                     llm_service=self.llm_service,
                     session_manager=self.session_manager,
                 )
 
                 if reply:
-                    await self._send_llm_reply(message, reply)
+                    # We reply to the last message in the batch so the user sees it at the bottom
+                    last_message = messages[-1]
+                    await self._send_llm_reply(last_message, reply)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
@@ -91,7 +114,7 @@ class AssistantCog(commands.Cog):
 
         except Exception as e:
             logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
-            await message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+            await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
 

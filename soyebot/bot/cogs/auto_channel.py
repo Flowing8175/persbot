@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from bot.chat_handler import create_chat_reply, resolve_session_for_message
 from bot.session import SessionManager
+from bot.buffer import MessageBuffer
 from config import AppConfig
 from metrics import get_metrics
 from services.llm_service import LLMService
@@ -30,6 +31,7 @@ class AutoChannelCog(commands.Cog):
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
+        self.message_buffer = MessageBuffer()
 
     def _should_ignore_message(self, message: discord.Message) -> bool:
         if message.author.bot:
@@ -56,42 +58,60 @@ class AutoChannelCog(commands.Cog):
         if self._should_ignore_message(message):
             return
 
+        await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+
+    async def _process_batch(self, messages: list[discord.Message]):
+        if not messages:
+            return
+
+        primary_message = messages[0]
         start_time = time.perf_counter()
         metrics = get_metrics()
 
         try:
-            user_message = extract_message_content(message)
-            if not user_message:
-                await message.channel.send("❌ 메시지 내용이 없는데요.")
+             # Combine contents
+            combined_content = []
+            for msg in messages:
+                content = extract_message_content(msg)
+                if content:
+                    if len(messages) > 1 and msg.author.name:
+                         combined_content.append(f"{msg.author.name}: {content}")
+                    else:
+                         combined_content.append(content)
+
+            full_text = "\n".join(combined_content)
+
+            if not full_text:
+                await primary_message.channel.send("❌ 메시지 내용이 없는데요.")
                 return
 
             logger.info(
-                "Processing auto-reply message from %s in #%s: %s",
-                message.author.name,
-                message.channel.name,
-                user_message[:100],
+                "Processing batch of %d auto-reply messages in #%s: %s",
+                len(messages),
+                primary_message.channel.name,
+                full_text[:100],
             )
 
-            async with message.channel.typing():
+            async with primary_message.channel.typing():
                 resolution = await resolve_session_for_message(
-                    message,
-                    user_message,
+                    primary_message,
+                    full_text,
                     session_manager=self.session_manager,
                 )
 
                 if not resolution:
-                    await message.channel.send("❌ 메시지 내용이 없는데요.")
+                    await primary_message.channel.send("❌ 메시지 내용이 없는데요.")
                     return
 
                 reply = await create_chat_reply(
-                    message,
+                    primary_message,
                     resolution=resolution,
                     llm_service=self.llm_service,
                     session_manager=self.session_manager,
                 )
 
                 if reply:
-                    await self._send_auto_reply(message, reply.text, reply.session_key)
+                    await self._send_auto_reply(primary_message, reply.text, reply.session_key)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
@@ -99,6 +119,6 @@ class AutoChannelCog(commands.Cog):
 
         except Exception as exc:
             logger.error("자동 응답 메시지 처리 중 오류 발생: %s", exc, exc_info=True)
-            await message.channel.send(GENERIC_ERROR_MESSAGE)
+            await primary_message.channel.send(GENERIC_ERROR_MESSAGE)
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
