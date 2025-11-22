@@ -11,7 +11,7 @@ class MessageBuffer:
     Waits for a dynamic duration after the *last* message arrives before processing.
 
     Delay Logic:
-    - Short messages (< 3 chars) -> Longer delay
+    - Short messages (< 5 chars) -> Shorter delay
     - Stacked messages -> Shorter delay (Quadratic curve)
     - Range: 0.8s ~ 4.0s
     """
@@ -39,8 +39,9 @@ class MessageBuffer:
         MIN_DELAY = 0.8
         MAX_DELAY = 4.0
         STACK_THRESHOLD = 4
-        SHORT_MSG_LEN = 3
-        LONG_MSG_MULTIPLIER = 0.6
+        SHORT_MSG_LEN = 5
+        SHORT_MSG_MULTIPLIER = 0.4
+        LONG_MSG_MULTIPLIER = 0.8
 
         # Base Delay Calculation (Quadratic)
         if stack_size >= STACK_THRESHOLD:
@@ -52,9 +53,9 @@ class MessageBuffer:
             base_delay = MAX_DELAY - (MAX_DELAY - MIN_DELAY) * (t ** 2)
 
         # Apply Length Multiplier
-        # "Short message (len < 3) -> Longer term (Multiplier 1.0)"
-        # "Long message (len >= 3) -> Shorter term (Multiplier 0.6)"
-        multiplier = 1.0 if msg_len < SHORT_MSG_LEN else LONG_MSG_MULTIPLIER
+        # "Short message (len < 5) -> Shorter term (Multiplier 0.4)"
+        # "Long message (len >= 5) -> Longer term (Multiplier 0.8)"
+        multiplier = SHORT_MSG_MULTIPLIER if msg_len < SHORT_MSG_LEN else LONG_MSG_MULTIPLIER
 
         calculated_delay = base_delay * multiplier
 
