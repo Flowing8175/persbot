@@ -73,6 +73,7 @@ class AppConfig:
     countdown_update_interval: int = 5
     command_prefix: str = '!'
     service_tier: str = 'flex'
+    openai_finetuned_model: Optional[str] = None
 
     # --- Database Configuration ---
     database_path: str = 'soyebot.db'
@@ -152,8 +153,15 @@ def load_config() -> AppConfig:
     # Provider별 모델 설정 (역할별 우선순위 명확화)
     gemini_model_name = _first_nonempty_env('GEMINI_MODEL_NAME') or DEFAULT_GEMINI_ASSISTANT_MODEL
     openai_model_name = _first_nonempty_env('OPENAI_MODEL_NAME') or DEFAULT_OPENAI_ASSISTANT_MODEL
+    openai_finetuned_model = _first_nonempty_env('OPENAI_FINETUNED_MODEL')
 
     assistant_model_name = _resolve_model_name(assistant_llm_provider, role='assistant')
+
+    # If using OpenAI and a fine-tuned model is specified, override the assistant model
+    if assistant_llm_provider == 'openai' and openai_finetuned_model:
+        assistant_model_name = openai_finetuned_model
+        logger.info("OpenAI Fine-tuned model selected: %s", assistant_model_name)
+
     summarizer_model_name = _resolve_model_name(summarizer_llm_provider, role='summary')
 
     # 필수 키 검증
@@ -216,4 +224,5 @@ def load_config() -> AppConfig:
         auto_reply_channel_ids=auto_reply_channel_ids,
         log_level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
         service_tier=service_tier,
+        openai_finetuned_model=openai_finetuned_model,
     )
