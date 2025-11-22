@@ -86,6 +86,7 @@ class AppConfig:
     # --- Session Management ---
     session_cache_limit: int = 200
     session_inactive_minutes: int = 30
+    message_buffer_delay: float = 2.5
 
 def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
@@ -203,6 +204,18 @@ def load_config() -> AppConfig:
 
         auto_reply_channel_ids = tuple(valid_ids)
 
+    try:
+        message_buffer_delay = float(os.environ.get('MESSAGE_BUFFER_DELAY', 2.5))
+    except ValueError:
+        logger.warning("MESSAGE_BUFFER_DELAY 설정이 숫자가 아닙니다. 기본값 2.5초를 사용합니다.")
+        message_buffer_delay = 2.5
+
+    try:
+        temperature = float(os.environ.get('TEMPERATURE', 1.0))
+    except ValueError:
+        logger.warning("TEMPERATURE 설정이 숫자가 아닙니다. 기본값 1.0을 사용합니다.")
+        temperature = 1.0
+
     logger.info(
         "LLM_PROVIDER(assistant)=%s, LLM_PROVIDER(summarizer)=%s, assistant_model=%s, summarizer_model=%s",
         assistant_llm_provider,
@@ -225,4 +238,6 @@ def load_config() -> AppConfig:
         log_level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
         service_tier=service_tier,
         openai_finetuned_model=openai_finetuned_model,
+        message_buffer_delay=message_buffer_delay,
+        temperature=temperature,
     )

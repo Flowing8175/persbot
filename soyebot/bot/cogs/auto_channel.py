@@ -31,7 +31,7 @@ class AutoChannelCog(commands.Cog):
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
-        self.message_buffer = MessageBuffer()
+        self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
     def _should_ignore_message(self, message: discord.Message) -> bool:
         if message.author.bot:
