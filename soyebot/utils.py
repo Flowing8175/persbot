@@ -16,20 +16,6 @@ _TIME_TOKEN_PATTERN = re.compile(r"(\d+)\s*(시간|분)")
 class DiscordUI:
     """Discord UI 상호작용을 위한 헬퍼 클래스"""
     @staticmethod
-    async def safe_edit(message: Optional[discord.Message], content: str) -> bool:
-        if not message:
-            return False
-        try:
-            await message.edit(content=content)
-            return True
-        except (discord.Forbidden, discord.NotFound) as e:
-            logger.warning(f"메시지 수정 실패: {e}")
-            return False
-        except Exception as e:
-            logger.warning(f"메시지 수정 중 에러: {e}")
-            return False
-
-    @staticmethod
     async def safe_send(channel: discord.TextChannel, content: str) -> Optional[discord.Message]:
         try:
             return await channel.send(content)

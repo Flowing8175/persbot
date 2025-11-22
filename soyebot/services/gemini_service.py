@@ -1,11 +1,9 @@
 "Gemini API service for SoyeBot."
 
-import asyncio
 import json
 import logging
 import re
-import time
-from typing import Any, Awaitable, Callable, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import discord
 import google.genai as genai
@@ -13,8 +11,7 @@ from google.genai import types as genai_types
 
 from config import AppConfig
 from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from metrics import get_metrics
-from utils import GENERIC_ERROR_MESSAGE
+from services.base import BaseLLMService
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +43,11 @@ class _CachedModel:
         )
 
 
-class GeminiService:
+class GeminiService(BaseLLMService):
     """Gemini API와의 모든 상호작용을 관리합니다."""
 
     def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
-        self.config = config
+        super().__init__(config)
         self.client = genai.Client(api_key=config.gemini_api_key)
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
@@ -72,15 +69,7 @@ class GeminiService:
         )
 
     def _get_or_create_model(self, model_name: str, system_instruction: str) -> _CachedModel:
-        """Get cached model instance or create new one.
-
-        Args:
-            model_name: Name of the model to use
-            system_instruction: System instruction for the model
-
-        Returns:
-            Cached or newly created model wrapper instance
-        """
+        """Get cached model instance or create new one."""
         key = hash((model_name, system_instruction))
         if key not in self._model_cache:
             config = genai_types.GenerateContentConfig(
@@ -91,20 +80,15 @@ class GeminiService:
         return self._model_cache[key]
 
     def create_assistant_model(self, system_instruction: str) -> _CachedModel:
-        """Create or retrieve a cached assistant model with custom system instruction.
-
-        Args:
-            system_instruction: Custom system instruction for the model
-
-        Returns:
-            Model wrapper instance with the custom instruction (cached if possible)
-        """
+        """Create or retrieve a cached assistant model with custom system instruction."""
         return self._get_or_create_model(self._assistant_model_name, system_instruction)
 
-    def _is_rate_limit_error(self, error_str: str) -> bool:
-        return ("429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower())
+    def _is_rate_limit_error(self, error: Exception) -> bool:
+        error_str = str(error)
+        return "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower()
 
-    def _extract_retry_delay(self, error_str: str) -> Optional[float]:
+    def _extract_retry_delay(self, error: Exception) -> Optional[float]:
+        error_str = str(error)
         match = re.search(r'Please retry in ([0-9.]+)s', error_str, re.IGNORECASE)
         if match:
             return float(match.group(1))
@@ -169,111 +153,32 @@ class GeminiService:
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
-    async def _api_request_with_retry(
-        self,
-        model_call,
-        error_prefix: str = "요청",
-        return_full_response: bool = False,
-        discord_message: Optional[discord.Message] = None,
-    ) -> Optional[Any]:
-        """Execute the API call with retries, logging, and countdown notifications."""
+    def _extract_text_from_response(self, response_obj: Any) -> str:
+        """Extract text content from Gemini response."""
+        try:
+            text_parts = []
+            if hasattr(response_obj, 'candidates') and response_obj.candidates:
+                for candidate in response_obj.candidates:
+                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                text_parts.append(part.text)
 
-        metrics = get_metrics()
-        request_start = time.perf_counter()
-        metrics.increment_counter('api_requests_total')
+            if text_parts:
+                return ' '.join(text_parts).strip()
 
-        last_error: Optional[Exception] = None
+            return ""
 
-        for attempt in range(1, self.config.api_max_retries + 1):
-            try:
-                response = await asyncio.wait_for(
-                    self._execute_model_call(model_call),
-                    timeout=self.config.api_request_timeout,
-                )
-
-                self._log_raw_response(response, attempt)
-                duration_ms = (time.perf_counter() - request_start) * 1000
-                metrics.record_latency('llm_api', duration_ms)
-                metrics.increment_counter('api_requests_success')
-
-                if return_full_response:
-                    return response
-                return response.text.strip()
-            except asyncio.TimeoutError:
-                last_error = asyncio.TimeoutError()
-                logger.warning("Gemini API 타임아웃 (%s/%s)", attempt, self.config.api_max_retries)
-                if attempt < self.config.api_max_retries:
-                    logger.info("API 타임아웃, 재시도 중...")
-                    continue
-                break
-            except Exception as e:
-                error_str = str(e)
-                logger.error(
-                    "Gemini API 에러 (%s/%s): %s",
-                    attempt,
-                    self.config.api_max_retries,
-                    e,
-                    exc_info=True,
-                )
-                last_error = e
-
-                if self._is_rate_limit_error(error_str):
-                    delay = self._extract_retry_delay(error_str) or self.config.api_rate_limit_retry_after
-                    await self._wait_with_countdown(delay, discord_message)
-                    continue
-
-                if attempt >= self.config.api_max_retries:
-                    break
-                logger.info("에러 발생, 재시도 중...")
-                await asyncio.sleep(2)
-
-        if isinstance(last_error, asyncio.TimeoutError):
-            logger.error("❌ 에러: API 요청 시간 초과")
-        else:
-            logger.error("❌ 에러: 최대 재시도 횟수(%s)를 초과했습니다.", self.config.api_max_retries)
-        metrics.increment_counter('api_requests_error')
-        if discord_message:
-            await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-        return None
-
-    async def _execute_model_call(self, model_call):
-        if asyncio.iscoroutinefunction(model_call):
-            return await model_call()
-        return await asyncio.to_thread(model_call)
-
-    async def _wait_with_countdown(self, delay: float, discord_message: Optional[discord.Message]) -> None:
-        if delay <= 0:
-            return
-
-        logger.info("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
-        sent_message: Optional[discord.Message] = None
-        if discord_message:
-            sent_message = await discord_message.reply(
-                f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
-                mention_author=False,
-            )
-
-        remaining = int(delay)
-        while remaining > 0:
-            if remaining % 10 == 0 or remaining <= 3:
-                countdown_message = (
-                    f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
-                )
-                if sent_message:
-                    await sent_message.edit(content=countdown_message)
-                logger.info(countdown_message)
-            await asyncio.sleep(1)
-            remaining -= 1
-
-        if sent_message:
-            await sent_message.delete()
+        except Exception as e:
+            logger.error(f"Failed to extract text from response: {e}", exc_info=True)
+            return ""
 
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():
             return "요약할 메시지가 없습니다."
         logger.info(f"Summarizing text ({len(text)} characters)...")
         prompt = f"Discord 대화 내용:\n{text}"
-        return await self._api_request_with_retry(
+        return await self.execute_with_retry(
             lambda: self.summary_model.generate_content(prompt),
             "요약"
         )
@@ -285,14 +190,12 @@ class GeminiService:
         discord_message: discord.Message,
     ) -> Optional[Tuple[str, Any]]:
         """Generate chat response."""
-
-        # Log raw request data
         self._log_raw_request(user_message, chat_session)
 
         def api_call():
             return chat_session.send_message(user_message)
 
-        response_obj = await self._api_request_with_retry(
+        response_obj = await self.execute_with_retry(
             api_call,
             "응답 생성",
             return_full_response=True,
@@ -302,80 +205,6 @@ class GeminiService:
         if response_obj is None:
             return None
 
-        # Extract text from response
         response_text = self._extract_text_from_response(response_obj)
         return (response_text, response_obj)
-
-    def _extract_text_from_response(self, response_obj) -> str:
-        """Extract text content from Gemini response.
-
-        Args:
-            response_obj: Gemini response object
-
-        Returns:
-            Extracted text from response, or empty string if no text parts exist
-        """
-        try:
-            text_parts = []
-            if hasattr(response_obj, 'candidates') and response_obj.candidates:
-                for candidate in response_obj.candidates:
-                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'text') and part.text:
-                                text_parts.append(part.text)
-
-            if text_parts:
-                combined = ' '.join(text_parts).strip()
-                return combined
-
-            return ""
-
-        except Exception as e:
-            logger.error(f"Failed to extract text from response: {e}", exc_info=True)
-            return ""
-
-    def _extract_structured_json(self, response_obj) -> Optional[dict]:
-        """Extract JSON payload from a structured Gemini response."""
-
-        try:
-            if not hasattr(response_obj, "candidates") or not response_obj.candidates:
-                return None
-
-            for candidate in response_obj.candidates:
-                content = getattr(candidate, "content", None)
-                if not content or not hasattr(content, "parts"):
-                    continue
-
-                for part in content.parts:
-                    text = getattr(part, "text", "")
-                    if text:
-                        try:
-                            return json.loads(text)
-                        except Exception:
-                            logger.debug("Structured response text was not valid JSON: %s", text)
-
-                    func_call = getattr(part, "function_call", None)
-                    if func_call:
-                        args = getattr(func_call, "args", None)
-                        if isinstance(args, dict):
-                            return args
-                        args_json = getattr(func_call, "args_json", None)
-                        if isinstance(args_json, str):
-                            try:
-                                return json.loads(args_json)
-                            except Exception:
-                                logger.debug("Function call args_json not parseable: %s", args_json)
-
-                    inline = getattr(part, "inline_data", None)
-                    if inline and hasattr(inline, "data"):
-                        data = getattr(inline, "data")
-                        if data:
-                            try:
-                                return json.loads(data)
-                            except Exception:
-                                logger.debug("Inline data not parseable as JSON")
-
-        except Exception:
-            logger.exception("Failed to parse structured Gemini response")
-        return None
 

@@ -1,20 +1,16 @@
 """OpenAI API service for SoyeBot."""
 
-import asyncio
 import json
 import logging
-import time
 from collections import deque
-from typing import Any, Awaitable, Callable, Deque, Optional, Tuple
+from typing import Any, Deque, Optional, Tuple
 
 import discord
-from openai import OpenAI
-from openai import RateLimitError
+from openai import OpenAI, RateLimitError
 
 from config import AppConfig
 from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from metrics import get_metrics
-from utils import GENERIC_ERROR_MESSAGE
+from services.base import BaseLLMService
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +123,11 @@ class _ResponseModel:
         )
 
 
-class OpenAIService:
+class OpenAIService(BaseLLMService):
     """OpenAI API와의 모든 상호작용을 관리합니다."""
 
     def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
-        self.config = config
+        super().__init__(config)
         self.client = OpenAI(api_key=config.openai_api_key)
         self._assistant_cache: dict[int, _ResponseModel] = {}
         self._max_messages = 10
@@ -193,116 +189,7 @@ class OpenAIService:
         except Exception:
             logger.exception("[RAW API RESPONSE %s] Error logging raw response", attempt)
 
-    async def _api_request_with_retry(
-        self,
-        model_call: Callable[[], Any] | Callable[[], Awaitable[Any]],
-        error_prefix: str = "요청",
-        return_full_response: bool = False,
-        discord_message: Optional[discord.Message] = None,
-    ) -> Optional[Any]:
-        metrics = get_metrics()
-        request_start = time.perf_counter()
-        metrics.increment_counter('api_requests_total')
-
-        last_error: Optional[Exception] = None
-        for attempt in range(1, self.config.api_max_retries + 1):
-            try:
-                response = await asyncio.wait_for(
-                    self._execute_model_call(model_call),
-                    timeout=self.config.api_request_timeout,
-                )
-
-                self._log_raw_response(response, attempt)
-
-                duration_ms = (time.perf_counter() - request_start) * 1000
-                metrics.record_latency('llm_api', duration_ms)
-                metrics.increment_counter('api_requests_success')
-
-                if return_full_response:
-                    return response
-                return self._extract_text_from_response(response)
-            except asyncio.TimeoutError:
-                last_error = asyncio.TimeoutError()
-                logger.warning("OpenAI API 타임아웃 (%s/%s)", attempt, self.config.api_max_retries)
-                if attempt < self.config.api_max_retries:
-                    logger.info("API 타임아웃, 재시도 중...")
-                    continue
-                break
-            except Exception as e:
-                last_error = e
-                logger.error(
-                    "OpenAI API 에러 (%s/%s): %s",
-                    attempt,
-                    self.config.api_max_retries,
-                    e,
-                    exc_info=True,
-                )
-
-                if self._is_rate_limit_error(e):
-                    await self._wait_with_countdown(
-                        self.config.api_rate_limit_retry_after,
-                        discord_message,
-                    )
-                    continue
-
-                if attempt >= self.config.api_max_retries:
-                    break
-
-                backoff = min(
-                    self.config.api_retry_backoff_base ** attempt,
-                    self.config.api_retry_backoff_max,
-                )
-                logger.info("에러 발생, %.1f초 후 재시도", backoff)
-                await asyncio.sleep(backoff)
-
-        metrics.increment_counter('api_requests_error')
-        if isinstance(last_error, asyncio.TimeoutError):
-            logger.error("❌ 에러: API 요청 시간 초과")
-        else:
-            logger.error(
-                "❌ 에러: 최대 재시도 횟수(%s)를 초과했습니다. (%s)",
-                self.config.api_max_retries,
-                error_prefix,
-            )
-        if discord_message:
-            await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-        return None
-
-    async def _execute_model_call(self, model_call):
-        if asyncio.iscoroutinefunction(model_call):
-            return await model_call()
-        return await asyncio.to_thread(model_call)
-
-    async def _wait_with_countdown(
-        self,
-        delay: float,
-        discord_message: Optional[discord.Message],
-    ) -> None:
-        if delay <= 0:
-            return
-
-        logger.info("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
-        sent_message: Optional[discord.Message] = None
-        if discord_message:
-            sent_message = await discord_message.reply(
-                f"⏳ 소예봇 뇌 과부하! {int(delay)}초 기다려 주세요.",
-                mention_author=False,
-            )
-
-        remaining = int(delay)
-        while remaining > 0:
-            if remaining % 10 == 0 or remaining <= 3:
-                countdown = f"⏳ 소예봇 뇌 과부하! 조금만 기다려 주세요. ({remaining}초)"
-                if sent_message:
-                    await sent_message.edit(content=countdown)
-                logger.info(countdown)
-            await asyncio.sleep(1)
-            remaining -= 1
-
-        if sent_message:
-            await sent_message.delete()
-
-    def _extract_text_from_response(self, response_obj) -> str:
+    def _extract_text_from_response(self, response_obj: Any) -> str:
         try:
             choices = getattr(response_obj, 'choices', []) or []
             for choice in choices:
@@ -353,21 +240,13 @@ class OpenAIService:
             logger.exception("Failed to extract text from response output")
         return ""
 
-    def _extract_structured_json(self, response_obj) -> Optional[dict]:
-        try:
-            content = self._extract_text_from_response(response_obj)
-            if content:
-                return json.loads(content)
-        except Exception:
-            logger.debug("Structured response text was not valid JSON")
-        return None
 
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():
             return "요약할 메시지가 없습니다."
 
         prompt = f"Discord 대화 내용:\n{text}"
-        return await self._api_request_with_retry(
+        return await self.execute_with_retry(
             lambda: self.client.chat.completions.create(
                 model=self._summary_model_name,
                 messages=[
@@ -392,7 +271,7 @@ class OpenAIService:
     ) -> Optional[Tuple[str, Any]]:
         self._log_raw_request(user_message, chat_session)
 
-        response_obj = await self._api_request_with_retry(
+        response_obj = await self.execute_with_retry(
             lambda: chat_session.send_message(user_message),
             "응답 생성",
             return_full_response=True,
@@ -404,4 +283,3 @@ class OpenAIService:
 
         response_text, response = response_obj
         return response_text, response
-
