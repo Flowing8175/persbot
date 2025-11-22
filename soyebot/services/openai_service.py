@@ -90,6 +90,98 @@ class ResponseChatSession:
         return message_content, response
 
 
+class ChatCompletionSession:
+    """Chat Completion API-backed chat session for fine-tuned models."""
+
+    def __init__(
+        self,
+        client: OpenAI,
+        model_name: str,
+        system_instruction: str,
+        temperature: float,
+        max_messages: int,
+        service_tier: str,
+        text_extractor,
+    ):
+        self._client = client
+        self._model_name = model_name
+        self._system_instruction = system_instruction
+        self._temperature = temperature
+        self._max_messages = max_messages
+        self._service_tier = service_tier
+        self._text_extractor = text_extractor
+        self._history: Deque[dict] = deque(maxlen=max_messages)
+
+    def get_history(self):
+        return list(self._history)
+
+    def _append_history(self, role: str, content: str) -> None:
+        if not content:
+            return
+        self._history.append({"role": role, "content": content})
+
+    def send_message(self, user_message: str):
+        self._append_history("user", user_message)
+
+        # Build messages list for chat completions API
+        messages = []
+        if self._system_instruction:
+            messages.append({"role": "system", "content": self._system_instruction})
+
+        messages.extend(self._history)
+
+        response = self._client.chat.completions.create(
+            model=self._model_name,
+            messages=messages,
+            temperature=self._temperature,
+            service_tier=self._service_tier,
+        )
+
+        # Extract text using the provided text extractor (but first try extracting from choice)
+        message_content = ""
+        if response.choices and response.choices[0].message.content:
+             message_content = response.choices[0].message.content.strip()
+        else:
+             # Fallback to the service's text extractor if standard structure is missing
+             message_content = self._text_extractor(response)
+
+        self._append_history("assistant", message_content)
+        return message_content, response
+
+
+class _ChatCompletionModel:
+    """Chat Completion API wrapper."""
+
+    def __init__(
+        self,
+        client: OpenAI,
+        model_name: str,
+        system_instruction: str,
+        temperature: float,
+        max_messages: int,
+        service_tier: str,
+        text_extractor,
+    ):
+        self._client = client
+        self._model_name = model_name
+        self._system_instruction = system_instruction
+        self._temperature = temperature
+        self._max_messages = max_messages
+        self._service_tier = service_tier
+        self._text_extractor = text_extractor
+
+    def start_chat(self):
+        return ChatCompletionSession(
+            self._client,
+            self._model_name,
+            self._system_instruction,
+            self._temperature,
+            self._max_messages,
+            self._service_tier,
+            self._text_extractor,
+        )
+
+
 class _ResponseModel:
     """Response API wrapper mirroring the cached model API."""
 
@@ -138,21 +230,39 @@ class OpenAIService(BaseLLMService):
         self.assistant_model = self._get_or_create_assistant(self._assistant_model_name, BOT_PERSONA_PROMPT)
         logger.info("OpenAI Response 모델 '%s' 준비 완료.", self._assistant_model_name)
 
-    def _get_or_create_assistant(self, model_name: str, system_instruction: str) -> _ResponseModel:
+    def _get_or_create_assistant(self, model_name: str, system_instruction: str):
         key = hash((model_name, system_instruction))
         if key not in self._assistant_cache:
-            self._assistant_cache[key] = _ResponseModel(
-                self.client,
-                model_name,
-                system_instruction,
-                getattr(self.config, 'temperature', 1.0),
-                self._max_messages,
-                getattr(self.config, 'service_tier', 'flex'),
-                self._extract_text_from_response_output,
+            # Select model wrapper based on configuration (Fine-tuned models use Chat Completions)
+            # Check if the requested model matches the configured fine-tuned model
+            use_finetuned_logic = (
+                self.config.openai_finetuned_model and
+                model_name == self.config.openai_finetuned_model
             )
+
+            if use_finetuned_logic:
+                 self._assistant_cache[key] = _ChatCompletionModel(
+                    self.client,
+                    model_name,
+                    system_instruction,
+                    getattr(self.config, 'temperature', 1.0),
+                    self._max_messages,
+                    getattr(self.config, 'service_tier', 'flex'),
+                    self._extract_text_from_response_output,
+                )
+            else:
+                self._assistant_cache[key] = _ResponseModel(
+                    self.client,
+                    model_name,
+                    system_instruction,
+                    getattr(self.config, 'temperature', 1.0),
+                    self._max_messages,
+                    getattr(self.config, 'service_tier', 'flex'),
+                    self._extract_text_from_response_output,
+                )
         return self._assistant_cache[key]
 
-    def create_assistant_model(self, system_instruction: str) -> _ResponseModel:
+    def create_assistant_model(self, system_instruction: str):
         return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
