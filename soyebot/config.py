@@ -78,6 +78,8 @@ class AppConfig:
     # Gemini/LLM model tuning
     # Temperature controls creativity (0.0 = deterministic, higher = more creative)
     temperature: float = 1.0
+    # Nucleus sampling (Top-p) controls diversity
+    top_p: float = 1.0
     # Channels where every message should be auto-processed by Gemini
     auto_reply_channel_ids: Tuple[int, ...] = ()
     log_level: int = logging.INFO
@@ -214,6 +216,12 @@ def load_config() -> AppConfig:
         logger.warning("TEMPERATURE 설정이 숫자가 아닙니다. 기본값 1.0을 사용합니다.")
         temperature = 1.0
 
+    try:
+        top_p = float(os.environ.get('TOP_P', 1.0))
+    except ValueError:
+        logger.warning("TOP_P 설정이 숫자가 아닙니다. 기본값 1.0을 사용합니다.")
+        top_p = 1.0
+
     logger.info(
         "LLM_PROVIDER(assistant)=%s, LLM_PROVIDER(summarizer)=%s, assistant_model=%s, summarizer_model=%s",
         assistant_llm_provider,
@@ -238,4 +246,5 @@ def load_config() -> AppConfig:
         openai_finetuned_model=openai_finetuned_model,
         message_buffer_delay=message_buffer_delay,
         temperature=temperature,
+        top_p=top_p,
     )

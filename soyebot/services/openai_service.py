@@ -24,6 +24,7 @@ class ResponseChatSession:
         model_name: str,
         system_instruction: str,
         temperature: float,
+        top_p: float,
         max_messages: int,
         service_tier: str,
         text_extractor,
@@ -32,6 +33,7 @@ class ResponseChatSession:
         self._model_name = model_name
         self._system_instruction = system_instruction
         self._temperature = temperature
+        self._top_p = top_p
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
@@ -82,6 +84,7 @@ class ResponseChatSession:
             model=self._model_name,
             input=self._build_input_payload(),
             temperature=self._temperature,
+            top_p=self._top_p,
             service_tier=self._service_tier,
         )
 
@@ -99,6 +102,7 @@ class ChatCompletionSession:
         model_name: str,
         system_instruction: str,
         temperature: float,
+        top_p: float,
         max_messages: int,
         service_tier: str,
         text_extractor,
@@ -107,6 +111,7 @@ class ChatCompletionSession:
         self._model_name = model_name
         self._system_instruction = system_instruction
         self._temperature = temperature
+        self._top_p = top_p
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
@@ -134,6 +139,7 @@ class ChatCompletionSession:
             model=self._model_name,
             messages=messages,
             temperature=self._temperature,
+            top_p=self._top_p,
             service_tier=self._service_tier,
         )
 
@@ -158,6 +164,7 @@ class _ChatCompletionModel:
         model_name: str,
         system_instruction: str,
         temperature: float,
+        top_p: float,
         max_messages: int,
         service_tier: str,
         text_extractor,
@@ -166,6 +173,7 @@ class _ChatCompletionModel:
         self._model_name = model_name
         self._system_instruction = system_instruction
         self._temperature = temperature
+        self._top_p = top_p
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
@@ -176,6 +184,7 @@ class _ChatCompletionModel:
             self._model_name,
             self._system_instruction,
             self._temperature,
+            self._top_p,
             self._max_messages,
             self._service_tier,
             self._text_extractor,
@@ -191,6 +200,7 @@ class _ResponseModel:
         model_name: str,
         system_instruction: str,
         temperature: float,
+        top_p: float,
         max_messages: int,
         service_tier: str,
         text_extractor,
@@ -199,6 +209,7 @@ class _ResponseModel:
         self._model_name = model_name
         self._system_instruction = system_instruction
         self._temperature = temperature
+        self._top_p = top_p
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
@@ -209,6 +220,7 @@ class _ResponseModel:
             self._model_name,
             self._system_instruction,
             self._temperature,
+            self._top_p,
             self._max_messages,
             self._service_tier,
             self._text_extractor,
@@ -246,8 +258,9 @@ class OpenAIService(BaseLLMService):
                     model_name,
                     system_instruction,
                     getattr(self.config, 'temperature', 1.0),
+                    getattr(self.config, 'top_p', 1.0),
                     self._max_messages,
-                    "default",
+                    "standard",
                     self._extract_text_from_response_output,
                 )
             else:
@@ -256,6 +269,7 @@ class OpenAIService(BaseLLMService):
                     model_name,
                     system_instruction,
                     getattr(self.config, 'temperature', 1.0),
+                    getattr(self.config, 'top_p', 1.0),
                     self._max_messages,
                     getattr(self.config, 'service_tier', 'flex'),
                     self._extract_text_from_response_output,
@@ -368,6 +382,7 @@ class OpenAIService(BaseLLMService):
                     {"role": "user", "content": prompt},
                 ],
                 temperature=getattr(self.config, 'temperature', 1.0),
+                top_p=getattr(self.config, 'top_p', 1.0),
                 service_tier=getattr(self.config, 'service_tier', 'flex'),
             ),
             "요약",

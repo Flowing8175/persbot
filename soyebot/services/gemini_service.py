@@ -75,6 +75,7 @@ class GeminiService(BaseLLMService):
             config = genai_types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=getattr(self.config, 'temperature', 1.0),
+                top_p=getattr(self.config, 'top_p', 1.0),
             )
             self._model_cache[key] = _CachedModel(self.client, model_name, config)
         return self._model_cache[key]
