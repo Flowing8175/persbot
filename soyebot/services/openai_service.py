@@ -247,7 +247,7 @@ class OpenAIService(BaseLLMService):
                     system_instruction,
                     getattr(self.config, 'temperature', 1.0),
                     self._max_messages,
-                    "standard",
+                    "default",
                     self._extract_text_from_response_output,
                 )
             else:
