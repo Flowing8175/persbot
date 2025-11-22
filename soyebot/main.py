@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from config import load_config
 from services.llm_service import LLMService
-from services.database_service import DatabaseService
 from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
@@ -69,8 +68,7 @@ async def main(config):
 
     # Initialize services
     llm_service = LLMService(config)
-    db_service = DatabaseService(config.database_path)
-    session_manager = SessionManager(config, llm_service, db_service)
+    session_manager = SessionManager(config, llm_service)
 
     @bot.event
     async def on_ready():
@@ -92,11 +90,7 @@ async def main(config):
     @bot.event
     async def on_close():
         """Cleanup on bot close."""
-        try:
-            db_service.close()
-            logger.info("Services cleaned up successfully")
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+        logger.info("Services cleaned up successfully")
 
 
     try:

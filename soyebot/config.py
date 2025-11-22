@@ -75,8 +75,6 @@ class AppConfig:
     service_tier: str = 'flex'
     openai_finetuned_model: Optional[str] = None
 
-    # --- Database Configuration ---
-    database_path: str = 'soyebot.db'
     # Gemini/LLM model tuning
     # Temperature controls creativity (0.0 = deterministic, higher = more creative)
     temperature: float = 1.0

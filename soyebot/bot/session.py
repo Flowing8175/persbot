@@ -9,7 +9,6 @@ from typing import Optional, Tuple
 
 from config import AppConfig
 from services.llm_service import LLMService
-from services.database_service import DatabaseService
 from prompts import BOT_PERSONA_PROMPT
 from metrics import get_metrics
 
@@ -55,11 +54,9 @@ class SessionManager:
         self,
         config: AppConfig,
         llm_service: LLMService,
-        db_service: DatabaseService,
     ):
         self.config = config
         self.llm_service = llm_service
-        self.db_service = db_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.message_sessions: OrderedDict[str, str] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
@@ -128,8 +125,6 @@ class SessionManager:
             return existing_session.chat, session_key
 
         logger.info(f"Creating new session {session_key} for user {user_id}")
-
-        await asyncio.to_thread(self.db_service.get_or_create_user, user_id, username)
 
         system_prompt = BOT_PERSONA_PROMPT
 
