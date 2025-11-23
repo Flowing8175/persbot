@@ -201,10 +201,8 @@ class SessionManager:
 
         cleaned_message = message_content.strip()
 
-        if reference_message_id:
-            existing_session = self.get_session_for_message(reference_message_id)
-            if existing_session:
-                return ResolvedSession(existing_session, cleaned_message)
+        # Note: reference_message_id is now ignored as we treat replies as context
+        # within the main channel session rather than branching or joining threads.
 
         session_key = f"channel:{channel_id}"
         return ResolvedSession(session_key, cleaned_message)

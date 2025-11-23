@@ -30,11 +30,24 @@ async def resolve_session_for_message(
 ) -> Optional[ResolvedSession]:
     """Resolve the logical chat session for a Discord message."""
 
-    reference_id = (
-        str(message.reference.message_id)
-        if message.reference and message.reference.message_id
-        else None
-    )
+    # Handle replies by adding context to the message content
+    # We no longer branch sessions for replies; instead, we just provide context to the LLM.
+    if message.reference and message.reference.message_id:
+        ref_msg = message.reference.resolved
+
+        # If not resolved or deleted, try to fetch it
+        if ref_msg is None or isinstance(ref_msg, discord.DeletedReferencedMessage):
+            try:
+                ref_msg = await message.channel.fetch_message(message.reference.message_id)
+            except (discord.NotFound, discord.HTTPException):
+                ref_msg = None
+
+        if ref_msg:
+            # Add reply context to the content
+            # Using clean_content to get readable names instead of mention IDs
+            ref_text = ref_msg.clean_content
+            reply_context = f"(답장 대상: {ref_msg.author.display_name}, 내용: \"{ref_text}\")\n"
+            content = reply_context + content
 
     resolution = await session_manager.resolve_session(
         channel_id=message.channel.id,
@@ -42,7 +55,8 @@ async def resolve_session_for_message(
         username=message.author.name,
         message_id=str(message.id),
         message_content=content,
-        reference_message_id=reference_id,
+        # Pass None for reference_message_id to ensure we stick to the channel session
+        reference_message_id=None,
         created_at=message.created_at,
     )
     return resolution if resolution.cleaned_message else None
