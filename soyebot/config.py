@@ -51,7 +51,7 @@ DEFAULT_OPENAI_ASSISTANT_MODEL = "gpt-5-mini"
 DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-5-mini"
 
 
-@dataclass(frozen=True)
+@dataclass
 class AppConfig:
     """애플리케이션 설정"""
     discord_token: str

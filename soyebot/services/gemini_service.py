@@ -84,6 +84,11 @@ class GeminiService(BaseLLMService):
         """Create or retrieve a cached assistant model with custom system instruction."""
         return self._get_or_create_model(self._assistant_model_name, system_instruction)
 
+    def reload_parameters(self) -> None:
+        """Reload parameters by clearing the model cache."""
+        self._model_cache.clear()
+        logger.info("Gemini model cache cleared to apply new parameters.")
+
     def _is_rate_limit_error(self, error: Exception) -> bool:
         error_str = str(error)
         return "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower()

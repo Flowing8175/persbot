@@ -279,6 +279,11 @@ class OpenAIService(BaseLLMService):
     def create_assistant_model(self, system_instruction: str):
         return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
+    def reload_parameters(self) -> None:
+        """Reload parameters by clearing the assistant cache."""
+        self._assistant_cache.clear()
+        logger.info("OpenAI assistant cache cleared to apply new parameters.")
+
     def _is_rate_limit_error(self, error: Exception) -> bool:
         if isinstance(error, RateLimitError):
             return True

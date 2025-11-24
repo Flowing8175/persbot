@@ -131,3 +131,33 @@ class AssistantCog(commands.Cog):
         except Exception as exc:
             logger.error("세션 초기화 실패: %s", exc, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+
+    @commands.command(name='temp')
+    @commands.has_permissions(manage_guild=True)
+    async def set_temperature(self, ctx: commands.Context, value: float):
+        """Set the temperature parameter for the LLM (0.0 - 2.0)."""
+        if not (0.0 <= value <= 2.0):
+            await ctx.reply("❌ Temperature는 0.0에서 2.0 사이여야 합니다.", mention_author=False)
+            return
+
+        try:
+            self.llm_service.update_parameters(temperature=value)
+            await ctx.reply(f"✅ Temperature 설정 완료: {value}", mention_author=False)
+        except Exception as e:
+            logger.error("Temperature 설정 실패: %s", e, exc_info=True)
+            await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+
+    @commands.command(name='topp')
+    @commands.has_permissions(manage_guild=True)
+    async def set_top_p(self, ctx: commands.Context, value: float):
+        """Set the top_p parameter for the LLM (0.0 - 1.0)."""
+        if not (0.0 <= value <= 1.0):
+            await ctx.reply("❌ Top-p는 0.0에서 1.0 사이여야 합니다.", mention_author=False)
+            return
+
+        try:
+            self.llm_service.update_parameters(top_p=value)
+            await ctx.reply(f"✅ Top-p 설정 완료: {value}", mention_author=False)
+        except Exception as e:
+            logger.error("Top-p 설정 실패: %s", e, exc_info=True)
+            await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)

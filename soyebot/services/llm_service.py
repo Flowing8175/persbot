@@ -69,3 +69,24 @@ class LLMService:
     async def generate_chat_response(self, chat_session, user_message: str, discord_message):
         return await self.assistant_backend.generate_chat_response(chat_session, user_message, discord_message)
 
+    def update_parameters(
+        self,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None
+    ) -> None:
+        """Update model parameters and reload backends."""
+        if temperature is not None:
+            self.config.temperature = temperature
+        if top_p is not None:
+            self.config.top_p = top_p
+
+        # Reload backends to pick up new config
+        if hasattr(self.assistant_backend, 'reload_parameters'):
+            self.assistant_backend.reload_parameters()
+
+        # Only reload summarizer if it's a different instance (though reload is safe either way)
+        if (self.summarizer_backend is not self.assistant_backend and
+            hasattr(self.summarizer_backend, 'reload_parameters')):
+            self.summarizer_backend.reload_parameters()
+
+        logger.info("Updated parameters: temperature=%s, top_p=%s", self.config.temperature, self.config.top_p)
