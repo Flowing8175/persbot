@@ -39,6 +39,10 @@ class AssistantCog(commands.Cog):
 
         if message.author.bot:
             return True
+        # If this channel is handled by AutoChannelCog, let it handle the response
+        # to avoid duplicate replies (one plain, one reply).
+        if message.channel.id in self.config.auto_reply_channel_ids:
+            return True
         if not self.bot.user or not self.bot.user.mentioned_in(message):
             return True
         return message.mention_everyone
