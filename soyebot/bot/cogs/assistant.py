@@ -152,7 +152,9 @@ class AssistantCog(commands.Cog):
 
         try:
             self.llm_service.update_parameters(temperature=value)
-            await ctx.reply(f"✅ Temperature 설정 완료: {value}", mention_author=False)
+            await ctx.message.add_reaction("✅")
+            await asyncio.sleep(5)
+            await ctx.message.remove_reaction("✅", ctx.bot.user)
         except Exception as e:
             logger.error("Temperature 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
@@ -172,7 +174,9 @@ class AssistantCog(commands.Cog):
 
         try:
             self.llm_service.update_parameters(top_p=value)
-            await ctx.reply(f"✅ Top-p 설정 완료: {value}", mention_author=False)
+            await ctx.message.add_reaction("✅")
+            await asyncio.sleep(5)
+            await ctx.message.remove_reaction("✅", ctx.bot.user)
         except Exception as e:
             logger.error("Top-p 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
