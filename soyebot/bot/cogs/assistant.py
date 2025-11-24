@@ -3,6 +3,7 @@
 import logging
 import time
 import asyncio
+from typing import Optional
 
 import discord
 from discord.ext import commands
@@ -134,8 +135,13 @@ class AssistantCog(commands.Cog):
 
     @commands.command(name='temp')
     @commands.has_permissions(manage_guild=True)
-    async def set_temperature(self, ctx: commands.Context, value: float):
+    async def set_temperature(self, ctx: commands.Context, value: Optional[float] = None):
         """Set the temperature parameter for the LLM (0.0 - 2.0)."""
+        if value is None:
+            current_temp = getattr(self.config, 'temperature', 1.0)
+            await ctx.reply(f"🌡️ 현재 Temperature: {current_temp}", mention_author=False)
+            return
+
         if not (0.0 <= value <= 2.0):
             await ctx.reply("❌ Temperature는 0.0에서 2.0 사이여야 합니다.", mention_author=False)
             return
@@ -149,8 +155,13 @@ class AssistantCog(commands.Cog):
 
     @commands.command(name='topp')
     @commands.has_permissions(manage_guild=True)
-    async def set_top_p(self, ctx: commands.Context, value: float):
+    async def set_top_p(self, ctx: commands.Context, value: Optional[float] = None):
         """Set the top_p parameter for the LLM (0.0 - 1.0)."""
+        if value is None:
+            current_top_p = getattr(self.config, 'top_p', 1.0)
+            await ctx.reply(f"📊 현재 Top-p: {current_top_p}", mention_author=False)
+            return
+
         if not (0.0 <= value <= 1.0):
             await ctx.reply("❌ Top-p는 0.0에서 1.0 사이여야 합니다.", mention_author=False)
             return
