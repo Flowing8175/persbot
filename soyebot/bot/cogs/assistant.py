@@ -63,6 +63,19 @@ class AssistantCog(commands.Cog):
 
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
 
+    @commands.Cog.listener()
+    async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
+        """
+        Listener for typing events.
+        Extends the processing delay if a user is typing in a channel where we have pending messages.
+        """
+        if user.bot:
+            return
+
+        # We need the channel ID. 'channel' can be TextChannel, DMChannel, etc.
+        if hasattr(channel, 'id'):
+            self.message_buffer.handle_typing(channel.id, self._process_batch)
+
     async def _process_batch(self, messages: list[discord.Message]):
         if not messages:
             return
