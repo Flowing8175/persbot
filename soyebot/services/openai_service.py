@@ -11,17 +11,9 @@ from openai import OpenAI, RateLimitError
 
 from soyebot.config import AppConfig
 from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from soyebot.services.base import BaseLLMService
+from soyebot.services.base import BaseLLMService, ChatMessage
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ChatMessage:
-    """Represents a single message in the chat history."""
-    role: str
-    content: str
-    author_id: Optional[int] = None
 
 
 class ResponseChatSession:

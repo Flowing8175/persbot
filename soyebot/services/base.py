@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional, Union
 
 import discord
@@ -13,6 +14,16 @@ from soyebot.metrics import get_metrics
 from soyebot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ChatMessage:
+    """Represents a single message in the chat history."""
+    role: str
+    content: str
+    author_id: Optional[int] = None
+    # For Gemini, content is stored in 'parts'
+    parts: Optional[list[dict[str, str]]] = None
 
 class BaseLLMService(ABC):
     """Abstract base class for LLM services handling retries, logging, and common behavior."""

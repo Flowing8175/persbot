@@ -2,6 +2,7 @@
 
 import logging
 import time
+from typing import Optional
 
 import discord
 from discord.ext import commands
@@ -33,17 +34,6 @@ class AutoChannelCog(commands.Cog):
         self.session_manager = session_manager
         self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
-    def _should_ignore_message(self, message: discord.Message) -> bool:
-        if message.author.bot:
-            return True
-        if message.channel.id not in self.config.auto_reply_channel_ids:
-            return True
-        if message.content.startswith(self.config.command_prefix):
-            return True
-        if message.content and message.content.lstrip().startswith("\\"):
-            return True
-        return False
-
     async def _send_auto_reply(self, message: discord.Message, reply_text: str, session_key: str) -> None:
         if not reply_text:
             logger.debug("LLM returned no text response for the auto-reply message.")
@@ -55,78 +45,78 @@ class AutoChannelCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # First, check for the undo command
-        if await self._handle_undo_command(message):
-            return  # If it was an undo command, we're done.
+        if message.author.bot:
+            return
 
-        if self._should_ignore_message(message):
+        # This is critical for commands to be processed.
+        await self.bot.process_commands(message)
+
+        # After attempting to run commands, check if we should auto-reply.
+        # We ignore anything that looks like a command, and non-auto-reply channels.
+        ctx = await self.bot.get_context(message)
+        if ctx.valid:
+            return
+
+        if message.channel.id not in self.config.auto_reply_channel_ids:
+            return
+        if message.content.startswith(self.config.command_prefix):
+            return
+        if message.content and message.content.lstrip().startswith("\\"):
             return
 
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
 
-    async def _handle_undo_command(self, message: discord.Message) -> bool:
-        """Check for and handle the !@ or !undo command."""
-        # Only operate in auto-reply channels
-        if message.channel.id not in self.config.auto_reply_channel_ids:
-            return False
+    @commands.command(name="@", aliases=["undo"])
+    async def undo_command(self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"):
+        """Deletes the last N user/assistant message pairs from the chat history."""
+        # This command should only work in auto-reply channels
+        if ctx.channel.id not in self.config.auto_reply_channel_ids:
+            return
 
-        content = message.content.strip()
-        is_undo_command = content.startswith("!@") or content.startswith("!undo")
+        # Argument validation
+        try:
+            num_to_undo = int(num_to_undo_str)
+            if num_to_undo < 1:
+                await ctx.message.add_reaction("❌")
+                return
+        except ValueError:
+            await ctx.message.add_reaction("❌")
+            return
 
-        if not is_undo_command:
-            return False
-
-        # Permission check: admin (manage_guild) or user with >= 5 messages in session
-        session_key = f"channel:{message.channel.id}"
+        # Permission check
+        session_key = f"channel:{ctx.channel.id}"
         session = self.session_manager.sessions.get(session_key)
         user_message_count = 0
-
         if session and hasattr(session.chat, 'history'):
             user_role = self.llm_service.get_user_role_name()
             for msg in session.chat.history:
-                if msg.role == user_role and msg.author_id == message.author.id:
+                if msg.role == user_role and msg.author_id == ctx.author.id:
                     user_message_count += 1
 
-        is_admin = isinstance(message.author, discord.Member) and message.author.guild_permissions.manage_guild
+        is_admin = isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.manage_guild
         has_permission = is_admin or user_message_count >= 5
 
         if not has_permission:
-            await message.add_reaction("❌")
+            await ctx.message.add_reaction("❌")
             logger.warning(
                 "User %s (admin=%s, messages=%d) tried to use undo command without permission in #%s.",
-                message.author.name, is_admin, user_message_count, message.channel.name
+                ctx.author.name, is_admin, user_message_count, ctx.channel.name
             )
-            return True # Command was handled (by denying it)
+            return
 
-        # Parse number of exchanges to undo
-        num_to_undo = 1
-        parts = content.split()
-        if len(parts) > 1:
-            try:
-                num = int(parts[1])
-                if num < 1:
-                    await message.add_reaction("❌")
-                    return True
-                num_to_undo = min(num, 10)  # Max 10 at a time
-            except ValueError:
-                await message.add_reaction("❌")
-                return True
-
-        # Execute undo
-        success = self.session_manager.undo_last_exchanges(session_key, num_to_undo)
+        # Execute undo, respecting the max limit
+        num_to_actually_undo = min(num_to_undo, 10)
+        success = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
 
         if success:
-            await message.add_reaction("✅")
+            await ctx.message.add_reaction("✅")
             try:
-                # Edit the original message to reflect the action
-                new_content = f"> -# ~~{message.content}~~"
-                await message.edit(content=new_content)
+                new_content = f"> -# ~~{ctx.message.content}~~"
+                await ctx.message.edit(content=new_content)
             except discord.Forbidden:
-                logger.warning("Could not edit undo message in #%s, probably missing permissions.", message.channel.name)
+                logger.warning("Could not edit undo message in #%s, probably missing permissions.", ctx.channel.name)
         else:
-            await message.add_reaction("❌")
-
-        return True # Command was handled
+            await ctx.message.add_reaction("❌")
 
     async def _process_batch(self, messages: list[discord.Message]):
         if not messages:

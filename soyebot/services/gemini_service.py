@@ -12,17 +12,10 @@ from google.genai import types as genai_types
 
 from soyebot.config import AppConfig
 from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from soyebot.services.base import BaseLLMService
+from soyebot.services.base import BaseLLMService, ChatMessage
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class ChatMessage:
-    """Represents a single message in the chat history for Gemini."""
-    role: str
-    parts: list[dict[str, str]]
-    author_id: Optional[int] = None
 
 class _ChatSession:
     """A wrapper for a Gemini chat session to manage history with author tracking."""
@@ -44,12 +37,14 @@ class _ChatSession:
         # After sending, save the user message and response to our custom history
         self.history.append(ChatMessage(
             role="user",
+            content=user_message,
             parts=[{"text": user_message}],
             author_id=author_id
         ))
         # Assuming the response text is in response.text
         self.history.append(ChatMessage(
             role="model",
+            content=response.text,
             parts=[{"text": response.text}],
             author_id=None # Bot messages have no author
         ))

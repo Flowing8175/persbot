@@ -69,6 +69,14 @@ class LLMService:
     async def generate_chat_response(self, chat_session, user_message: str, discord_message):
         return await self.assistant_backend.generate_chat_response(chat_session, user_message, discord_message)
 
+    def get_user_role_name(self) -> str:
+        """Pass through to the active assistant backend."""
+        return self.assistant_backend.get_user_role_name()
+
+    def get_assistant_role_name(self) -> str:
+        """Pass through to the active assistant backend."""
+        return self.assistant_backend.get_assistant_role_name()
+
     def update_parameters(
         self,
         temperature: Optional[float] = None,
