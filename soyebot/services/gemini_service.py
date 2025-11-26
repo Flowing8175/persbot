@@ -3,18 +3,63 @@
 import json
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
 import discord
 import google.genai as genai
 from google.genai import types as genai_types
 
-from config import AppConfig
-from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from services.base import BaseLLMService
+from soyebot.config import AppConfig
+from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
+from soyebot.services.base import BaseLLMService
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class ChatMessage:
+    """Represents a single message in the chat history for Gemini."""
+    role: str
+    parts: list[dict[str, str]]
+    author_id: Optional[int] = None
+
+class _ChatSession:
+    """A wrapper for a Gemini chat session to manage history with author tracking."""
+    def __init__(self, underlying_chat):
+        self._chat = underlying_chat
+        # We will manage the history manually to include author_id
+        self.history: list[ChatMessage] = []
+
+    def send_message(self, user_message: str, author_id: int):
+        # Reconstruct history for the API call
+        api_history = []
+        for msg in self.history:
+            api_history.append({"role": msg.role, "parts": msg.parts})
+
+        self._chat.history = api_history
+
+        response = self._chat.send_message(user_message)
+
+        # After sending, save the user message and response to our custom history
+        self.history.append(ChatMessage(
+            role="user",
+            parts=[{"text": user_message}],
+            author_id=author_id
+        ))
+        # Assuming the response text is in response.text
+        self.history.append(ChatMessage(
+            role="model",
+            parts=[{"text": response.text}],
+            author_id=None # Bot messages have no author
+        ))
+
+        # Keep the underlying history in sync, though we are the source of truth
+        self._chat.history = [
+            {"role": msg.role, "parts": msg.parts} for msg in self.history
+        ]
+
+        return response
 
 class _CachedModel:
     """Lightweight wrapper that mimics the old GenerativeModel interface."""
@@ -37,10 +82,11 @@ class _CachedModel:
         )
 
     def start_chat(self):
-        return self._client.chats.create(
+        underlying_chat = self._client.chats.create(
             model=self._model_name,
             config=self._config,
         )
+        return _ChatSession(underlying_chat)
 
 
 class GeminiService(BaseLLMService):
@@ -89,6 +135,14 @@ class GeminiService(BaseLLMService):
         self._model_cache.clear()
         logger.info("Gemini model cache cleared to apply new parameters.")
 
+    def get_user_role_name(self) -> str:
+        """Return the role name for user messages."""
+        return "user"
+
+    def get_assistant_role_name(self) -> str:
+        """Return the role name for assistant messages."""
+        return "model"
+
     def _is_rate_limit_error(self, error: Exception) -> bool:
         error_str = str(error)
         return "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower()
@@ -111,18 +165,13 @@ class GeminiService(BaseLLMService):
         try:
             logger.debug(f"[RAW API REQUEST] User message preview: {user_message[:200]!r}")
 
-            if chat_session and hasattr(chat_session, 'get_history'):
-                history = chat_session.get_history()
+            if chat_session and hasattr(chat_session, 'history'):
+                history = chat_session.history
                 formatted_history = []
                 for msg in history[-5:]:
-                    role = getattr(msg, 'role', 'unknown')
-                    parts = getattr(msg, 'parts', [])
-                    texts = []
-                    for part in parts:
-                        text = getattr(part, 'text', '')
-                        if text:
-                            texts.append(text[:100].replace('\n', ' '))
-                    formatted_history.append(f"{role}: {' '.join(texts)}")
+                    role = msg.role
+                    texts = [part.get('text', '') for part in msg.parts]
+                    formatted_history.append(f"{role} (author: {msg.author_id}): {' '.join(texts)}")
                 if formatted_history:
                     logger.debug("[RAW API REQUEST] Recent history:\n" + "\n".join(formatted_history))
         except Exception as e:
@@ -198,8 +247,10 @@ class GeminiService(BaseLLMService):
         """Generate chat response."""
         self._log_raw_request(user_message, chat_session)
 
+        author_id = discord_message.author.id
+
         def api_call():
-            return chat_session.send_message(user_message)
+            return chat_session.send_message(user_message, author_id=author_id)
 
         response_obj = await self.execute_with_retry(
             api_call,

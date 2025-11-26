@@ -3,10 +3,10 @@
 import logging
 from typing import Optional
 
-from config import AppConfig
-from metrics import get_metrics
-from services.gemini_service import GeminiService
-from services.openai_service import OpenAIService
+from soyebot.config import AppConfig
+from soyebot.metrics import get_metrics
+from soyebot.services.gemini_service import GeminiService
+from soyebot.services.openai_service import OpenAIService
 
 logger = logging.getLogger(__name__)
 

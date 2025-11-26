@@ -3,16 +3,25 @@
 import json
 import logging
 from collections import deque
+from dataclasses import dataclass
 from typing import Any, Deque, Optional, Tuple
 
 import discord
 from openai import OpenAI, RateLimitError
 
-from config import AppConfig
-from prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from services.base import BaseLLMService
+from soyebot.config import AppConfig
+from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
+from soyebot.services.base import BaseLLMService
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ChatMessage:
+    """Represents a single message in the chat history."""
+    role: str
+    content: str
+    author_id: Optional[int] = None
 
 
 class ResponseChatSession:
@@ -37,15 +46,16 @@ class ResponseChatSession:
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
-        self._history: Deque[dict] = deque(maxlen=max_messages)
+        self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
 
-    def get_history(self):
+    @property
+    def history(self):
         return list(self._history)
 
-    def _append_history(self, role: str, content: str) -> None:
+    def _append_history(self, role: str, content: str, author_id: Optional[int] = None) -> None:
         if not content:
             return
-        self._history.append({"role": role, "content": content})
+        self._history.append(ChatMessage(role=role, content=content, author_id=author_id))
 
     def _build_input_payload(self) -> list:
         payload = []
@@ -63,22 +73,22 @@ class ResponseChatSession:
             )
 
         for entry in self._history:
-            content_type = "output_text" if entry["role"] == "assistant" else "input_text"
+            content_type = "output_text" if entry.role == "assistant" else "input_text"
             payload.append(
                 {
-                    "role": entry["role"],
+                    "role": entry.role,
                     "content": [
                         {
                             "type": content_type,
-                            "text": entry["content"],
+                            "text": entry.content,
                         }
                     ],
                 }
             )
         return payload
 
-    def send_message(self, user_message: str):
-        self._append_history("user", user_message)
+    def send_message(self, user_message: str, author_id: int):
+        self._append_history("user", user_message, author_id=author_id)
 
         response = self._client.responses.create(
             model=self._model_name,
@@ -115,25 +125,28 @@ class ChatCompletionSession:
         self._max_messages = max_messages
         self._service_tier = service_tier
         self._text_extractor = text_extractor
-        self._history: Deque[dict] = deque(maxlen=max_messages)
+        self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
 
-    def get_history(self):
+    @property
+    def history(self):
         return list(self._history)
 
-    def _append_history(self, role: str, content: str) -> None:
+    def _append_history(self, role: str, content: str, author_id: Optional[int] = None) -> None:
         if not content:
             return
-        self._history.append({"role": role, "content": content})
+        self._history.append(ChatMessage(role=role, content=content, author_id=author_id))
 
-    def send_message(self, user_message: str):
-        self._append_history("user", user_message)
+    def send_message(self, user_message: str, author_id: int):
+        self._append_history("user", user_message, author_id=author_id)
 
         # Build messages list for chat completions API
         messages = []
         if self._system_instruction:
             messages.append({"role": "system", "content": self._system_instruction})
 
-        messages.extend(self._history)
+        # Convert ChatMessage objects to dicts for the API
+        api_history = [{"role": msg.role, "content": msg.content} for msg in self._history]
+        messages.extend(api_history)
 
         response = self._client.chat.completions.create(
             model=self._model_name,
@@ -284,6 +297,14 @@ class OpenAIService(BaseLLMService):
         self._assistant_cache.clear()
         logger.info("OpenAI assistant cache cleared to apply new parameters.")
 
+    def get_user_role_name(self) -> str:
+        """Return the role name for user messages."""
+        return "user"
+
+    def get_assistant_role_name(self) -> str:
+        """Return the role name for assistant messages."""
+        return "assistant"
+
     def _is_rate_limit_error(self, error: Exception) -> bool:
         if isinstance(error, RateLimitError):
             return True
@@ -296,14 +317,14 @@ class OpenAIService(BaseLLMService):
 
         try:
             logger.debug("[RAW API REQUEST] User message preview: %r", user_message[:200])
-            if chat_session and hasattr(chat_session, 'get_history'):
-                history = chat_session.get_history()
+            if chat_session and hasattr(chat_session, 'history'):
+                history = chat_session.history
                 formatted = []
                 for msg in history[-5:]:
-                    role = msg.get('role', 'unknown')
-                    content = str(msg.get('content', ''))
+                    role = msg.role
+                    content = str(msg.content)
                     truncated = content[:100].replace("\n", " ")
-                    formatted.append(f"{role}: {truncated}")
+                    formatted.append(f"{role} (author: {msg.author_id}): {truncated}")
                 if formatted:
                     logger.debug("[RAW API REQUEST] Recent history:\n%s", "\n".join(formatted))
         except Exception:
@@ -401,8 +422,9 @@ class OpenAIService(BaseLLMService):
     ) -> Optional[Tuple[str, Any]]:
         self._log_raw_request(user_message, chat_session)
 
+        author_id = discord_message.author.id
         response_obj = await self.execute_with_retry(
-            lambda: chat_session.send_message(user_message),
+            lambda: chat_session.send_message(user_message, author_id),
             "응답 생성",
             return_full_response=True,
             discord_message=discord_message,

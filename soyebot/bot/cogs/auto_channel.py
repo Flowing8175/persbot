@@ -6,13 +6,13 @@ import time
 import discord
 from discord.ext import commands
 
-from bot.chat_handler import create_chat_reply, resolve_session_for_message
-from bot.session import SessionManager
-from bot.buffer import MessageBuffer
-from config import AppConfig
-from metrics import get_metrics
-from services.llm_service import LLMService
-from utils import GENERIC_ERROR_MESSAGE, extract_message_content
+from soyebot.bot.chat_handler import create_chat_reply, resolve_session_for_message
+from soyebot.bot.session import SessionManager
+from soyebot.bot.buffer import MessageBuffer
+from soyebot.config import AppConfig
+from soyebot.metrics import get_metrics
+from soyebot.services.llm_service import LLMService
+from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +55,78 @@ class AutoChannelCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        # First, check for the undo command
+        if await self._handle_undo_command(message):
+            return  # If it was an undo command, we're done.
+
         if self._should_ignore_message(message):
             return
 
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+
+    async def _handle_undo_command(self, message: discord.Message) -> bool:
+        """Check for and handle the !@ or !undo command."""
+        # Only operate in auto-reply channels
+        if message.channel.id not in self.config.auto_reply_channel_ids:
+            return False
+
+        content = message.content.strip()
+        is_undo_command = content.startswith("!@") or content.startswith("!undo")
+
+        if not is_undo_command:
+            return False
+
+        # Permission check: admin (manage_guild) or user with >= 5 messages in session
+        session_key = f"channel:{message.channel.id}"
+        session = self.session_manager.sessions.get(session_key)
+        user_message_count = 0
+
+        if session and hasattr(session.chat, 'history'):
+            user_role = self.llm_service.get_user_role_name()
+            for msg in session.chat.history:
+                if msg.role == user_role and msg.author_id == message.author.id:
+                    user_message_count += 1
+
+        is_admin = isinstance(message.author, discord.Member) and message.author.guild_permissions.manage_guild
+        has_permission = is_admin or user_message_count >= 5
+
+        if not has_permission:
+            await message.add_reaction("❌")
+            logger.warning(
+                "User %s (admin=%s, messages=%d) tried to use undo command without permission in #%s.",
+                message.author.name, is_admin, user_message_count, message.channel.name
+            )
+            return True # Command was handled (by denying it)
+
+        # Parse number of exchanges to undo
+        num_to_undo = 1
+        parts = content.split()
+        if len(parts) > 1:
+            try:
+                num = int(parts[1])
+                if num < 1:
+                    await message.add_reaction("❌")
+                    return True
+                num_to_undo = min(num, 10)  # Max 10 at a time
+            except ValueError:
+                await message.add_reaction("❌")
+                return True
+
+        # Execute undo
+        success = self.session_manager.undo_last_exchanges(session_key, num_to_undo)
+
+        if success:
+            await message.add_reaction("✅")
+            try:
+                # Edit the original message to reflect the action
+                new_content = f"> -# ~~{message.content}~~"
+                await message.edit(content=new_content)
+            except discord.Forbidden:
+                logger.warning("Could not edit undo message in #%s, probably missing permissions.", message.channel.name)
+        else:
+            await message.add_reaction("❌")
+
+        return True # Command was handled
 
     async def _process_batch(self, messages: list[discord.Message]):
         if not messages:

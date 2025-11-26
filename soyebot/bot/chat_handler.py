@@ -7,8 +7,8 @@ from typing import Optional
 
 import discord
 
-from bot.session import SessionManager, ResolvedSession
-from services.llm_service import LLMService
+from soyebot.bot.session import SessionManager, ResolvedSession
+from soyebot.services.llm_service import LLMService
 
 __all__ = ["ChatReply", "resolve_session_for_message", "create_chat_reply"]
 

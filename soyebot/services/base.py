@@ -8,9 +8,9 @@ from typing import Any, Awaitable, Callable, Optional, Union
 
 import discord
 
-from config import AppConfig
-from metrics import get_metrics
-from utils import GENERIC_ERROR_MESSAGE
+from soyebot.config import AppConfig
+from soyebot.metrics import get_metrics
+from soyebot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,16 @@ class BaseLLMService(ABC):
     @abstractmethod
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract the text content from the response object."""
+        pass
+
+    @abstractmethod
+    def get_user_role_name(self) -> str:
+        """Return the name for the 'user' role in the chat history."""
+        pass
+
+    @abstractmethod
+    def get_assistant_role_name(self) -> str:
+        """Return the name for the 'assistant' role in the chat history."""
         pass
 
     async def _execute_model_call(self, model_call: Callable[[], Union[Any, Awaitable[Any]]]) -> Any:

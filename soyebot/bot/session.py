@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
-from config import AppConfig
-from services.llm_service import LLMService
-from prompts import BOT_PERSONA_PROMPT
-from metrics import get_metrics
+from soyebot.config import AppConfig
+from soyebot.services.llm_service import LLMService
+from soyebot.prompts import BOT_PERSONA_PROMPT
+from soyebot.metrics import get_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -206,3 +206,57 @@ class SessionManager:
 
         session_key = f"channel:{channel_id}"
         return ResolvedSession(session_key, cleaned_message)
+
+    def undo_last_exchanges(self, session_key: str, num_to_undo: int) -> bool:
+        """Remove the last N user/assistant exchanges from a session's history."""
+        session = self.sessions.get(session_key)
+        if not session or not hasattr(session.chat, 'history'):
+            return False
+
+        try:
+            assistant_role = self.llm_service.get_assistant_role_name()
+            user_role = self.llm_service.get_user_role_name()
+
+            # Find indices of the last N assistant messages
+            assistant_indices = [
+                i for i, msg in enumerate(session.chat.history) if msg.role == assistant_role
+            ]
+            if not assistant_indices:
+                return False
+
+            indices_to_remove = set()
+            num_to_undo = min(num_to_undo, len(assistant_indices))
+
+            # We want the last `num_to_undo` exchanges
+            assistant_messages_to_remove = assistant_indices[-num_to_undo:]
+
+            for assistant_index in assistant_messages_to_remove:
+                indices_to_remove.add(assistant_index)
+                # Mark preceding user messages for removal
+                user_message_index = assistant_index - 1
+                while user_message_index >= 0 and session.chat.history[user_message_index].role == user_role:
+                    indices_to_remove.add(user_message_index)
+                    user_message_index -= 1
+
+            if not indices_to_remove:
+                return False
+
+            # Rebuild the history without the marked indices
+            new_history = [
+                msg for i, msg in enumerate(session.chat.history) if i not in indices_to_remove
+            ]
+            session.chat.history = new_history
+
+            logger.info(
+                "Undid last %d exchanges from session %s. New history length: %d",
+                num_to_undo,
+                session_key,
+                len(new_history)
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                "Error undoing exchanges in session %s: %s", session_key, e, exc_info=True
+            )
+            return False
