@@ -81,8 +81,6 @@ async def create_chat_reply(
         message_id=str(message.id),
     )
 
-    session_manager.link_message_to_session(str(message.id), session_key)
-
     response_result = await llm_service.generate_chat_response(
         chat_session,
         resolution.cleaned_message,

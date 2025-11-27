@@ -41,12 +41,7 @@ class AutoChannelCog(commands.Cog):
 
         sent_message = await message.channel.send(reply_text)
         if sent_message:
-            # Store the message ID in the last chat history message
-            session = self.session_manager.sessions.get(session_key)
-            if session and hasattr(session.chat, 'history') and session.chat.history:
-                last_message = session.chat.history[-1]
-                if last_message.role == self.llm_service.get_assistant_role_name():
-                    last_message.message_id = str(sent_message.id)
+            self.session_manager.link_message_to_session(str(sent_message.id), session_key)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
