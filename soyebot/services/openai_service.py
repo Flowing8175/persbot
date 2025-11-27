@@ -44,6 +44,12 @@ class ResponseChatSession:
     def history(self):
         return list(self._history)
 
+    @history.setter
+    def history(self, new_history: list[ChatMessage]):
+        """Setter to allow replacing the history."""
+        self._history.clear()
+        self._history.extend(new_history)
+
     def _append_history(self, role: str, content: str, author_id: Optional[int] = None) -> None:
         if not content:
             return
@@ -122,6 +128,12 @@ class ChatCompletionSession:
     @property
     def history(self):
         return list(self._history)
+
+    @history.setter
+    def history(self, new_history: list[ChatMessage]):
+        """Setter to allow replacing the history."""
+        self._history.clear()
+        self._history.extend(new_history)
 
     def _append_history(self, role: str, content: str, author_id: Optional[int] = None) -> None:
         if not content:
