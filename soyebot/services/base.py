@@ -22,6 +22,7 @@ class ChatMessage:
     role: str
     content: str
     author_id: Optional[int] = None
+    message_id: Optional[str] = None
     # For Gemini, content is stored in 'parts'
     parts: Optional[list[dict[str, str]]] = None
 

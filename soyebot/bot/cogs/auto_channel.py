@@ -41,7 +41,12 @@ class AutoChannelCog(commands.Cog):
 
         sent_message = await message.channel.send(reply_text)
         if sent_message:
-            self.session_manager.link_message_to_session(str(sent_message.id), session_key)
+            # Store the message ID in the last chat history message
+            session = self.session_manager.sessions.get(session_key)
+            if session and hasattr(session.chat, 'history') and session.chat.history:
+                last_message = session.chat.history[-1]
+                if last_message.role == self.llm_service.get_assistant_role_name():
+                    last_message.message_id = str(sent_message.id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -106,15 +111,21 @@ class AutoChannelCog(commands.Cog):
 
         # Execute undo, respecting the max limit
         num_to_actually_undo = min(num_to_undo, 10)
-        success = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
+        removed_messages = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
 
-        if success:
+        if removed_messages:
             await ctx.message.add_reaction("✅")
-            try:
-                new_content = f"> -# ~~{ctx.message.content}~~"
-                await ctx.message.edit(content=new_content)
-            except discord.Forbidden:
-                logger.warning("Could not edit undo message in #%s, probably missing permissions.", ctx.channel.name)
+            assistant_role = self.llm_service.get_assistant_role_name()
+            for msg in removed_messages:
+                if msg.role == assistant_role and msg.message_id:
+                    try:
+                        message_to_edit = await ctx.channel.fetch_message(msg.message_id)
+                        new_content = f"> -# ~~{message_to_edit.content}~~"
+                        await message_to_edit.edit(content=new_content)
+                    except discord.NotFound:
+                        logger.warning("Could not find message %s to edit in #%s.", msg.message_id, ctx.channel.name)
+                    except discord.Forbidden:
+                        logger.warning("Could not edit message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
         else:
             await ctx.message.add_reaction("❌")
 

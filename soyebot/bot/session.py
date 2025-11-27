@@ -58,7 +58,6 @@ class SessionManager:
         self.config = config
         self.llm_service = llm_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
-        self.message_sessions: OrderedDict[str, str] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
 
     def _evict_if_needed(self) -> None:
@@ -66,9 +65,6 @@ class SessionManager:
         while len(self.sessions) > self.config.session_cache_limit:
             evicted_key, _ = self.sessions.popitem(last=False)
             logger.debug("Evicted chat session %s due to cache limit", evicted_key)
-        while len(self.message_sessions) > self.config.session_cache_limit:
-            evicted_key, _ = self.message_sessions.popitem(last=False)
-            logger.debug("Evicted message link %s due to cache limit", evicted_key)
         while len(self.session_contexts) > self.config.session_cache_limit:
             evicted_key, _ = self.session_contexts.popitem(last=False)
             logger.debug("Evicted session context %s due to cache limit", evicted_key)
@@ -146,18 +142,6 @@ class SessionManager:
 
         return chat, session_key
 
-    def link_message_to_session(self, message_id: Optional[str], session_key: str) -> None:
-        """Remember which Discord message belongs to which session for reply chains."""
-        if not message_id or not session_key:
-            return
-        self.message_sessions[str(message_id)] = session_key
-
-    def get_session_for_message(self, message_id: Optional[str]) -> Optional[str]:
-        """Return the session key for a referenced message if we have seen it."""
-        if not message_id:
-            return None
-        return self.message_sessions.get(str(message_id))
-
     def reset_session_by_channel(self, channel_id: int) -> bool:
         """Clear cached session and metadata for a channel, if present."""
         session_key = f"channel:{channel_id}"
@@ -169,16 +153,6 @@ class SessionManager:
 
         if session_key in self.session_contexts:
             del self.session_contexts[session_key]
-            removed = True
-
-        message_ids_to_remove = [
-            message_id
-            for message_id, mapped_session_key in self.message_sessions.items()
-            if mapped_session_key == session_key
-        ]
-
-        for message_id in message_ids_to_remove:
-            del self.message_sessions[message_id]
             removed = True
 
         if removed:
@@ -207,11 +181,11 @@ class SessionManager:
         session_key = f"channel:{channel_id}"
         return ResolvedSession(session_key, cleaned_message)
 
-    def undo_last_exchanges(self, session_key: str, num_to_undo: int) -> bool:
+    def undo_last_exchanges(self, session_key: str, num_to_undo: int) -> list:
         """Remove the last N user/assistant exchanges from a session's history."""
         session = self.sessions.get(session_key)
         if not session or not hasattr(session.chat, 'history'):
-            return False
+            return []
 
         try:
             assistant_role = self.llm_service.get_assistant_role_name()
@@ -222,7 +196,7 @@ class SessionManager:
                 i for i, msg in enumerate(session.chat.history) if msg.role == assistant_role
             ]
             if not assistant_indices:
-                return False
+                return []
 
             indices_to_remove = set()
             num_to_undo = min(num_to_undo, len(assistant_indices))
@@ -239,12 +213,17 @@ class SessionManager:
                     user_message_index -= 1
 
             if not indices_to_remove:
-                return False
+                return []
 
-            # Rebuild the history without the marked indices
-            new_history = [
-                msg for i, msg in enumerate(session.chat.history) if i not in indices_to_remove
-            ]
+            # Separate the history into kept and removed messages
+            new_history = []
+            removed_messages = []
+            for i, msg in enumerate(session.chat.history):
+                if i in indices_to_remove:
+                    removed_messages.append(msg)
+                else:
+                    new_history.append(msg)
+
             session.chat.history = new_history
 
             logger.info(
@@ -253,10 +232,10 @@ class SessionManager:
                 session_key,
                 len(new_history)
             )
-            return True
+            return removed_messages
 
         except Exception as e:
             logger.error(
                 "Error undoing exchanges in session %s: %s", session_key, e, exc_info=True
             )
-            return False
+            return []
