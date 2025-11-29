@@ -48,9 +48,6 @@ class AutoChannelCog(commands.Cog):
         if message.author.bot:
             return
 
-        # This is critical for commands to be processed.
-        await self.bot.process_commands(message)
-
         # After attempting to run commands, check if we should auto-reply.
         # We ignore anything that looks like a command, and non-auto-reply channels.
         ctx = await self.bot.get_context(message)
