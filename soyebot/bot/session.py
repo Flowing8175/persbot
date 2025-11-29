@@ -45,6 +45,7 @@ class ResolvedSession:
 
     session_key: str
     cleaned_message: str
+    is_reply_to_summary: bool = False
 
 
 class SessionManager:

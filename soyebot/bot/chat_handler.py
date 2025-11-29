@@ -30,6 +30,7 @@ async def resolve_session_for_message(
 ) -> Optional[ResolvedSession]:
     """Resolve the logical chat session for a Discord message."""
 
+    is_reply_to_summary = False
     # Handle replies by adding context to the message content
     # We no longer branch sessions for replies; instead, we just provide context to the LLM.
     if message.reference and message.reference.message_id:
@@ -49,6 +50,12 @@ async def resolve_session_for_message(
             reply_context = f"(답장 대상: {ref_msg.author.display_name}, 내용: \"{ref_text}\")\n"
             content = reply_context + content
 
+            # Check if this is a reply to a summary message
+            # Summary messages typically start with "**... 요약:**"
+            # We also check if it's from the bot itself
+            if ref_msg.author.bot and "요약:**" in ref_text:
+                is_reply_to_summary = True
+
     resolution = await session_manager.resolve_session(
         channel_id=message.channel.id,
         author_id=message.author.id,
@@ -59,6 +66,8 @@ async def resolve_session_for_message(
         reference_message_id=None,
         created_at=message.created_at,
     )
+    if resolution:
+        resolution.is_reply_to_summary = is_reply_to_summary
     return resolution if resolution.cleaned_message else None
 
 
@@ -85,6 +94,7 @@ async def create_chat_reply(
         chat_session,
         resolution.cleaned_message,
         message,
+        use_summarizer_backend=resolution.is_reply_to_summary,
     )
 
     if not response_result:

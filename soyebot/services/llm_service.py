@@ -66,8 +66,15 @@ class LLMService:
     async def summarize_text(self, text: str):
         return await self.summarizer_backend.summarize_text(text)
 
-    async def generate_chat_response(self, chat_session, user_message: str, discord_message):
-        return await self.assistant_backend.generate_chat_response(chat_session, user_message, discord_message)
+    async def generate_chat_response(
+        self,
+        chat_session,
+        user_message: str,
+        discord_message,
+        use_summarizer_backend: bool = False,
+    ):
+        backend = self.summarizer_backend if use_summarizer_backend else self.assistant_backend
+        return await backend.generate_chat_response(chat_session, user_message, discord_message)
 
     def get_user_role_name(self) -> str:
         """Pass through to the active assistant backend."""
