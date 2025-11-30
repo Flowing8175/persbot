@@ -9,11 +9,12 @@ import discord
 from discord.ext import commands
 
 from bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message
-from bot.session import SessionManager
+from bot.session import SessionManager, ResolvedSession
 from bot.buffer import MessageBuffer
 from config import AppConfig
 from metrics import get_metrics
 from services.llm_service import LLMService
+from services.base import ChatMessage
 from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,75 @@ class AssistantCog(commands.Cog):
             await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
+
+    @commands.command(name='retry', aliases=['재생성', '다시'])
+    async def retry_command(self, ctx: commands.Context):
+        """Re-generate the last assistant response."""
+        session_key = f"channel:{ctx.channel.id}"
+
+        # Undo the last exchange (assistant + user message)
+        removed_messages: list[ChatMessage] = self.session_manager.undo_last_exchanges(session_key, 1)
+
+        if not removed_messages:
+            await ctx.reply("❌ 되돌릴 대화가 없습니다.", mention_author=False)
+            return
+
+        # Identify the user message content and the previous assistant message ID
+        user_role = self.llm_service.get_user_role_name()
+        assistant_role = self.llm_service.get_assistant_role_name()
+
+        user_content = ""
+        assistant_message_id = None
+
+        # Process removed messages to find content and ID
+        # Removed messages are chronological. Expect [User, Assistant] usually.
+        for msg in removed_messages:
+            if msg.role == user_role:
+                user_content = msg.content
+            elif msg.role == assistant_role:
+                if msg.message_id:
+                    assistant_message_id = msg.message_id
+
+        if not user_content:
+            await ctx.send("❌ 재시도할 사용자 메시지를 찾을 수 없습니다.")
+            return
+
+        # Re-generate response
+        async with ctx.channel.typing():
+            resolution = ResolvedSession(session_key, user_content)
+
+            # Create a reply using the original context author (ctx.author) which is acceptable for retry
+            reply = await create_chat_reply(
+                ctx.message,
+                resolution=resolution,
+                llm_service=self.llm_service,
+                session_manager=self.session_manager,
+            )
+
+            if reply and reply.text:
+                # Try to edit the old message if it exists
+                edited = False
+                if assistant_message_id:
+                    try:
+                        old_message = await ctx.channel.fetch_message(int(assistant_message_id))
+                        await old_message.edit(content=reply.text)
+                        # Link the old message ID to the new session state
+                        self.session_manager.link_message_to_session(str(old_message.id), session_key)
+                        edited = True
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        logger.warning("Could not edit message %s during retry.", assistant_message_id)
+
+                # If editing failed or wasn't possible, send a new message.
+                if not edited:
+                    await self._send_llm_reply(ctx.message, reply)
+            else:
+                 await ctx.send(GENERIC_ERROR_MESSAGE)
+
+        # Attempt to delete the retry command message itself for cleanliness
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.HTTPException):
+            pass
 
     @commands.command(name='초기화', aliases=['reset'])
     async def reset_session(self, ctx: commands.Context):
