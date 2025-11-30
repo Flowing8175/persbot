@@ -106,7 +106,16 @@ class AutoChannelCog(commands.Cog):
         removed_messages = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
 
         if removed_messages:
-            await ctx.message.add_reaction("✅")
+            try:
+                await ctx.message.delete()
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                await ctx.message.add_reaction("✅")
+                logger.warning(
+                    "Could not delete undo command message from %s in #%s; left reaction instead.",
+                    ctx.author.name,
+                    ctx.channel.name,
+                )
+
             assistant_role = self.llm_service.get_assistant_role_name()
             for msg in removed_messages:
                 if msg.role == assistant_role and msg.message_id:
