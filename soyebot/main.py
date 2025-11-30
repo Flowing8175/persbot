@@ -15,6 +15,7 @@ from services.llm_service import LLMService
 from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
+from bot.cogs.finetune import FineTuneCog
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,12 @@ async def main(config):
         await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager))
         if auto_channel_cog_cls:
             await bot.add_cog(auto_channel_cog_cls(bot, config, llm_service, session_manager))
+
+        # Initialize FineTuneCog if enabled (e.g. if config has necessary keys)
+        if config.finetune_target_user_id:
+             await bot.add_cog(FineTuneCog(bot, config))
+             logger.info("FineTuneCog loaded.")
+
         logger.info("Cogs 로드 완료.")
 
     @bot.event
