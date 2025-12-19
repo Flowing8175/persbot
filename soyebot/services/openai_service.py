@@ -251,7 +251,7 @@ class OpenAIService(BaseLLMService):
         super().__init__(config)
         self.client = OpenAI(api_key=config.openai_api_key)
         self._assistant_cache: dict[int, _ResponseModel] = {}
-        self._max_messages = 10
+        self._max_messages = 7
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
 

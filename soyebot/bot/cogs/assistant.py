@@ -100,7 +100,6 @@ class AssistantCog(commands.Cog):
             full_text = "\n".join(combined_content)
 
             if not full_text:
-                await primary_message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
                 return
 
             logger.info("Processing batch of %d messages from %s: %s", len(messages), primary_message.author.name, full_text[:100])
@@ -113,7 +112,6 @@ class AssistantCog(commands.Cog):
                 )
 
                 if not resolution:
-                    await primary_message.reply("❌ 메시지 내용이 없는데요.", mention_author=False)
                     return
 
                 reply = await create_chat_reply(
@@ -214,8 +212,6 @@ class AssistantCog(commands.Cog):
         try:
             self.session_manager.reset_session_by_channel(ctx.channel.id)
             await ctx.message.add_reaction("✅")
-            await asyncio.sleep(5)
-            await ctx.message.remove_reaction("✅", ctx.bot.user)
         except Exception as exc:
             logger.error("세션 초기화 실패: %s", exc, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
@@ -236,8 +232,6 @@ class AssistantCog(commands.Cog):
         try:
             self.llm_service.update_parameters(temperature=value)
             await ctx.message.add_reaction("✅")
-            await asyncio.sleep(5)
-            await ctx.message.remove_reaction("✅", ctx.bot.user)
         except Exception as e:
             logger.error("Temperature 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
@@ -258,8 +252,6 @@ class AssistantCog(commands.Cog):
         try:
             self.llm_service.update_parameters(top_p=value)
             await ctx.message.add_reaction("✅")
-            await asyncio.sleep(5)
-            await ctx.message.remove_reaction("✅", ctx.bot.user)
         except Exception as e:
             logger.error("Top-p 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
