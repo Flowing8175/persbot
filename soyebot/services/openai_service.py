@@ -50,10 +50,10 @@ class ResponseChatSession:
         self._history.clear()
         self._history.extend(new_history)
 
-    def _append_history(self, role: str, content: str, author_id: Optional[int] = None) -> None:
+    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, message_id: Optional[str] = None) -> None:
         if not content:
             return
-        self._history.append(ChatMessage(role=role, content=content, author_id=author_id))
+        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, message_id=message_id))
 
     def _build_input_payload(self) -> list:
         payload = []
@@ -85,8 +85,8 @@ class ResponseChatSession:
             )
         return payload
 
-    def send_message(self, user_message: str, author_id: int):
-        self._append_history("user", user_message, author_id=author_id)
+    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
+        self._append_history("user", user_message, author_id=author_id, message_id=message_id)
 
         response = self._client.responses.create(
             model=self._model_name,
@@ -135,13 +135,13 @@ class ChatCompletionSession:
         self._history.clear()
         self._history.extend(new_history)
 
-    def _append_history(self, role: str, content: str, author_id: Optional[int] = None) -> None:
+    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, message_id: Optional[str] = None) -> None:
         if not content:
             return
-        self._history.append(ChatMessage(role=role, content=content, author_id=author_id))
+        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, message_id=message_id))
 
-    def send_message(self, user_message: str, author_id: int):
-        self._append_history("user", user_message, author_id=author_id)
+    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
+        self._append_history("user", user_message, author_id=author_id, message_id=message_id)
 
         # Build messages list for chat completions API
         messages = []
@@ -427,8 +427,9 @@ class OpenAIService(BaseLLMService):
         self._log_raw_request(user_message, chat_session)
 
         author_id = discord_message.author.id
+        message_id = str(discord_message.id)
         response_obj = await self.execute_with_retry(
-            lambda: chat_session.send_message(user_message, author_id),
+            lambda: chat_session.send_message(user_message, author_id, message_id=message_id),
             "응답 생성",
             return_full_response=True,
             discord_message=discord_message,

@@ -24,7 +24,7 @@ class _ChatSession:
         # We will manage the history manually to include author_id
         self.history: list[ChatMessage] = []
 
-    def send_message(self, user_message: str, author_id: int):
+    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
         # Reconstruct history for the API call
         api_history = []
         for msg in self.history:
@@ -39,7 +39,8 @@ class _ChatSession:
             role="user",
             content=user_message,
             parts=[{"text": user_message}],
-            author_id=author_id
+            author_id=author_id,
+            message_id=message_id
         ))
         # Assuming the response text is in response.text
         self.history.append(ChatMessage(
@@ -243,9 +244,10 @@ class GeminiService(BaseLLMService):
         self._log_raw_request(user_message, chat_session)
 
         author_id = discord_message.author.id
+        message_id = str(discord_message.id)
 
         def api_call():
-            return chat_session.send_message(user_message, author_id=author_id)
+            return chat_session.send_message(user_message, author_id=author_id, message_id=message_id)
 
         response_obj = await self.execute_with_retry(
             api_call,
