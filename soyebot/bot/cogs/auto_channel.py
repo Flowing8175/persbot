@@ -117,16 +117,28 @@ class AutoChannelCog(commands.Cog):
                 )
 
             assistant_role = self.llm_service.get_assistant_role_name()
+            user_role = self.llm_service.get_user_role_name()
+
             for msg in removed_messages:
-                if msg.role == assistant_role and msg.message_id:
-                    try:
-                        message_to_edit = await ctx.channel.fetch_message(msg.message_id)
-                        new_content = f"> -# ~~{message_to_edit.content}~~"
-                        await message_to_edit.edit(content=new_content)
-                    except discord.NotFound:
-                        logger.warning("Could not find message %s to edit in #%s.", msg.message_id, ctx.channel.name)
-                    except discord.Forbidden:
-                        logger.warning("Could not edit message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
+                if msg.message_id:
+                    if msg.role == assistant_role:
+                        try:
+                            message_to_edit = await ctx.channel.fetch_message(msg.message_id)
+                            new_content = f"> -# ~~{message_to_edit.content}~~"
+                            await message_to_edit.edit(content=new_content)
+                        except discord.NotFound:
+                            logger.warning("Could not find message %s to edit in #%s.", msg.message_id, ctx.channel.name)
+                        except discord.Forbidden:
+                            logger.warning("Could not edit message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
+
+                    elif msg.role == user_role:
+                        try:
+                            message_to_delete = await ctx.channel.fetch_message(msg.message_id)
+                            await message_to_delete.delete()
+                        except discord.NotFound:
+                            logger.warning("Could not find user message %s to delete in #%s.", msg.message_id, ctx.channel.name)
+                        except discord.Forbidden:
+                            logger.warning("Could not delete user message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
         else:
             await ctx.message.add_reaction("❌")
 
