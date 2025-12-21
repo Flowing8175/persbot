@@ -123,13 +123,12 @@ class AutoChannelCog(commands.Cog):
                 if msg.message_id:
                     if msg.role == assistant_role:
                         try:
-                            message_to_edit = await ctx.channel.fetch_message(msg.message_id)
-                            new_content = f"> -# ~~{message_to_edit.content}~~"
-                            await message_to_edit.edit(content=new_content)
+                            message_to_delete = await ctx.channel.fetch_message(msg.message_id)
+                            await message_to_delete.delete()
                         except discord.NotFound:
-                            logger.warning("Could not find message %s to edit in #%s.", msg.message_id, ctx.channel.name)
+                            logger.warning("Could not find message %s to delete in #%s.", msg.message_id, ctx.channel.name)
                         except discord.Forbidden:
-                            logger.warning("Could not edit message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
+                            logger.warning("Could not delete message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
 
                     elif msg.role == user_role:
                         try:
