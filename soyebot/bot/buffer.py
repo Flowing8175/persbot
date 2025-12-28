@@ -35,6 +35,7 @@ class MessageBuffer:
 
         # If a task is already running, cancel it to reset the timer
         if channel_id in self.tasks:
+            logger.info(f"[DEBUG] Cancelling existing task for channel {channel_id} to reset timer/stop processing.")
             self.tasks[channel_id].cancel()
 
         # Start a new timer task with the default delay
@@ -81,6 +82,7 @@ class MessageBuffer:
             if messages:
                 logger.info(f"Processing batch of {len(messages)} messages for channel {channel_id} (waited {delay:.1f}s)")
                 await callback(messages)
+                logger.info(f"Batch processing completed successfully for channel {channel_id}")
 
         except asyncio.CancelledError:
             # Task was cancelled (new message arrived or typing detected).
