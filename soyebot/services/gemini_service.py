@@ -1,4 +1,4 @@
-"""Gemini API service for SoyeBot."""
+"Gemini API service for SoyeBot."
 
 import datetime
 import hashlib
@@ -21,42 +21,23 @@ logger = logging.getLogger(__name__)
 
 
 class _ChatSession:
-    """A lightweight wrapper to manage manual history for stateless requests."""
-    def __init__(self):
-        # We will manage the history manually
+    """A wrapper for a Gemini chat session to manage history with author tracking."""
+    def __init__(self, underlying_chat):
+        self._chat = underlying_chat
+        # We will manage the history manually to include author_id
         self.history: list[ChatMessage] = []
 
-    def get_api_contents(self, current_user_message: str) -> list[genai_types.Content]:
-        """Construct the 'contents' list for a generate_content call."""
-        contents = []
-        
-        # Add history
+    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
+        # Reconstruct history for the API call
+        api_history = []
         for msg in self.history:
-            # Each 'msg.parts' is a list of dicts/Parts.
-            # Convert to genai_types.Content
-            parts_objs = []
-            if msg.parts:
-                for part in msg.parts:
-                    if isinstance(part, dict) and "text" in part:
-                        parts_objs.append(genai_types.Part(text=part["text"]))
-                    else:
-                        # Fallback or pass raw if compatible
-                        pass
-            
-            if parts_objs:
-                contents.append(genai_types.Content(role=msg.role, parts=parts_objs))
-        
-        # Add current message
-        contents.append(genai_types.Content(
-            role="user", 
-            parts=[genai_types.Part(text=current_user_message)]
-        ))
-        
-        return contents
+            api_history.append({"role": msg.role, "parts": msg.parts})
 
-    def add_exchange(self, user_message: str, response_text: str, author_id: int, message_id: Optional[str] = None):
-        """Manually add the user message and response to history."""
-        # User message
+        self._chat.history = api_history
+
+        response = self._chat.send_message(user_message)
+
+        # After sending, save the user message and response to our custom history
         self.history.append(ChatMessage(
             role="user",
             content=user_message,
@@ -64,14 +45,20 @@ class _ChatSession:
             author_id=author_id,
             message_id=message_id
         ))
-        # Model response
+        # Assuming the response text is in response.text
         self.history.append(ChatMessage(
             role="model",
-            content=response_text,
-            parts=[{"text": response_text}],
-            author_id=None
+            content=response.text,
+            parts=[{"text": response.text}],
+            author_id=None # Bot messages have no author
         ))
 
+        # Keep the underlying history in sync, though we are the source of truth
+        self._chat.history = [
+            {"role": msg.role, "parts": msg.parts} for msg in self.history
+        ]
+
+        return response
 
 class _CachedModel:
     """Lightweight wrapper that mimics the old GenerativeModel interface."""
@@ -86,7 +73,7 @@ class _CachedModel:
         self._model_name = model_name
         self._config = config
 
-    def generate_content(self, contents: Any):
+    def generate_content(self, contents: str):
         return self._client.models.generate_content(
             model=self._model_name,
             contents=contents,
@@ -94,8 +81,11 @@ class _CachedModel:
         )
 
     def start_chat(self):
-        # Return our new stateless session wrapper
-        return _ChatSession()
+        underlying_chat = self._client.chats.create(
+            model=self._model_name,
+            config=self._config,
+        )
+        return _ChatSession(underlying_chat)
 
 
 class GeminiService(BaseLLMService):
@@ -138,35 +128,27 @@ class GeminiService(BaseLLMService):
             else:
                 return model
 
-        # Check for explicit caching (for large prompts)
-        cached_content_name = self._ensure_cached_content(model_name, system_instruction)
+        # Check logic for caching (token count check)
+        # If valid for caching, this returns the cache name (resource ID)
+        cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction)
 
         config_kwargs = {
             "temperature": getattr(self.config, 'temperature', 1.0),
             "top_p": getattr(self.config, 'top_p', 1.0),
         }
 
-        expires_at = None
-        if cached_content_name:
-            # If using cache, system_instruction is already embedded in the cache resource
-            config_kwargs["cached_content"] = cached_content_name
-
-            # Set local expiration slightly earlier than the actual TTL to ensure we refresh safely
-            ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
-            # Use 90% of TTL or subtract a buffer (e.g. 5 mins) to be safe
-            buffer_minutes = 5
-            safe_ttl = max(1, ttl_minutes - buffer_minutes)
-            expires_at = now + datetime.timedelta(minutes=safe_ttl)
-            expires_at_logger = expires_at.strftime('%Y-%m-%d %H:%M:%S')
-            logger.debug("Local cache set to expire at %s", expires_at_logger)
+        if cache_name:
+            # Use the cached content
+            config_kwargs["cached_content"] = cache_name
+            logger.debug("Using cached content: %s", cache_name)
         else:
             # Standard mode: pass system_instruction directly
             config_kwargs["system_instruction"] = system_instruction
-            
+
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
 
-        self._model_cache[key] = (model, expires_at)
+        self._model_cache[key] = (model, cache_expiration)
         return model
 
     def create_assistant_model(self, system_instruction: str) -> _CachedModel:
@@ -211,15 +193,10 @@ class GeminiService(BaseLLMService):
             if chat_session and hasattr(chat_session, 'history'):
                 history = chat_session.history
                 formatted_history = []
-                # Simple dump of last few messages
                 for msg in history[-5:]:
                     role = msg.role
-                    text_content = ""
-                    if msg.parts:
-                        for p in msg.parts:
-                            if isinstance(p, dict) and 'text' in p:
-                                text_content += p['text']
-                    formatted_history.append(f"{role} (author: {msg.author_id}): {text_content[:50]}")
+                    texts = [part.get('text', '') for part in msg.parts]
+                    formatted_history.append(f"{role} (author: {msg.author_id}): {' '.join(texts)}")
                 if formatted_history:
                     logger.debug("[RAW API REQUEST] Recent history:\n" + "\n".join(formatted_history))
         except Exception as e:
@@ -262,13 +239,13 @@ class GeminiService(BaseLLMService):
         content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
         return f"soyebot-persona-{content_hash[:10]}"
 
-    def _ensure_cached_content(self, model_name: str, system_instruction: str) -> Optional[str]:
+    def _get_gemini_cache(self, model_name: str, system_instruction: str) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
-        Check if system instruction qualifies for caching and return cache name.
-        Creates the cache if it doesn't exist.
+        Attempts to find or create a Gemini cache for the given system instruction.
+        Returns: (cache_name, local_expiration_datetime)
         """
         if not system_instruction:
-            return None
+            return None, None
 
         # 1. Check token count
         try:
@@ -279,7 +256,7 @@ class GeminiService(BaseLLMService):
             token_count = count_result.total_tokens
         except Exception as e:
             logger.warning("Failed to count tokens for caching check: %s", e)
-            return None
+            return None, None
 
         min_tokens = getattr(self.config, 'gemini_cache_min_tokens', 32768)
         if token_count < min_tokens:
@@ -287,20 +264,26 @@ class GeminiService(BaseLLMService):
                 "System instruction too short for caching (%d < %d tokens). Using standard context.",
                 token_count, min_tokens
             )
-            return None
+            return None, None
 
-        # 2. Prepare cache configuration
+        # 2. Config setup
         cache_display_name = self._get_cache_key(system_instruction)
         ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
         ttl_seconds = ttl_minutes * 60
+        
+        # Calculate local expiration (safe buffer)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        safe_ttl_minutes = max(1, ttl_minutes - 5) # Buffer 5 minutes
+        local_expiration = now + datetime.timedelta(minutes=safe_ttl_minutes)
 
         # 3. Search for existing cache
         try:
+            # We iterate to find a cache with our unique display name
             for cache in self.client.caches.list():
                 if cache.display_name == cache_display_name:
-                    logger.info("Found existing Gemini context cache: %s (%s)", cache.name, cache.display_name)
-
-                    # Refresh the TTL of the existing cache to match our new local session
+                    logger.info("Found existing Gemini context cache: %s", cache.name)
+                    
+                    # Refresh TTL
                     try:
                         self.client.caches.update(
                             name=cache.name,
@@ -308,36 +291,35 @@ class GeminiService(BaseLLMService):
                         )
                         logger.info("Refreshed TTL for cache: %s", cache.name)
                     except Exception as update_err:
-                        logger.warning("Failed to refresh TTL for cache %s: %s", cache.name, update_err)
-                        pass
+                        logger.warning("Failed to refresh TTL: %s", update_err)
+                    
+                    return cache.name, local_expiration
 
-                    return cache.name
         except Exception as e:
             logger.warning("Error listing caches: %s", e)
 
-        # 4. Create new cache
+        # 4. Create new cache using the user's requested style
         try:
-            logger.info(
-                "Creating new Gemini context cache '%s' (%d tokens, TTL %dm)",
-                cache_display_name, token_count, ttl_minutes
-            )
-
-            # Use 'contents' list wrapper for system instruction
+            logger.info("Creating new Gemini cache '%s' (TTL: %ds)...", cache_display_name, ttl_seconds)
+            
+            # Using contents list wrapper as per types
             contents = [genai_types.Content(parts=[genai_types.Part(text=system_instruction)])]
 
-            cached_content = self.client.caches.create(
+            cache = self.client.caches.create(
                 model=model_name,
                 config=genai_types.CreateCachedContentConfig(
                     display_name=cache_display_name,
                     contents=contents,
-                    ttl=f"{ttl_seconds}s"
+                    ttl=f"{ttl_seconds}s",
                 )
             )
-            logger.info("Successfully created cache: %s", cached_content.name)
-            return cached_content.name
+            
+            logger.info("Successfully created cache: %s", cache.name)
+            return cache.name, local_expiration
+
         except Exception as e:
             logger.error("Failed to create Gemini context cache: %s", e)
-            return None
+            return None, None
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text content from Gemini response."""
@@ -371,46 +353,29 @@ class GeminiService(BaseLLMService):
 
     async def generate_chat_response(
         self,
-        chat_session: _ChatSession,
+        chat_session,
         user_message: str,
         discord_message: discord.Message,
-        use_summarizer_backend: bool = False,
     ) -> Optional[Tuple[str, Any]]:
-        """Generate chat response using stateless generate_content."""
-        
-        # Determine model
-        model = self.assistant_model
-        if use_summarizer_backend:
-             model = self.summary_model
+        """Generate chat response."""
+        self._log_raw_request(user_message, chat_session)
+
+        author_id = discord_message.author.id
+        message_id = str(discord_message.id)
 
         def api_call():
-            # STATELESS CALL:
-            # 1. Get full history contents
-            contents = chat_session.get_api_contents(user_message)
-            # 2. Call generate_content
-            return model.generate_content(contents)
+            return chat_session.send_message(user_message, author_id=author_id, message_id=message_id)
 
-        try:
-            response_obj = await self.execute_with_retry(
-                api_call,
-                "응답 생성",
-                return_full_response=True,
-                discord_message=discord_message,
-            )
-        except asyncio.CancelledError:
-             raise
+        response_obj = await self.execute_with_retry(
+            api_call,
+            "응답 생성",
+            return_full_response=True,
+            discord_message=discord_message,
+        )
 
         if response_obj is None:
             return None
-        
-        response_text = self._extract_text_from_response(response_obj)
-        
-        # Only update history upon SUCCESS
-        chat_session.add_exchange(
-            user_message=user_message,
-            response_text=response_text,
-            author_id=discord_message.author.id,
-            message_id=str(discord_message.id)
-        )
 
+        response_text = self._extract_text_from_response(response_obj)
         return (response_text, response_obj)
+

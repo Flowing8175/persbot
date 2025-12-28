@@ -8,7 +8,7 @@ from typing import Optional
 import discord
 from discord.ext import commands
 
-from bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message
+from bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
 from bot.session import SessionManager, ResolvedSession
 from bot.buffer import MessageBuffer
 from config import AppConfig
@@ -33,6 +33,10 @@ class AssistantCog(commands.Cog):
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
+        self.session_manager = session_manager
+        self.sending_tasks: dict[int, asyncio.Task] = {}
+        
+        # Use config for default delay (now 0.1)
         self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
     def _should_ignore_message(self, message: discord.Message) -> bool:
@@ -53,14 +57,42 @@ class AssistantCog(commands.Cog):
             logger.debug("LLM returned no text response for the mention.")
             return
 
-        reply_message = await message.reply(reply.text, mention_author=False)
-        if reply_message:
-            self.session_manager.link_message_to_session(str(reply_message.id), reply.session_key)
+        # If Break-Cut Mode is OFF, send normally
+        if not self.config.break_cut_mode:
+            reply_message = await message.reply(reply.text, mention_author=False)
+            if reply_message:
+                self.session_manager.link_message_to_session(str(reply_message.id), reply.session_key)
+            return
+
+        # If Break-Cut Mode is ON, use shared helper
+        channel_id = message.channel.id
+        if channel_id in self.sending_tasks and not self.sending_tasks[channel_id].done():
+            self.sending_tasks[channel_id].cancel()
+
+        task = asyncio.create_task(
+            send_split_response(message.channel, reply, self.session_manager)
+        )
+        self.sending_tasks[channel_id] = task
+
+        def _cleanup(t):
+            if self.sending_tasks.get(channel_id) == t:
+                self.sending_tasks.pop(channel_id, None)
+        
+        task.add_done_callback(_cleanup)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if self._should_ignore_message(message):
             return
+
+        # Interrupt current sending if any (Break-Cut Mode)
+        if self.config.break_cut_mode and message.channel.id in self.sending_tasks:
+            task = self.sending_tasks[message.channel.id]
+            if not task.done():
+                logger.info(f"New message from {message.author} interrupted sending in channel {message.channel.id}")
+                task.cancel()
+                # We don't await here to avoid blocking on_message, 
+                # but the task.cancel() scheduling is sufficient.
 
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
 
@@ -75,7 +107,17 @@ class AssistantCog(commands.Cog):
 
         # We need the channel ID. 'channel' can be TextChannel, DMChannel, etc.
         if hasattr(channel, 'id'):
-            self.message_buffer.handle_typing(channel.id, self._process_batch)
+            # Interrupt current sending if any (Break-Cut Mode)
+            if self.config.break_cut_mode and channel.id in self.sending_tasks:
+                task = self.sending_tasks[channel.id]
+                if not task.done():
+                    logger.debug(f"Typing detected in channel {channel.id}. Interrupting sending.")
+                    task.cancel()
+            
+            # If Break-Cut Mode is OFF, use the old "Extend Wait" logic.
+            # If ON, we do NOT extend wait (user request: "delete user input wait").
+            if not self.config.break_cut_mode:
+                self.message_buffer.handle_typing(channel.id, self._process_batch)
 
     async def _process_batch(self, messages: list[discord.Message]):
         if not messages:
@@ -87,9 +129,6 @@ class AssistantCog(commands.Cog):
         metrics = get_metrics()
 
         try:
-            current_task_id = id(asyncio.current_task())
-            # logger.info(f"[ASSISTANT] _process_batch START for Task {current_task_id}. Messages: {len(messages)}")
-            
             # Combine contents
             combined_content = []
             for msg in messages:
@@ -117,14 +156,12 @@ class AssistantCog(commands.Cog):
                 if not resolution:
                     return
 
-                logger.info(f"[ASSISTANT] Task {current_task_id} calling create_chat_reply...")
                 reply = await create_chat_reply(
                     primary_message,
                     resolution=resolution,
                     llm_service=self.llm_service,
                     session_manager=self.session_manager,
                 )
-                logger.info(f"[ASSISTANT] Task {current_task_id} create_chat_reply returned.")
 
                 if reply:
                     # We reply to the last message in the batch so the user sees it at the bottom
@@ -134,11 +171,7 @@ class AssistantCog(commands.Cog):
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
             metrics.increment_counter('messages_processed')
-            logger.info(f"[ASSISTANT] _process_batch END for Task {current_task_id} (Success)")
 
-        except asyncio.CancelledError:
-            # logger.info(f"[ASSISTANT] _process_batch Task {id(asyncio.current_task())} CANCELLED. Stopping.")
-            raise
         except Exception as e:
             logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
             await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
@@ -262,5 +295,29 @@ class AssistantCog(commands.Cog):
             self.llm_service.update_parameters(top_p=value)
             await ctx.message.add_reaction("✅")
         except Exception as e:
-            logger.error("Top-p 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+    
+    @commands.command(name='끊어치기')
+    async def toggle_break_cut(self, ctx: commands.Context, mode: Optional[str] = None):
+        """끊어치기 모드를 설정합니다. (!끊어치기 [on|off], 인자 없이 사용 시 토글)"""
+        if mode is None:
+            # Toggle
+            self.config.break_cut_mode = not self.config.break_cut_mode
+        else:
+            cleaned = mode.lower().strip()
+            if cleaned == 'on':
+                self.config.break_cut_mode = True
+            elif cleaned == 'off':
+                self.config.break_cut_mode = False
+            else:
+                await ctx.reply("사용법: !끊어치기 [on|off] (생략 시 토글)")
+                return
+
+        status = "ON" if self.config.break_cut_mode else "OFF"
+        
+        # Adjust buffer behavior based on mode? 
+        # Actually user requested "remove wait" globally. 
+        # But we did that in __init__ (delay=0.1).
+        # We only gated handle_typing in on_typing.
+        
+        await ctx.reply(f"✂️ 끊어치기 모드가 **{status}** 상태로 변경되었습니다.")

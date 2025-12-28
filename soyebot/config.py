@@ -95,8 +95,8 @@ class AppConfig:
     # --- Session Management ---
     session_cache_limit: int = 200
     session_inactive_minutes: int = 30
-    message_buffer_delay: float = 2.5
-    segmented_messaging: bool = True
+    message_buffer_delay: float = 0.1
+    break_cut_mode: bool = True
 
 def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
@@ -287,5 +287,4 @@ def load_config() -> AppConfig:
         top_p=top_p,
         gemini_cache_min_tokens=int(os.environ.get('GEMINI_CACHE_MIN_TOKENS', 32768)),
         gemini_cache_ttl_minutes=int(os.environ.get('GEMINI_CACHE_TTL_MINUTES', 60)),
-        segmented_messaging=True,
     )

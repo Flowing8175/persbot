@@ -1,15 +1,17 @@
 """Auto-reply Cog for channels configured via environment variables."""
 
-import asyncio
 import logging
 import time
 from typing import Optional
 
+import asyncio
+
 import discord
 from discord.ext import commands
 
-from soyebot.bot.chat_handler import create_chat_reply, resolve_session_for_message
+from soyebot.bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
 from soyebot.bot.session import SessionManager
+from soyebot.bot.buffer import MessageBuffer
 from soyebot.config import AppConfig
 from soyebot.metrics import get_metrics
 from soyebot.services.llm_service import LLMService
@@ -32,71 +34,36 @@ class AutoChannelCog(commands.Cog):
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
-        # MessageBuffer removed as per new "immediate" response requirements
-        # self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
+        self.sending_tasks: dict[int, asyncio.Task] = {}
+        self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
-    @commands.command(name="끊어치기", aliases=["split"])
-    async def toggle_segmented_messaging(self, ctx: commands.Context, mode: Optional[str] = None):
-        """Toggles the segmented messaging mode (끊어치기 모드)."""
-        if ctx.channel.id not in self.config.auto_reply_channel_ids:
-            return
-
-        if not (ctx.author.guild_permissions.manage_guild):
-            await ctx.message.add_reaction("❌")
-            return
-
-        current = self.config.segmented_messaging
-
-        if mode:
-            mode = mode.lower()
-            if mode == "on":
-                new_state = True
-            elif mode == "off":
-                new_state = False
-            else:
-                await ctx.send("사용법: !끊어치기 [on|off]")
-                return
-        else:
-            new_state = not current
-
-        self.config.segmented_messaging = new_state
-        status = "ON" if new_state else "OFF"
-        await ctx.send(f"끊어치기 모드: **{status}**")
-        await ctx.message.add_reaction("✅")
-
-    async def _send_auto_reply(self, message: discord.Message, reply_text: str, session_key: str) -> None:
-        if not reply_text:
+    async def _send_auto_reply(self, message: discord.Message, reply: ChatReply) -> None:
+        if not reply.text:
             logger.debug("LLM returned no text response for the auto-reply message.")
             return
 
-        if not self.config.segmented_messaging:
-            # Traditional mode: Send all at once
-            sent_message = await message.channel.send(reply_text)
+        # If Break-Cut Mode is OFF, send normally
+        if not self.config.break_cut_mode:
+            sent_message = await message.channel.send(reply.text)
             if sent_message:
-                self.session_manager.link_message_to_session(str(sent_message.id), session_key)
-        else:
-            # Segmented mode: Split by newlines and send sequentially with delay
-            lines = [line.strip() for line in reply_text.split('\n') if line.strip()]
-            if not lines:
-                return
+                self.session_manager.link_message_to_session(str(sent_message.id), reply.session_key)
+            return
 
-            sent_message_ids = []
+        # If Break-Cut Mode is ON, use shared helper
+        channel_id = message.channel.id
+        if channel_id in self.sending_tasks and not self.sending_tasks[channel_id].done():
+            self.sending_tasks[channel_id].cancel()
 
-            for line in lines:
-                # Calculate delay: 0.5s to 1.7s proportional to length
-                # Heuristic: 0.05s per character
-                delay = min(1.7, max(0.5, len(line) * 0.05))
+        task = asyncio.create_task(
+            send_split_response(message.channel, reply, self.session_manager)
+        )
+        self.sending_tasks[channel_id] = task
 
-                async with message.channel.typing():
-                    await asyncio.sleep(delay)
-                    sent_msg = await message.channel.send(line)
-                    if sent_msg:
-                        sent_message_ids.append(str(sent_msg.id))
-
-            # Link all sent message IDs to the session (comma-separated)
-            if sent_message_ids:
-                combined_ids = ",".join(sent_message_ids)
-                self.session_manager.link_message_to_session(combined_ids, session_key)
+        def _cleanup(t):
+            if self.sending_tasks.get(channel_id) == t:
+                self.sending_tasks.pop(channel_id, None)
+        
+        task.add_done_callback(_cleanup)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -116,8 +83,37 @@ class AutoChannelCog(commands.Cog):
         if message.content and message.content.lstrip().startswith("\\"):
             return
 
-        # Direct processing without buffer delay
-        await self._process_batch([message])
+        # Interrupt current sending if any (Break-Cut Mode)
+        if self.config.break_cut_mode and message.channel.id in self.sending_tasks:
+            task = self.sending_tasks[message.channel.id]
+            if not task.done():
+                logger.info(f"New message from {message.author} interrupted auto-reply in channel {message.channel.id}")
+                task.cancel()
+
+        await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+
+    @commands.Cog.listener()
+    async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
+        """Interrupt auto-reply if user starts typing."""
+        if user.bot:
+            return
+        if not hasattr(channel, 'id'):
+            return
+        
+        # Only care if this is an auto-reply channel
+        if channel.id not in self.config.auto_reply_channel_ids:
+            return
+
+        # Interrupt current sending if any (Break-Cut Mode)
+        if self.config.break_cut_mode and channel.id in self.sending_tasks:
+            task = self.sending_tasks[channel.id]
+            if not task.done():
+                logger.debug(f"Typing detected in channel {channel.id}. Interrupting auto-reply.")
+                task.cancel()
+
+        # If Break-Cut Mode is OFF, use handle_typing to extend buffer
+        if not self.config.break_cut_mode:
+            self.message_buffer.handle_typing(channel.id, self._process_batch)
 
     @commands.command(name="@", aliases=["undo"])
     async def undo_command(self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"):
@@ -177,31 +173,23 @@ class AutoChannelCog(commands.Cog):
 
             for msg in removed_messages:
                 if msg.message_id:
-                    # Handle comma-separated IDs for segmented messages
-                    msg_ids = msg.message_id.split(',')
+                    if msg.role == assistant_role:
+                        try:
+                            message_to_delete = await ctx.channel.fetch_message(msg.message_id)
+                            await message_to_delete.delete()
+                        except discord.NotFound:
+                            logger.warning("Could not find message %s to delete in #%s.", msg.message_id, ctx.channel.name)
+                        except discord.Forbidden:
+                            logger.warning("Could not delete message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
 
-                    for msg_id in msg_ids:
-                        msg_id = msg_id.strip()
-                        if not msg_id:
-                            continue
-
-                        if msg.role == assistant_role:
-                            try:
-                                message_to_delete = await ctx.channel.fetch_message(msg_id)
-                                await message_to_delete.delete()
-                            except discord.NotFound:
-                                logger.warning("Could not find message %s to delete in #%s.", msg_id, ctx.channel.name)
-                            except discord.Forbidden:
-                                logger.warning("Could not delete message %s in #%s, probably missing permissions.", msg_id, ctx.channel.name)
-
-                        elif msg.role == user_role:
-                            try:
-                                message_to_delete = await ctx.channel.fetch_message(msg_id)
-                                await message_to_delete.delete()
-                            except discord.NotFound:
-                                logger.warning("Could not find user message %s to delete in #%s.", msg_id, ctx.channel.name)
-                            except discord.Forbidden:
-                                logger.warning("Could not delete user message %s in #%s, probably missing permissions.", msg_id, ctx.channel.name)
+                    elif msg.role == user_role:
+                        try:
+                            message_to_delete = await ctx.channel.fetch_message(msg.message_id)
+                            await message_to_delete.delete()
+                        except discord.NotFound:
+                            logger.warning("Could not find user message %s to delete in #%s.", msg.message_id, ctx.channel.name)
+                        except discord.Forbidden:
+                            logger.warning("Could not delete user message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
         else:
             await ctx.message.add_reaction("❌")
 
@@ -256,7 +244,7 @@ class AutoChannelCog(commands.Cog):
                 )
 
                 if reply:
-                    await self._send_auto_reply(primary_message, reply.text, reply.session_key)
+                    await self._send_auto_reply(primary_message, reply)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)

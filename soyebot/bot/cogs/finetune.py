@@ -20,14 +20,16 @@ class FineTuneCog(commands.Cog):
     @tasks.loop(hours=1)
     async def finetune_task(self):
         """Periodic task to check if fine-tuning is needed."""
-        # Wait until bot is ready to ensure we can access channels
-        if not self.bot.is_ready():
-            return
-
-        try:
-            await self.service.run_pipeline_step(self.bot)
-        except Exception as e:
-            logger.error(f"Error in fine-tune task: {e}")
+        # 1달마다 파인튜닝하는 로직 주석처리 (사용자 요청)
+        pass
+        # # Wait until bot is ready to ensure we can access channels
+        # if not self.bot.is_ready():
+        #     return
+        #
+        # try:
+        #     await self.service.run_pipeline_step(self.bot)
+        # except Exception as e:
+        #     logger.error(f"Error in fine-tune task: {e}")
 
     @finetune_task.before_loop
     async def before_finetune_task(self):

@@ -47,8 +47,6 @@ def setup_logging(log_level: int) -> None:
     logging.getLogger('discord.gateway').setLevel(logging.WARNING)
 
 
-
-
 async def main(config):
     """Initializes and runs the bot."""
     auto_channel_cog_cls = None

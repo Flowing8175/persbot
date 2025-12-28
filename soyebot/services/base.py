@@ -128,17 +128,11 @@ class BaseLLMService(ABC):
 
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
-                try:
-                    response = await asyncio.wait_for(
-                        self._execute_model_call(model_call),
-                        timeout=self.config.api_request_timeout,
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    # Reraise to let outer try/except handle retry logic
-                    raise e
-                
+                response = await asyncio.wait_for(
+                    self._execute_model_call(model_call),
+                    timeout=self.config.api_request_timeout,
+                )
+
                 self._log_raw_response(response, attempt)
 
                 duration_ms = (time.perf_counter() - request_start) * 1000
