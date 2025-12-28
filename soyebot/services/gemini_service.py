@@ -15,9 +15,34 @@ from google.genai.errors import ClientError
 
 from soyebot.config import AppConfig
 from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from soyebot.services.base import BaseLLMService, ChatMessage, clean_thought_content
+from soyebot.services.base import BaseLLMService, ChatMessage
 
 logger = logging.getLogger(__name__)
+
+
+def extract_clean_text(response_obj: Any) -> str:
+    """Extract text content from Gemini response, filtering out thoughts."""
+    try:
+        text_parts = []
+        if hasattr(response_obj, 'candidates') and response_obj.candidates:
+            for candidate in response_obj.candidates:
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    for part in candidate.content.parts:
+                        # Skip parts that are marked as thoughts
+                        if getattr(part, 'thought', False):
+                            continue
+
+                        if hasattr(part, 'text') and part.text:
+                            text_parts.append(part.text)
+
+        if text_parts:
+            return ' '.join(text_parts).strip()
+
+        return ""
+
+    except Exception as e:
+        logger.error(f"Failed to extract text from response: {e}", exc_info=True)
+        return ""
 
 
 class _ChatSession:
@@ -47,13 +72,14 @@ class _ChatSession:
             message_ids=[message_id] if message_id else []
         ))
         # Assuming the response text is in response.text
-        # Clean the text to remove thought tokens before storing in history
-        cleaned_text = clean_thought_content(response.text)
+        # We need to ensure we don't store thoughts in history, so we use our helper
+        # to extract only the text content (which filters out thoughts).
+        clean_content = extract_clean_text(response)
 
         self.history.append(ChatMessage(
             role="model",
-            content=cleaned_text,
-            parts=[{"text": cleaned_text}],
+            content=clean_content,
+            parts=[{"text": clean_content}],
             author_id=None # Bot messages have no author
         ))
 
@@ -340,25 +366,7 @@ class GeminiService(BaseLLMService):
             return None, None
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
-        """Extract text content from Gemini response."""
-        try:
-            text_parts = []
-            if hasattr(response_obj, 'candidates') and response_obj.candidates:
-                for candidate in response_obj.candidates:
-                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'text') and part.text:
-                                text_parts.append(part.text)
-
-            if text_parts:
-                raw_text = ' '.join(text_parts)
-                return clean_thought_content(raw_text)
-
-            return ""
-
-        except Exception as e:
-            logger.error(f"Failed to extract text from response: {e}", exc_info=True)
-            return ""
+        return extract_clean_text(response_obj)
 
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():
