@@ -88,6 +88,8 @@ class AppConfig:
     # Gemini Context Caching
     gemini_cache_min_tokens: int = 32768
     gemini_cache_ttl_minutes: int = 60
+    # Gemini Thinking Budget (in tokens)
+    thinking_budget: Optional[int] = None
 
     # Channels where every message should be auto-processed by Gemini
     auto_reply_channel_ids: Tuple[int, ...] = ()
@@ -257,6 +259,16 @@ def load_config() -> AppConfig:
         logger.warning("TOP_P 설정이 숫자가 아닙니다. 기본값 1.0을 사용합니다.")
         top_p = 1.0
 
+    try:
+        thinking_budget_val = os.environ.get('THINKING_BUDGET', 'off').strip().lower()
+        if thinking_budget_val == 'off':
+            thinking_budget = None
+        else:
+            thinking_budget = int(thinking_budget_val)
+    except ValueError:
+        logger.warning("THINKING_BUDGET 설정이 올바르지 않습니다 (숫자 또는 'off'). 기본값 'off'를 사용합니다.")
+        thinking_budget = None
+
     logger.info(
         "LLM_PROVIDER(assistant)=%s, LLM_PROVIDER(summarizer)=%s, assistant_model=%s, summarizer_model=%s",
         assistant_llm_provider,
@@ -287,4 +299,5 @@ def load_config() -> AppConfig:
         top_p=top_p,
         gemini_cache_min_tokens=int(os.environ.get('GEMINI_CACHE_MIN_TOKENS', 32768)),
         gemini_cache_ttl_minutes=int(os.environ.get('GEMINI_CACHE_TTL_MINUTES', 60)),
+        thinking_budget=thinking_budget,
     )

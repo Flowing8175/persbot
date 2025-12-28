@@ -104,13 +104,6 @@ class AutoChannelCog(commands.Cog):
         if channel.id not in self.config.auto_reply_channel_ids:
             return
 
-        # Interrupt current sending if any (Break-Cut Mode)
-        if self.config.break_cut_mode and channel.id in self.sending_tasks:
-            task = self.sending_tasks[channel.id]
-            if not task.done():
-                logger.debug(f"Typing detected in channel {channel.id}. Interrupting auto-reply.")
-                task.cancel()
-
         # If Break-Cut Mode is OFF, use handle_typing to extend buffer
         if not self.config.break_cut_mode:
             self.message_buffer.handle_typing(channel.id, self._process_batch)
@@ -172,24 +165,29 @@ class AutoChannelCog(commands.Cog):
             user_role = self.llm_service.get_user_role_name()
 
             for msg in removed_messages:
-                if msg.message_id:
-                    if msg.role == assistant_role:
-                        try:
-                            message_to_delete = await ctx.channel.fetch_message(msg.message_id)
-                            await message_to_delete.delete()
-                        except discord.NotFound:
-                            logger.warning("Could not find message %s to delete in #%s.", msg.message_id, ctx.channel.name)
-                        except discord.Forbidden:
-                            logger.warning("Could not delete message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
+                if hasattr(msg, 'message_ids') and msg.message_ids:
+                    for mid in msg.message_ids:
+                        if msg.role == assistant_role:
+                            try:
+                                message_to_delete = await ctx.channel.fetch_message(int(mid))
+                                await message_to_delete.delete()
+                            except discord.NotFound:
+                                logger.warning("Could not find message %s to delete in #%s.", mid, ctx.channel.name)
+                            except discord.Forbidden:
+                                logger.warning("Could not delete message %s in #%s, probably missing permissions.", mid, ctx.channel.name)
+                            except Exception as e:
+                                logger.warning("Error deleting message %s: %s", mid, e)
 
-                    elif msg.role == user_role:
-                        try:
-                            message_to_delete = await ctx.channel.fetch_message(msg.message_id)
-                            await message_to_delete.delete()
-                        except discord.NotFound:
-                            logger.warning("Could not find user message %s to delete in #%s.", msg.message_id, ctx.channel.name)
-                        except discord.Forbidden:
-                            logger.warning("Could not delete user message %s in #%s, probably missing permissions.", msg.message_id, ctx.channel.name)
+                        elif msg.role == user_role:
+                            try:
+                                message_to_delete = await ctx.channel.fetch_message(int(mid))
+                                await message_to_delete.delete()
+                            except discord.NotFound:
+                                logger.warning("Could not find user message %s to delete in #%s.", mid, ctx.channel.name)
+                            except discord.Forbidden:
+                                logger.warning("Could not delete user message %s in #%s, probably missing permissions.", mid, ctx.channel.name)
+                            except Exception as e:
+                                logger.warning("Error deleting user message %s: %s", mid, e)
         else:
             await ctx.message.add_reaction("❌")
 

@@ -50,10 +50,10 @@ class ResponseChatSession:
         self._history.clear()
         self._history.extend(new_history)
 
-    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, message_id: Optional[str] = None) -> None:
+    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, author_name: Optional[str] = None, message_ids: list[str] = None) -> None:
         if not content:
             return
-        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, message_id=message_id))
+        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
 
     def _build_input_payload(self) -> list:
         payload = []
@@ -85,8 +85,8 @@ class ResponseChatSession:
             )
         return payload
 
-    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
-        self._append_history("user", user_message, author_id=author_id, message_id=message_id)
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
+        self._append_history("user", user_message, author_id=author_id, author_name=author_name, message_ids=[message_id] if message_id else [])
 
         response = self._client.responses.create(
             model=self._model_name,
@@ -135,13 +135,13 @@ class ChatCompletionSession:
         self._history.clear()
         self._history.extend(new_history)
 
-    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, message_id: Optional[str] = None) -> None:
+    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, author_name: Optional[str] = None, message_ids: list[str] = None) -> None:
         if not content:
             return
-        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, message_id=message_id))
+        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
 
-    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
-        self._append_history("user", user_message, author_id=author_id, message_id=message_id)
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
+        self._append_history("user", user_message, author_id=author_id, author_name=author_name, message_ids=[message_id] if message_id else [])
 
         # Build messages list for chat completions API
         messages = []
@@ -327,8 +327,15 @@ class OpenAIService(BaseLLMService):
                 for msg in history[-5:]:
                     role = msg.role
                     content = str(msg.content)
-                    truncated = content[:100].replace("\n", " ")
-                    formatted.append(f"{role} (author: {msg.author_id}): {truncated}")
+                    
+                    # Clean up content display if it starts with "Name: "
+                    author_label = str(msg.author_name or msg.author_id or "bot")
+                    display_content = content
+                    if msg.author_name and content.startswith(f"{msg.author_name}:"):
+                        display_content = content[len(msg.author_name)+1:].strip()
+                    
+                    truncated = display_content[:100].replace("\n", " ")
+                    formatted.append(f"{role} (author:{author_label}) {truncated}")
                 if formatted:
                     logger.debug("[RAW API REQUEST] Recent history:\n%s", "\n".join(formatted))
         except Exception:
@@ -427,9 +434,10 @@ class OpenAIService(BaseLLMService):
         self._log_raw_request(user_message, chat_session)
 
         author_id = discord_message.author.id
+        author_name = getattr(discord_message.author, 'name', str(author_id))
         message_id = str(discord_message.id)
         response_obj = await self.execute_with_retry(
-            lambda: chat_session.send_message(user_message, author_id, message_id=message_id),
+            lambda: chat_session.send_message(user_message, author_id, author_name=author_name, message_id=message_id),
             "응답 생성",
             return_full_response=True,
             discord_message=discord_message,

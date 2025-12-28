@@ -183,10 +183,13 @@ class SessionManager:
         return ResolvedSession(session_key, cleaned_message)
 
     def link_message_to_session(self, message_id: str, session_key: str) -> None:
-        """Links a Discord message ID to the last message in the session history."""
+        """Links a Discord message ID to the last message in the session history by appending to message_ids."""
         session = self.sessions.get(session_key)
         if session and hasattr(session.chat, 'history') and session.chat.history:
-            session.chat.history[-1].message_id = message_id
+            last_msg = session.chat.history[-1]
+            if not hasattr(last_msg, 'message_ids'):
+                 last_msg.message_ids = []
+            last_msg.message_ids.append(message_id)
 
     def undo_last_exchanges(self, session_key: str, num_to_undo: int) -> list:
         """Remove the last N user/assistant exchanges from a session's history."""

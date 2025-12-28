@@ -4,8 +4,8 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional, Union
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Optional, Union, List
 
 import discord
 
@@ -22,7 +22,8 @@ class ChatMessage:
     role: str
     content: str
     author_id: Optional[int] = None
-    message_id: Optional[str] = None
+    author_name: Optional[str] = None
+    message_ids: List[str] = field(default_factory=list)
     # For Gemini, content is stored in 'parts'
     parts: Optional[list[dict[str, str]]] = None
 

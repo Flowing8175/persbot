@@ -107,13 +107,6 @@ class AssistantCog(commands.Cog):
 
         # We need the channel ID. 'channel' can be TextChannel, DMChannel, etc.
         if hasattr(channel, 'id'):
-            # Interrupt current sending if any (Break-Cut Mode)
-            if self.config.break_cut_mode and channel.id in self.sending_tasks:
-                task = self.sending_tasks[channel.id]
-                if not task.done():
-                    logger.debug(f"Typing detected in channel {channel.id}. Interrupting sending.")
-                    task.cancel()
-            
             # If Break-Cut Mode is OFF, use the old "Extend Wait" logic.
             # If ON, we do NOT extend wait (user request: "delete user input wait").
             if not self.config.break_cut_mode:
@@ -195,16 +188,20 @@ class AssistantCog(commands.Cog):
         assistant_role = self.llm_service.get_assistant_role_name()
 
         user_content = ""
-        assistant_message_id = None
-
-        # Process removed messages to find content and ID
+        # Process removed messages to find content and IDs
         # Removed messages are chronological. Expect [User, Assistant] usually.
         for msg in removed_messages:
             if msg.role == user_role:
                 user_content = msg.content
             elif msg.role == assistant_role:
-                if msg.message_id:
-                    assistant_message_id = msg.message_id
+                if hasattr(msg, 'message_ids') and msg.message_ids:
+                    # Collect all message IDs for deletion
+                    for mid in msg.message_ids:
+                        try:
+                            old_msg = await ctx.channel.fetch_message(int(mid))
+                            await old_msg.delete()
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            pass
 
         if not user_content:
             await ctx.send("❌ 재시도할 사용자 메시지를 찾을 수 없습니다.")
@@ -223,21 +220,8 @@ class AssistantCog(commands.Cog):
             )
 
             if reply and reply.text:
-                # Try to edit the old message if it exists
-                edited = False
-                if assistant_message_id:
-                    try:
-                        old_message = await ctx.channel.fetch_message(int(assistant_message_id))
-                        await old_message.edit(content=reply.text)
-                        # Link the old message ID to the new session state
-                        self.session_manager.link_message_to_session(str(old_message.id), session_key)
-                        edited = True
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                        logger.warning("Could not edit message %s during retry.", assistant_message_id)
-
-                # If editing failed or wasn't possible, send a new message.
-                if not edited:
-                    await self._send_llm_reply(ctx.message, reply)
+                # We always send a new reply for retry now, as old ones were deleted
+                await self._send_llm_reply(ctx.message, reply)
             else:
                  await ctx.send(GENERIC_ERROR_MESSAGE)
 
@@ -321,3 +305,34 @@ class AssistantCog(commands.Cog):
         # We only gated handle_typing in on_typing.
         
         await ctx.reply(f"✂️ 끊어치기 모드가 **{status}** 상태로 변경되었습니다.")
+
+    @commands.command(name='생각', aliases=['think'])
+    @commands.has_permissions(manage_guild=True)
+    async def set_thinking_budget(self, ctx: commands.Context, value: Optional[str] = None):
+        """Gemini Thinking Budget를 설정합니다. (!생각 [숫자|off])"""
+        if value is None:
+            current = getattr(self.config, 'thinking_budget', None)
+            status = f"현재 Thinking Budget: **{current or 'OFF'}**"
+            await ctx.reply(f"🧠 {status}", mention_author=False)
+            return
+
+        cleaned = value.lower().strip()
+        if cleaned == 'off':
+            target_value = None
+        else:
+            try:
+                target_value = int(cleaned)
+                if target_value <= 0:
+                     raise ValueError
+            except ValueError:
+                await ctx.reply("❌ 올바른 숫자(양수) 또는 'off'를 입력해 주세요.", mention_author=False)
+                return
+
+        try:
+            self.llm_service.update_parameters(thinking_budget=target_value)
+            await ctx.message.add_reaction("✅")
+            status_text = f"**{target_value}** tokens" if target_value else "**OFF**"
+            await ctx.reply(f"✅ Thinking Budget가 {status_text}로 설정되었습니다.", mention_author=False)
+        except Exception as e:
+            logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
+            await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)

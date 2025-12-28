@@ -87,13 +87,16 @@ class LLMService:
     def update_parameters(
         self,
         temperature: Optional[float] = None,
-        top_p: Optional[float] = None
+        top_p: Optional[float] = None,
+        thinking_budget: Optional[Optional[int]] = -1 # Special default for "not provided"
     ) -> None:
         """Update model parameters and reload backends."""
         if temperature is not None:
             self.config.temperature = temperature
         if top_p is not None:
             self.config.top_p = top_p
+        if thinking_budget != -1:
+            self.config.thinking_budget = thinking_budget
 
         # Reload backends to pick up new config
         if hasattr(self.assistant_backend, 'reload_parameters'):
@@ -104,4 +107,5 @@ class LLMService:
             hasattr(self.summarizer_backend, 'reload_parameters')):
             self.summarizer_backend.reload_parameters()
 
-        logger.info("Updated parameters: temperature=%s, top_p=%s", self.config.temperature, self.config.top_p)
+        logger.info("Updated parameters: temperature=%s, top_p=%s, thinking_budget=%s", 
+                    self.config.temperature, self.config.top_p, self.config.thinking_budget)

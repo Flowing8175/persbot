@@ -27,7 +27,7 @@ class _ChatSession:
         # We will manage the history manually to include author_id
         self.history: list[ChatMessage] = []
 
-    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
         # Reconstruct history for the API call
         api_history = []
         for msg in self.history:
@@ -43,7 +43,8 @@ class _ChatSession:
             content=user_message,
             parts=[{"text": user_message}],
             author_id=author_id,
-            message_id=message_id
+            author_name=author_name,
+            message_ids=[message_id] if message_id else []
         ))
         # Assuming the response text is in response.text
         self.history.append(ChatMessage(
@@ -145,6 +146,12 @@ class GeminiService(BaseLLMService):
             # Standard mode: pass system_instruction directly
             config_kwargs["system_instruction"] = system_instruction
 
+        if getattr(self.config, 'thinking_budget', None):
+            config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
+                include_thoughts=True,
+                thinking_budget=self.config.thinking_budget
+            )
+
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
 
@@ -196,7 +203,15 @@ class GeminiService(BaseLLMService):
                 for msg in history[-5:]:
                     role = msg.role
                     texts = [part.get('text', '') for part in msg.parts]
-                    formatted_history.append(f"{role} (author: {msg.author_id}): {' '.join(texts)}")
+                    content = ' '.join(texts)
+                    
+                    # Clean up content display if it starts with "Name: "
+                    author_label = str(msg.author_name or msg.author_id or "bot")
+                    display_content = content
+                    if msg.author_name and content.startswith(f"{msg.author_name}:"):
+                        display_content = content[len(msg.author_name)+1:].strip()
+                    
+                    formatted_history.append(f"{role} (author:{author_label}) {display_content}")
                 if formatted_history:
                     logger.debug("[RAW API REQUEST] Recent history:\n" + "\n".join(formatted_history))
         except Exception as e:
@@ -361,10 +376,11 @@ class GeminiService(BaseLLMService):
         self._log_raw_request(user_message, chat_session)
 
         author_id = discord_message.author.id
+        author_name = getattr(discord_message.author, 'name', str(author_id))
         message_id = str(discord_message.id)
-
+ 
         def api_call():
-            return chat_session.send_message(user_message, author_id=author_id, message_id=message_id)
+            return chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id)
 
         response_obj = await self.execute_with_retry(
             api_call,
