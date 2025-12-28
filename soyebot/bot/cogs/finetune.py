@@ -12,7 +12,7 @@ class FineTuneCog(commands.Cog):
         self.bot = bot
         self.config = config
         self.service = FineTuneService(config)
-        self.finetune_task.start()
+        # self.finetune_task.start()
 
     def cog_unload(self):
         self.finetune_task.cancel()

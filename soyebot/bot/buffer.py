@@ -69,17 +69,34 @@ class MessageBuffer:
         try:
             await asyncio.sleep(delay)
 
-            # Pop the buffer and task *before* calling the callback
+            # Pop the buffer, but NOT the task.
+            # We want to keep the task in self.tasks so that if a new message comes in
+            # while we are awaiting the callback (which might take time for LLM generation),
+            # the new add_message call will find this task and cancel it.
             messages = self.buffers.pop(channel_id, [])
-            self.tasks.pop(channel_id, None)
+            
+            # Note: We do NOT pop the task here anymore.
+            # self.tasks.pop(channel_id, None)
 
             if messages:
                 logger.info(f"Processing batch of {len(messages)} messages for channel {channel_id} (waited {delay:.1f}s)")
                 await callback(messages)
+
         except asyncio.CancelledError:
             # Task was cancelled (new message arrived or typing detected).
-            pass
+            logger.info(f"Message processing cancelled for channel {channel_id} (new message or typing)")
+            raise  # Re-raise to ensure proper cancellation propagation if needed
+
         except Exception as e:
             logger.error(f"Error processing message buffer for channel {channel_id}: {e}", exc_info=True)
-            self.buffers.pop(channel_id, None)
-            self.tasks.pop(channel_id, None)
+            # In case of error, we should probably clear the buffer to avoid stuck messages?
+            # But the buffer was already popped above.
+            
+        finally:
+            # Cleanup the task from the dictionary ONLY if it is THIS task.
+            # It's possible that this task was cancelled, and a NEW task was already put into self.tasks.
+            # We don't want to delete the new task.
+            current_task = asyncio.current_task()
+            if self.tasks.get(channel_id) == current_task:
+                self.tasks.pop(channel_id, None)
+
