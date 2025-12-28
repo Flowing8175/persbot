@@ -134,7 +134,6 @@ class BaseLLMService(ABC):
                         timeout=self.config.api_request_timeout,
                     )
                 except asyncio.CancelledError:
-                    logger.info("API call cancelled via asyncio.CancelledError")
                     raise
                 except Exception as e:
                     # Reraise to let outer try/except handle retry logic

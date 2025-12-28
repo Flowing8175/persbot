@@ -1,4 +1,4 @@
-"Gemini API service for SoyeBot."
+"""Gemini API service for SoyeBot."""
 
 import datetime
 import hashlib
@@ -21,22 +21,38 @@ logger = logging.getLogger(__name__)
 
 
 class _ChatSession:
-    """A wrapper for a Gemini chat session to manage history with author tracking."""
-    def __init__(self, underlying_chat):
-        self._chat = underlying_chat
-        # We will manage the history manually to include author_id
+    """A lightweight wrapper to manage manual history for stateless requests."""
+    def __init__(self):
+        # We will manage the history manually
         self.history: list[ChatMessage] = []
 
-    def generate_response(self, user_message: str):
-        """Generate a response WITHOUT updating history immediately."""
-        # Reconstruct history for the API call
-        api_history = []
+    def get_api_contents(self, current_user_message: str) -> list[genai_types.Content]:
+        """Construct the 'contents' list for a generate_content call."""
+        contents = []
+        
+        # Add history
         for msg in self.history:
-            api_history.append({"role": msg.role, "parts": msg.parts})
-
-        self._chat.history = api_history
-        response = self._chat.send_message(user_message)
-        return response
+            # Each 'msg.parts' is a list of dicts/Parts.
+            # Convert to genai_types.Content
+            parts_objs = []
+            if msg.parts:
+                for part in msg.parts:
+                    if isinstance(part, dict) and "text" in part:
+                        parts_objs.append(genai_types.Part(text=part["text"]))
+                    else:
+                        # Fallback or pass raw if compatible
+                        pass
+            
+            if parts_objs:
+                contents.append(genai_types.Content(role=msg.role, parts=parts_objs))
+        
+        # Add current message
+        contents.append(genai_types.Content(
+            role="user", 
+            parts=[genai_types.Part(text=current_user_message)]
+        ))
+        
+        return contents
 
     def add_exchange(self, user_message: str, response_text: str, author_id: int, message_id: Optional[str] = None):
         """Manually add the user message and response to history."""
@@ -55,11 +71,6 @@ class _ChatSession:
             parts=[{"text": response_text}],
             author_id=None
         ))
-        
-        # Sync underlying history (for next call)
-        self._chat.history = [
-            {"role": msg.role, "parts": msg.parts} for msg in self.history
-        ]
 
 
 class _CachedModel:
@@ -75,7 +86,7 @@ class _CachedModel:
         self._model_name = model_name
         self._config = config
 
-    def generate_content(self, contents: str):
+    def generate_content(self, contents: Any):
         return self._client.models.generate_content(
             model=self._model_name,
             contents=contents,
@@ -83,11 +94,8 @@ class _CachedModel:
         )
 
     def start_chat(self):
-        underlying_chat = self._client.chats.create(
-            model=self._model_name,
-            config=self._config,
-        )
-        return _ChatSession(underlying_chat)
+        # Return our new stateless session wrapper
+        return _ChatSession()
 
 
 class GeminiService(BaseLLMService):
@@ -154,7 +162,7 @@ class GeminiService(BaseLLMService):
         else:
             # Standard mode: pass system_instruction directly
             config_kwargs["system_instruction"] = system_instruction
-
+            
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
 
@@ -203,10 +211,15 @@ class GeminiService(BaseLLMService):
             if chat_session and hasattr(chat_session, 'history'):
                 history = chat_session.history
                 formatted_history = []
+                # Simple dump of last few messages
                 for msg in history[-5:]:
                     role = msg.role
-                    texts = [part.get('text', '') for part in msg.parts]
-                    formatted_history.append(f"{role} (author: {msg.author_id}): {' '.join(texts)}")
+                    text_content = ""
+                    if msg.parts:
+                        for p in msg.parts:
+                            if isinstance(p, dict) and 'text' in p:
+                                text_content += p['text']
+                    formatted_history.append(f"{role} (author: {msg.author_id}): {text_content[:50]}")
                 if formatted_history:
                     logger.debug("[RAW API REQUEST] Recent history:\n" + "\n".join(formatted_history))
         except Exception as e:
@@ -282,13 +295,7 @@ class GeminiService(BaseLLMService):
         ttl_seconds = ttl_minutes * 60
 
         # 3. Search for existing cache
-        # We need to iterate because list() returns an iterator
         try:
-            # Note: In a production environment with many caches, filtering by name is better.
-            # But the SDK might not support filtering by display_name easily in list().
-            # We'll iterate through recent caches or just try to create and catch error?
-            # Creating with same name is not unique. Resource names are unique IDs.
-            # We'll use display_name to find ours.
             for cache in self.client.caches.list():
                 if cache.display_name == cache_display_name:
                     logger.info("Found existing Gemini context cache: %s (%s)", cache.name, cache.display_name)
@@ -302,8 +309,6 @@ class GeminiService(BaseLLMService):
                         logger.info("Refreshed TTL for cache: %s", cache.name)
                     except Exception as update_err:
                         logger.warning("Failed to refresh TTL for cache %s: %s", cache.name, update_err)
-                        # If update fails, we still return the name, risking expiry.
-                        # Ideally we might want to delete and recreate, but let's assume it's transient
                         pass
 
                     return cache.name
@@ -366,36 +371,41 @@ class GeminiService(BaseLLMService):
 
     async def generate_chat_response(
         self,
-        chat_session,
+        chat_session: _ChatSession,
         user_message: str,
         discord_message: discord.Message,
+        use_summarizer_backend: bool = False,
     ) -> Optional[Tuple[str, Any]]:
-        """Generate chat response."""
-        self._log_raw_request(user_message, chat_session)
-
-        # Remove these lines as they are no longer used here
-        # author_id = discord_message.author.id
-        # message_id = str(discord_message.id)
+        """Generate chat response using stateless generate_content."""
+        
+        # Determine model
+        model = self.assistant_model
+        if use_summarizer_backend:
+             model = self.summary_model
 
         def api_call():
-             # Call the new generate_response, NOT send_message
-            return chat_session.generate_response(user_message)
+            # STATELESS CALL:
+            # 1. Get full history contents
+            contents = chat_session.get_api_contents(user_message)
+            # 2. Call generate_content
+            return model.generate_content(contents)
 
-        response_obj = await self.execute_with_retry(
-            api_call,
-            "응답 생성",
-            return_full_response=True,
-            discord_message=discord_message,
-        )
+        try:
+            response_obj = await self.execute_with_retry(
+                api_call,
+                "응답 생성",
+                return_full_response=True,
+                discord_message=discord_message,
+            )
+        except asyncio.CancelledError:
+             raise
 
         if response_obj is None:
             return None
         
-        # NOTE: Only update history if we successfully got a response (not None)
-        # This prevents "cancelled" requests (which return None due to exception)
-        # from polluting the history.
         response_text = self._extract_text_from_response(response_obj)
         
+        # Only update history upon SUCCESS
         chat_session.add_exchange(
             user_message=user_message,
             response_text=response_text,
@@ -404,4 +414,3 @@ class GeminiService(BaseLLMService):
         )
 
         return (response_text, response_obj)
-

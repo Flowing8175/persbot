@@ -87,6 +87,9 @@ class AssistantCog(commands.Cog):
         metrics = get_metrics()
 
         try:
+            current_task_id = id(asyncio.current_task())
+            # logger.info(f"[ASSISTANT] _process_batch START for Task {current_task_id}. Messages: {len(messages)}")
+            
             # Combine contents
             combined_content = []
             for msg in messages:
@@ -114,12 +117,14 @@ class AssistantCog(commands.Cog):
                 if not resolution:
                     return
 
+                logger.info(f"[ASSISTANT] Task {current_task_id} calling create_chat_reply...")
                 reply = await create_chat_reply(
                     primary_message,
                     resolution=resolution,
                     llm_service=self.llm_service,
                     session_manager=self.session_manager,
                 )
+                logger.info(f"[ASSISTANT] Task {current_task_id} create_chat_reply returned.")
 
                 if reply:
                     # We reply to the last message in the batch so the user sees it at the bottom
@@ -129,7 +134,11 @@ class AssistantCog(commands.Cog):
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
             metrics.increment_counter('messages_processed')
+            logger.info(f"[ASSISTANT] _process_batch END for Task {current_task_id} (Success)")
 
+        except asyncio.CancelledError:
+            # logger.info(f"[ASSISTANT] _process_batch Task {id(asyncio.current_task())} CANCELLED. Stopping.")
+            raise
         except Exception as e:
             logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
             await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
