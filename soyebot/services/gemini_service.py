@@ -176,9 +176,19 @@ class GeminiService(BaseLLMService):
             config_kwargs["system_instruction"] = system_instruction
 
         if getattr(self.config, 'thinking_budget', None):
+            thinking_budget_val = self.config.thinking_budget
+            # If set to -1 (auto), we don't pass thinking_budget,
+            # effectively letting the model decide (standard behavior for dynamic budget if supported),
+            # OR we pass it if the API supports -1 explicitly.
+            # Based on docs: "To use dynamic budget through the API, set thinking_budget to -1."
+            # However, type checking might complain if not handled carefully,
+            # but usually it's an int.
+            # If -1 causes issues, we might need to omit it.
+            # Let's assume -1 is valid as per docs.
+
             config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
                 include_thoughts=True,
-                thinking_budget=self.config.thinking_budget
+                thinking_budget=thinking_budget_val
             )
 
         config = genai_types.GenerateContentConfig(**config_kwargs)

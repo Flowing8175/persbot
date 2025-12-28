@@ -309,29 +309,47 @@ class AssistantCog(commands.Cog):
     @commands.command(name='생각', aliases=['think'])
     @commands.has_permissions(manage_guild=True)
     async def set_thinking_budget(self, ctx: commands.Context, value: Optional[str] = None):
-        """Gemini Thinking Budget를 설정합니다. (!생각 [숫자|off])"""
+        """Gemini Thinking Budget를 설정합니다. (!생각 [숫자|auto|off])"""
         if value is None:
             current = getattr(self.config, 'thinking_budget', None)
-            status = f"현재 Thinking Budget: **{current or 'OFF'}**"
+            if current is None:
+                display = 'OFF'
+            elif current == -1:
+                display = 'AUTO'
+            else:
+                display = str(current)
+            status = f"현재 Thinking Budget: **{display}**"
             await ctx.reply(f"🧠 {status}", mention_author=False)
             return
 
         cleaned = value.lower().strip()
+        target_value: Optional[int] = None
+
         if cleaned == 'off':
             target_value = None
+        elif cleaned == 'auto':
+            target_value = -1 # Special value for dynamic budget
         else:
             try:
                 target_value = int(cleaned)
-                if target_value <= 0:
-                     raise ValueError
+                if not (512 <= target_value <= 32768):
+                    await ctx.reply("❌ Thinking Budget은 512에서 32768 사이여야 합니다.", mention_author=False)
+                    return
             except ValueError:
-                await ctx.reply("❌ 올바른 숫자(양수) 또는 'off'를 입력해 주세요.", mention_author=False)
+                await ctx.reply("❌ 올바른 숫자(512~32768), 'auto', 또는 'off'를 입력해 주세요.", mention_author=False)
                 return
 
         try:
             self.llm_service.update_parameters(thinking_budget=target_value)
             await ctx.message.add_reaction("✅")
-            status_text = f"**{target_value}** tokens" if target_value else "**OFF**"
+
+            if target_value is None:
+                status_text = "**OFF**"
+            elif target_value == -1:
+                status_text = "**AUTO**"
+            else:
+                status_text = f"**{target_value}** tokens"
+
             await ctx.reply(f"✅ Thinking Budget가 {status_text}로 설정되었습니다.", mention_author=False)
         except Exception as e:
             logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
