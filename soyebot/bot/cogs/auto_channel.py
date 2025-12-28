@@ -4,10 +4,12 @@ import logging
 import time
 from typing import Optional
 
+import asyncio
+
 import discord
 from discord.ext import commands
 
-from soyebot.bot.chat_handler import create_chat_reply, resolve_session_for_message
+from soyebot.bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
 from soyebot.bot.session import SessionManager
 from soyebot.bot.buffer import MessageBuffer
 from soyebot.config import AppConfig
@@ -32,16 +34,36 @@ class AutoChannelCog(commands.Cog):
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
+        self.sending_tasks: dict[int, asyncio.Task] = {}
         self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
-    async def _send_auto_reply(self, message: discord.Message, reply_text: str, session_key: str) -> None:
-        if not reply_text:
+    async def _send_auto_reply(self, message: discord.Message, reply: ChatReply) -> None:
+        if not reply.text:
             logger.debug("LLM returned no text response for the auto-reply message.")
             return
 
-        sent_message = await message.channel.send(reply_text)
-        if sent_message:
-            self.session_manager.link_message_to_session(str(sent_message.id), session_key)
+        # If Break-Cut Mode is OFF, send normally
+        if not self.config.break_cut_mode:
+            sent_message = await message.channel.send(reply.text)
+            if sent_message:
+                self.session_manager.link_message_to_session(str(sent_message.id), reply.session_key)
+            return
+
+        # If Break-Cut Mode is ON, use shared helper
+        channel_id = message.channel.id
+        if channel_id in self.sending_tasks and not self.sending_tasks[channel_id].done():
+            self.sending_tasks[channel_id].cancel()
+
+        task = asyncio.create_task(
+            send_split_response(message.channel, reply, self.session_manager)
+        )
+        self.sending_tasks[channel_id] = task
+
+        def _cleanup(t):
+            if self.sending_tasks.get(channel_id) == t:
+                self.sending_tasks.pop(channel_id, None)
+        
+        task.add_done_callback(_cleanup)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -61,7 +83,37 @@ class AutoChannelCog(commands.Cog):
         if message.content and message.content.lstrip().startswith("\\"):
             return
 
+        # Interrupt current sending if any (Break-Cut Mode)
+        if self.config.break_cut_mode and message.channel.id in self.sending_tasks:
+            task = self.sending_tasks[message.channel.id]
+            if not task.done():
+                logger.info(f"New message from {message.author} interrupted auto-reply in channel {message.channel.id}")
+                task.cancel()
+
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+
+    @commands.Cog.listener()
+    async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
+        """Interrupt auto-reply if user starts typing."""
+        if user.bot:
+            return
+        if not hasattr(channel, 'id'):
+            return
+        
+        # Only care if this is an auto-reply channel
+        if channel.id not in self.config.auto_reply_channel_ids:
+            return
+
+        # Interrupt current sending if any (Break-Cut Mode)
+        if self.config.break_cut_mode and channel.id in self.sending_tasks:
+            task = self.sending_tasks[channel.id]
+            if not task.done():
+                logger.debug(f"Typing detected in channel {channel.id}. Interrupting auto-reply.")
+                task.cancel()
+
+        # If Break-Cut Mode is OFF, use handle_typing to extend buffer
+        if not self.config.break_cut_mode:
+            self.message_buffer.handle_typing(channel.id, self._process_batch)
 
     @commands.command(name="@", aliases=["undo"])
     async def undo_command(self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"):
@@ -192,7 +244,7 @@ class AutoChannelCog(commands.Cog):
                 )
 
                 if reply:
-                    await self._send_auto_reply(primary_message, reply.text, reply.session_key)
+                    await self._send_auto_reply(primary_message, reply)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)

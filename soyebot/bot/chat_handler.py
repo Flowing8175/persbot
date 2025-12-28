@@ -7,10 +7,14 @@ from typing import Optional
 
 import discord
 
+import asyncio
+import logging
 from soyebot.bot.session import SessionManager, ResolvedSession
 from soyebot.services.llm_service import LLMService
 
-__all__ = ["ChatReply", "resolve_session_for_message", "create_chat_reply"]
+logger = logging.getLogger(__name__)
+
+__all__ = ["ChatReply", "resolve_session_for_message", "create_chat_reply", "send_split_response"]
 
 
 @dataclass(frozen=True)
@@ -102,3 +106,35 @@ async def create_chat_reply(
 
     response_text, response_obj = response_result
     return ChatReply(text=response_text or "", session_key=session_key, response=response_obj)
+
+
+async def send_split_response(
+    channel: discord.abc.Messageable, 
+    reply: ChatReply, 
+    session_manager: SessionManager
+):
+    """
+    Shared utility to split and send a response line by line.
+    Handles cancellation by undoing the last exchange in session history.
+    """
+    try:
+        lines = reply.text.split('\n')
+        for line in lines:
+            if not line.strip():
+                continue
+
+            # Calculate delay: proportional to length, clamped 0.5s - 1.7s
+            delay = max(0.5, min(1.7, len(line) * 0.05))
+
+            # Send typing status while waiting
+            async with channel.typing():
+                await asyncio.sleep(delay)
+                sent_msg = await channel.send(line)
+                
+                # Link message to session
+                session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
+
+    except asyncio.CancelledError:
+        logger.info(f"Sending interrupted for channel {channel.id}. Undoing last exchange.")
+        session_manager.undo_last_exchanges(reply.session_key, 1)
+        raise  # Re-raise to signal cancellation

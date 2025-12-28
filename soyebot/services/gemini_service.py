@@ -128,26 +128,19 @@ class GeminiService(BaseLLMService):
             else:
                 return model
 
-        # Check for explicit caching (for large prompts)
-        cached_content_name = self._ensure_cached_content(model_name, system_instruction)
+        # Check logic for caching (token count check)
+        # If valid for caching, this returns the cache name (resource ID)
+        cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction)
 
         config_kwargs = {
             "temperature": getattr(self.config, 'temperature', 1.0),
             "top_p": getattr(self.config, 'top_p', 1.0),
         }
 
-        expires_at = None
-        if cached_content_name:
-            # If using cache, system_instruction is already embedded in the cache resource
-            config_kwargs["cached_content"] = cached_content_name
-
-            # Set local expiration slightly earlier than the actual TTL to ensure we refresh safely
-            ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
-            # Use 90% of TTL or subtract a buffer (e.g. 5 mins) to be safe
-            buffer_minutes = 5
-            safe_ttl = max(1, ttl_minutes - buffer_minutes)
-            expires_at = now + datetime.timedelta(minutes=safe_ttl)
-            logger.debug("Local cache set to expire at %s", expires_at)
+        if cache_name:
+            # Use the cached content
+            config_kwargs["cached_content"] = cache_name
+            logger.debug("Using cached content: %s", cache_name)
         else:
             # Standard mode: pass system_instruction directly
             config_kwargs["system_instruction"] = system_instruction
@@ -155,7 +148,7 @@ class GeminiService(BaseLLMService):
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
 
-        self._model_cache[key] = (model, expires_at)
+        self._model_cache[key] = (model, cache_expiration)
         return model
 
     def create_assistant_model(self, system_instruction: str) -> _CachedModel:
@@ -246,13 +239,13 @@ class GeminiService(BaseLLMService):
         content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
         return f"soyebot-persona-{content_hash[:10]}"
 
-    def _ensure_cached_content(self, model_name: str, system_instruction: str) -> Optional[str]:
+    def _get_gemini_cache(self, model_name: str, system_instruction: str) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
-        Check if system instruction qualifies for caching and return cache name.
-        Creates the cache if it doesn't exist.
+        Attempts to find or create a Gemini cache for the given system instruction.
+        Returns: (cache_name, local_expiration_datetime)
         """
         if not system_instruction:
-            return None
+            return None, None
 
         # 1. Check token count
         try:
@@ -263,7 +256,7 @@ class GeminiService(BaseLLMService):
             token_count = count_result.total_tokens
         except Exception as e:
             logger.warning("Failed to count tokens for caching check: %s", e)
-            return None
+            return None, None
 
         min_tokens = getattr(self.config, 'gemini_cache_min_tokens', 32768)
         if token_count < min_tokens:
@@ -271,26 +264,26 @@ class GeminiService(BaseLLMService):
                 "System instruction too short for caching (%d < %d tokens). Using standard context.",
                 token_count, min_tokens
             )
-            return None
+            return None, None
 
-        # 2. Prepare cache configuration
+        # 2. Config setup
         cache_display_name = self._get_cache_key(system_instruction)
         ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
         ttl_seconds = ttl_minutes * 60
+        
+        # Calculate local expiration (safe buffer)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        safe_ttl_minutes = max(1, ttl_minutes - 5) # Buffer 5 minutes
+        local_expiration = now + datetime.timedelta(minutes=safe_ttl_minutes)
 
         # 3. Search for existing cache
-        # We need to iterate because list() returns an iterator
         try:
-            # Note: In a production environment with many caches, filtering by name is better.
-            # But the SDK might not support filtering by display_name easily in list().
-            # We'll iterate through recent caches or just try to create and catch error?
-            # Creating with same name is not unique. Resource names are unique IDs.
-            # We'll use display_name to find ours.
+            # We iterate to find a cache with our unique display name
             for cache in self.client.caches.list():
                 if cache.display_name == cache_display_name:
-                    logger.info("Found existing Gemini context cache: %s (%s)", cache.name, cache.display_name)
-
-                    # Refresh the TTL of the existing cache to match our new local session
+                    logger.info("Found existing Gemini context cache: %s", cache.name)
+                    
+                    # Refresh TTL
                     try:
                         self.client.caches.update(
                             name=cache.name,
@@ -298,38 +291,35 @@ class GeminiService(BaseLLMService):
                         )
                         logger.info("Refreshed TTL for cache: %s", cache.name)
                     except Exception as update_err:
-                        logger.warning("Failed to refresh TTL for cache %s: %s", cache.name, update_err)
-                        # If update fails, we still return the name, risking expiry.
-                        # Ideally we might want to delete and recreate, but let's assume it's transient
-                        pass
+                        logger.warning("Failed to refresh TTL: %s", update_err)
+                    
+                    return cache.name, local_expiration
 
-                    return cache.name
         except Exception as e:
             logger.warning("Error listing caches: %s", e)
 
-        # 4. Create new cache
+        # 4. Create new cache using the user's requested style
         try:
-            logger.info(
-                "Creating new Gemini context cache '%s' (%d tokens, TTL %dm)",
-                cache_display_name, token_count, ttl_minutes
-            )
-
-            # Use 'contents' list wrapper for system instruction
+            logger.info("Creating new Gemini cache '%s' (TTL: %ds)...", cache_display_name, ttl_seconds)
+            
+            # Using contents list wrapper as per types
             contents = [genai_types.Content(parts=[genai_types.Part(text=system_instruction)])]
 
-            cached_content = self.client.caches.create(
+            cache = self.client.caches.create(
                 model=model_name,
                 config=genai_types.CreateCachedContentConfig(
                     display_name=cache_display_name,
                     contents=contents,
-                    ttl=f"{ttl_seconds}s"
+                    ttl=f"{ttl_seconds}s",
                 )
             )
-            logger.info("Successfully created cache: %s", cached_content.name)
-            return cached_content.name
+            
+            logger.info("Successfully created cache: %s", cache.name)
+            return cache.name, local_expiration
+
         except Exception as e:
             logger.error("Failed to create Gemini context cache: %s", e)
-            return None
+            return None, None
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text content from Gemini response."""

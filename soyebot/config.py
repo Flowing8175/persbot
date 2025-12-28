@@ -95,7 +95,8 @@ class AppConfig:
     # --- Session Management ---
     session_cache_limit: int = 200
     session_inactive_minutes: int = 30
-    message_buffer_delay: float = 2.5
+    message_buffer_delay: float = 0.1
+    break_cut_mode: bool = True
 
 def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
