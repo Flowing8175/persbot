@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -197,3 +198,20 @@ class BaseLLMService(ABC):
                 pass
 
         return None
+
+
+def clean_thought_content(text: str) -> str:
+    """
+    Remove content within <think>...</think> and <thought>...</thought> tags from the text.
+    Handles multiline content within tags.
+    """
+    if not text:
+        return text
+
+    # Remove <think>...</think> (including multiline)
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+
+    # Remove <thought>...</thought> (including multiline)
+    text = re.sub(r'<thought>.*?</thought>', '', text, flags=re.DOTALL)
+
+    return text.strip()

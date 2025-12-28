@@ -15,7 +15,7 @@ from google.genai.errors import ClientError
 
 from soyebot.config import AppConfig
 from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from soyebot.services.base import BaseLLMService, ChatMessage
+from soyebot.services.base import BaseLLMService, ChatMessage, clean_thought_content
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +47,13 @@ class _ChatSession:
             message_ids=[message_id] if message_id else []
         ))
         # Assuming the response text is in response.text
+        # Clean the text to remove thought tokens before storing in history
+        cleaned_text = clean_thought_content(response.text)
+
         self.history.append(ChatMessage(
             role="model",
-            content=response.text,
-            parts=[{"text": response.text}],
+            content=cleaned_text,
+            parts=[{"text": cleaned_text}],
             author_id=None # Bot messages have no author
         ))
 
@@ -348,7 +351,8 @@ class GeminiService(BaseLLMService):
                                 text_parts.append(part.text)
 
             if text_parts:
-                return ' '.join(text_parts).strip()
+                raw_text = ' '.join(text_parts)
+                return clean_thought_content(raw_text)
 
             return ""
 

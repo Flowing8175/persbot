@@ -11,7 +11,7 @@ from openai import OpenAI, RateLimitError
 
 from soyebot.config import AppConfig
 from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
-from soyebot.services.base import BaseLLMService, ChatMessage
+from soyebot.services.base import BaseLLMService, ChatMessage, clean_thought_content
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,8 @@ class ResponseChatSession:
         )
 
         message_content = self._text_extractor(response)
+        # Clean thought tokens
+        message_content = clean_thought_content(message_content)
         self._append_history("assistant", message_content)
         return message_content, response
 
@@ -167,6 +169,9 @@ class ChatCompletionSession:
         else:
              # Fallback to the service's text extractor if standard structure is missing
              message_content = self._text_extractor(response)
+
+        # Clean thought tokens
+        message_content = clean_thought_content(message_content)
 
         self._append_history("assistant", message_content)
         return message_content, response
@@ -356,7 +361,7 @@ class OpenAIService(BaseLLMService):
             for choice in choices:
                 message = getattr(choice, 'message', None)
                 if message and getattr(message, 'content', None):
-                    return str(message.content).strip()
+                    return clean_thought_content(str(message.content).strip())
         except Exception:
             logger.exception("Failed to extract text from OpenAI response")
 
@@ -396,7 +401,8 @@ class OpenAIService(BaseLLMService):
                         if normalized and normalized not in seen_fragments:
                             text_fragments.append(normalized)
                             seen_fragments.add(normalized)
-            return "\n".join(text_fragments).strip()
+            raw_text = "\n".join(text_fragments).strip()
+            return clean_thought_content(raw_text)
         except Exception:
             logger.exception("Failed to extract text from response output")
         return ""
