@@ -27,17 +27,20 @@ class _ChatSession:
         # We will manage the history manually to include author_id
         self.history: list[ChatMessage] = []
 
-    def send_message(self, user_message: str, author_id: int, message_id: Optional[str] = None):
+    def generate_response(self, user_message: str):
+        """Generate a response WITHOUT updating history immediately."""
         # Reconstruct history for the API call
         api_history = []
         for msg in self.history:
             api_history.append({"role": msg.role, "parts": msg.parts})
 
         self._chat.history = api_history
-
         response = self._chat.send_message(user_message)
+        return response
 
-        # After sending, save the user message and response to our custom history
+    def add_exchange(self, user_message: str, response_text: str, author_id: int, message_id: Optional[str] = None):
+        """Manually add the user message and response to history."""
+        # User message
         self.history.append(ChatMessage(
             role="user",
             content=user_message,
@@ -45,20 +48,19 @@ class _ChatSession:
             author_id=author_id,
             message_id=message_id
         ))
-        # Assuming the response text is in response.text
+        # Model response
         self.history.append(ChatMessage(
             role="model",
-            content=response.text,
-            parts=[{"text": response.text}],
-            author_id=None # Bot messages have no author
+            content=response_text,
+            parts=[{"text": response_text}],
+            author_id=None
         ))
-
-        # Keep the underlying history in sync, though we are the source of truth
+        
+        # Sync underlying history (for next call)
         self._chat.history = [
             {"role": msg.role, "parts": msg.parts} for msg in self.history
         ]
 
-        return response
 
 class _CachedModel:
     """Lightweight wrapper that mimics the old GenerativeModel interface."""
@@ -147,7 +149,8 @@ class GeminiService(BaseLLMService):
             buffer_minutes = 5
             safe_ttl = max(1, ttl_minutes - buffer_minutes)
             expires_at = now + datetime.timedelta(minutes=safe_ttl)
-            logger.debug("Local cache set to expire at %s", expires_at)
+            expires_at_logger = expires_at.strftime('%Y-%m-%d %H:%M:%S')
+            logger.debug("Local cache set to expire at %s", expires_at_logger)
         else:
             # Standard mode: pass system_instruction directly
             config_kwargs["system_instruction"] = system_instruction
@@ -370,11 +373,13 @@ class GeminiService(BaseLLMService):
         """Generate chat response."""
         self._log_raw_request(user_message, chat_session)
 
-        author_id = discord_message.author.id
-        message_id = str(discord_message.id)
+        # Remove these lines as they are no longer used here
+        # author_id = discord_message.author.id
+        # message_id = str(discord_message.id)
 
         def api_call():
-            return chat_session.send_message(user_message, author_id=author_id, message_id=message_id)
+             # Call the new generate_response, NOT send_message
+            return chat_session.generate_response(user_message)
 
         response_obj = await self.execute_with_retry(
             api_call,
@@ -385,7 +390,18 @@ class GeminiService(BaseLLMService):
 
         if response_obj is None:
             return None
-
+        
+        # NOTE: Only update history if we successfully got a response (not None)
+        # This prevents "cancelled" requests (which return None due to exception)
+        # from polluting the history.
         response_text = self._extract_text_from_response(response_obj)
+        
+        chat_session.add_exchange(
+            user_message=user_message,
+            response_text=response_text,
+            author_id=discord_message.author.id,
+            message_id=str(discord_message.id)
+        )
+
         return (response_text, response_obj)
 
