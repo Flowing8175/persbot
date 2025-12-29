@@ -356,14 +356,11 @@ class GeminiService(BaseLLMService):
         try:
             logger.info("Creating new Gemini cache '%s' (TTL: %ds)...", cache_display_name, ttl_seconds)
             
-            # Using contents list wrapper as per types
-            contents = [genai_types.Content(parts=[genai_types.Part(text=system_instruction)])]
-
             cache = self.client.caches.create(
                 model=model_name,
                 config=genai_types.CreateCachedContentConfig(
                     display_name=cache_display_name,
-                    contents=contents,
+                    system_instruction=system_instruction,
                     ttl=f"{ttl_seconds}s",
                 )
             )
