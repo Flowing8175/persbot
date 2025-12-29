@@ -236,6 +236,10 @@ class SessionManager:
 
             session.chat.history = new_history
 
+            # Force sync if the chat session supports it (e.g. Gemini)
+            if hasattr(session.chat, 'sync_history'):
+                session.chat.sync_history()
+
             logger.info(
                 "Undid last %d exchanges from session %s. New history length: %d",
                 num_to_undo,

@@ -90,6 +90,17 @@ class _ChatSession:
 
         return response
 
+    def sync_history(self) -> None:
+        """Force sync the underlying chat history with our local history."""
+        try:
+            api_history = []
+            for msg in self.history:
+                api_history.append({"role": msg.role, "parts": msg.parts})
+            self._chat.history = api_history
+            logger.debug("Synced Gemini chat history. Length: %d", len(self.history))
+        except Exception as e:
+            logger.error("Failed to sync Gemini history: %s", e)
+
 class _CachedModel:
     """Lightweight wrapper that mimics the old GenerativeModel interface."""
 
