@@ -3,6 +3,7 @@
 import logging
 import time
 import asyncio
+import re
 from typing import Optional
 
 import discord
@@ -377,10 +378,40 @@ class AssistantCog(commands.Cog):
 
     @prompt_group.command(name='new')
     @commands.has_permissions(manage_guild=True)
-    async def prompt_new(self, ctx: commands.Context, name: str, *, content: str):
-        """새로운 프롬프트를 생성합니다. (!prompt new "이름" "내용")"""
-        idx = self.prompt_service.add_prompt(name, content)
-        await ctx.reply(f"✅ 새 프롬프트가 생성되었습니다. (인덱스: {idx})")
+    async def prompt_new(self, ctx: commands.Context, *, concept: str):
+        """새로운 프롬프트를 자동으로 생성합니다. (!prompt new <컨셉>)"""
+        status_msg = await ctx.reply("🧠 고품질 페르소나 설계 중... (약 10~20초 소요)")
+        
+        try:
+            generated_prompt = await self.llm_service.generate_prompt_from_concept(concept)
+            
+            if not generated_prompt:
+                await status_msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                return
+
+            # Extract name and content
+            # Pattern: **[System Prompt: Project '{Character Name}']**
+            # or sometimes without asterisks or with different casing
+            name_match = re.search(r"Project\s+['\"]?(.+?)['\"]?\]", generated_prompt, re.IGNORECASE)
+            name = name_match.group(1) if name_match else f"Generated ({concept[:10]}...)"
+            
+            # Remove the title line from the content if possible, or just keep it all
+            prompt_content = generated_prompt.strip()
+
+            idx = self.prompt_service.add_prompt(name, prompt_content)
+            
+            await status_msg.edit(content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})")
+            
+            # Optional: show a preview if not too long
+            if len(prompt_content) < 1500:
+                embed = discord.Embed(title=f"설계된 페르소나: {name}", description=prompt_content, color=discord.Color.green())
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send(f"💡 내용이 너무 길어 임베드로 표시하지 않았습니다. `!prompt show {idx}`로 확인하세요.")
+
+        except Exception as e:
+            logger.error(f"Error in prompt_new: {e}", exc_info=True)
+            await status_msg.edit(content=f"❌ 오류 발생: {str(e)}")
 
     @prompt_group.command(name='list')
     async def prompt_list(self, ctx: commands.Context):
