@@ -290,3 +290,13 @@ class AutoChannelCog(commands.Cog):
             if self.processing_tasks.get(channel_id) == asyncio.current_task():
                 self.processing_tasks.pop(channel_id, None)
                 self.active_batches.pop(channel_id, None)
+
+    async def cog_command_error(self, ctx: commands.Context, error: Exception):
+        """Cog 내 명령어 에러 핸들러"""
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply(f"❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: {', '.join(error.missing_permissions)})", mention_author=False)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.reply("❌ 잘못된 인자가 전달되었습니다. 명령어를 다시 확인해 주세요.", mention_author=False)
+        else:
+             logger.error(f"Command error in {ctx.command}: {error}", exc_info=True)
+

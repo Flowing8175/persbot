@@ -470,3 +470,18 @@ class AssistantCog(commands.Cog):
         self.session_manager.set_channel_prompt(ctx.channel.id, prompt['content'])
         await ctx.reply(f"✅ 채널 프롬프트가 **{prompt['name']}** (으)로 변경되었습니다. 대화 세션이 초기화됩니다.")
 
+    async def cog_command_error(self, ctx: commands.Context, error: Exception):
+        """Cog 내 명령어 에러 핸들러"""
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply(f"❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: {', '.join(error.missing_permissions)})", mention_author=False)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.reply("❌ 잘못된 인자가 전달되었습니다. 명령어를 다시 확인해 주세요.", mention_author=False)
+        elif isinstance(error, commands.CommandOnCooldown):
+            await ctx.reply(f"⏳ 쿨다운 중입니다. {error.retry_after:.1f}초 후에 다시 시도해 주세요.", mention_author=False)
+        else:
+            logger.error(f"Command error in {ctx.command}: {error}", exc_info=True)
+            # 기본 에러 메시지는 이미 globally 처리될 수도 있지만, cog 레벨에서 한번 더 확인
+            if not ctx.command.has_error_handler():
+                await ctx.reply(f"❌ 명령어 실행 중 오류가 발생했습니다: {str(error)}", mention_author=False)
+
+
