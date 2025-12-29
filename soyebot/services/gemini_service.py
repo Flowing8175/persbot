@@ -357,7 +357,7 @@ class GeminiService(BaseLLMService):
             logger.info("Creating new Gemini cache '%s' (TTL: %ds)...", cache_display_name, ttl_seconds)
             
             # Using contents list wrapper as per types
-            contents = [genai_types.Content(parts=[genai_types.Part(text=system_instruction)])]
+            contents = [genai_types.Content(role='user', parts=[genai_types.Part(text=system_instruction)])]
 
             cache = self.client.caches.create(
                 model=model_name,
