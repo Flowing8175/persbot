@@ -300,11 +300,12 @@ class GeminiService(BaseLLMService):
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
-    def _get_cache_key(self, content: str) -> str:
-        """Generate a consistent cache key/name based on content hash."""
-        # Using a fixed prefix and hash to ensure we can find it again
+    def _get_cache_key(self, model_name: str, content: str) -> str:
+        """Generate a consistent cache key/name based on model and content hash."""
+        # Clean model name for use in display_name
+        safe_model = re.sub(r'[^a-zA-Z0-9-]', '-', model_name)
         content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
-        return f"soyebot-persona-{content_hash[:10]}"
+        return f"soyebot-{safe_model}-{content_hash[:10]}"
 
     def _get_gemini_cache(self, model_name: str, system_instruction: str) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
@@ -334,7 +335,7 @@ class GeminiService(BaseLLMService):
             return None, None
 
         # 2. Config setup
-        cache_display_name = self._get_cache_key(system_instruction)
+        cache_display_name = self._get_cache_key(model_name, system_instruction)
         ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
         ttl_seconds = ttl_minutes * 60
         
