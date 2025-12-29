@@ -226,6 +226,65 @@ class AssistantCog(commands.Cog):
                 self.processing_tasks.pop(channel_id, None)
                 self.active_batches.pop(channel_id, None)
 
+    @commands.command(name='help', aliases=['도움말', '명령어', 'h'])
+    async def help_command(self, ctx: commands.Context):
+        """봇의 모든 명령어와 사용법을 안내합니다."""
+        embed = discord.Embed(
+            title="🤖 SoyeBot 명령어 가이드",
+            description=f"접두사: `{self.config.command_prefix}` 또는 `@mention`을 사용하여 명령을 내릴 수 있습니다.",
+            color=discord.Color.blue()
+        )
+
+        # 1. 대화 제어
+        embed.add_field(
+            name="💬 대화 제어",
+            value=(
+                "`!retry` (`!다시`): 마지막 답변을 지우고 다시 생성합니다.\n"
+                "`!reset` (`!초기화`): 현재 채널의 대화 기록을 초기화합니다.\n"
+                "`!undo [N]` (`!@`): 마지막 N개의 대화 쌍을 삭제합니다. (자동응답 채널 전용)\n"
+                "`!abort` (`!중단`): 진행 중인 전송이나 AI 처리를 즉시 멈춥니다."
+            ),
+            inline=False
+        )
+
+        # 2. 요약 및 분석
+        embed.add_field(
+            name="📝 요약 및 분석",
+            value=(
+                "`!요약`: 최근 30분 대화를 요약합니다.\n"
+                "`!요약 <시간>`: 지정 시간(예: `20분`, `1시간`) 동안의 대화를 요약합니다.\n"
+                "`!요약 <ID> 이후`: 특정 메시지 이후의 대화를 요약합니다."
+            ),
+            inline=False
+        )
+
+        # 3. 프롬프트 관리 (Persona)
+        embed.add_field(
+            name="🎭 프롬프트 (페르소나) 관리",
+            value=(
+                "`!prompt list`: 저장된 프롬프트 목록을 보여줍니다.\n"
+                "`!prompt select <번호>`: 채널에 적용할 프롬프트를 선택합니다. (생략 시 기본값)\n"
+                "`!prompt new <컨셉>`: AI가 새로운 고품질 프롬프트를 자동 생성합니다.\n"
+                "`!prompt show <번호>`: 프롬프트의 전체 상세 내용을 확인합니다.\n"
+                "`!prompt delete <번호>`: 프롬프트를 삭제합니다."
+            ),
+            inline=False
+        )
+
+        # 4. 설정 및 파라미터
+        embed.add_field(
+            name="⚙️ 설정 및 파라미터",
+            value=(
+                "`!temp <0.0~2.0>`: AI의 창의성(Temperature)을 조절합니다.\n"
+                "`!생각 <숫자|auto|off>`: Gemini Thinking Budget를 설정합니다.\n"
+                "`!끊어치기 [on|off]`: 실시간 메시지 끊어 전송 모드를 설정합니다."
+            ),
+            inline=False
+        )
+
+        embed.set_footer(text="SoyeBot | Advanced Agentic Coding Assistant")
+        await ctx.reply(embed=embed, mention_author=False)
+
     @commands.command(name='retry', aliases=['재생성', '다시'])
     async def retry_command(self, ctx: commands.Context):
         """Re-generate the last assistant response."""
