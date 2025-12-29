@@ -530,6 +530,20 @@ class AssistantCog(commands.Cog):
         else:
             await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
 
+    @prompt_group.command(name='delete', aliases=['삭제'])
+    @commands.has_permissions(manage_guild=True)
+    async def prompt_delete(self, ctx: commands.Context, index: int):
+        """저장된 프롬프트를 삭제합니다. (!prompt delete [인덱스])"""
+        prompt = self.prompt_service.get_prompt(index)
+        if not prompt:
+            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
+            return
+
+        if self.prompt_service.delete_prompt(index):
+            await ctx.reply(f"✅ 프롬프트 **'{prompt['name']}'**이(가) 삭제되었습니다.")
+        else:
+            await ctx.reply("❌ 삭제에 실패했습니다.")
+
     @prompt_group.command(name='select')
     @commands.has_permissions(manage_guild=True)
     async def prompt_select(self, ctx: commands.Context, index: Optional[int] = None):
