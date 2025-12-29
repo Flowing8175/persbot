@@ -260,16 +260,29 @@ class AssistantCog(commands.Cog):
         channel_id = ctx.channel.id
         aborted = False
 
-        # 1. Interrupt sending tasks (Break-Cut)
+        # 1. Interrupt sending tasks in AssistantCog
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
                 task.cancel()
                 aborted = True
 
-        # 2. Interrupt processing tasks (LLM API call) - only if tracked in this cog
-        # Note: AssistantCog doesn't track processing_tasks like AutoChannelCog yet,
-        # but we can add it if needed. For now, focus on sending.
+        # 2. Try to interrupt tasks in AutoChannelCog
+        auto_cog = self.bot.get_cog("AutoChannelCog")
+        if auto_cog:
+            # Cancel sending tasks
+            if channel_id in auto_cog.sending_tasks:
+                task = auto_cog.sending_tasks[channel_id]
+                if not task.done():
+                    task.cancel()
+                    aborted = True
+            
+            # Cancel processing tasks
+            if hasattr(auto_cog, 'processing_tasks') and channel_id in auto_cog.processing_tasks:
+                task = auto_cog.processing_tasks[channel_id]
+                if not task.done():
+                    task.cancel()
+                    aborted = True
         
         if aborted:
             await ctx.message.add_reaction("🛑")

@@ -211,37 +211,9 @@ class AutoChannelCog(commands.Cog):
         else:
             await ctx.message.add_reaction("❌")
 
-    @commands.command(name='abort', aliases=['중단', '멈춰'])
-    async def abort_command(self, ctx: commands.Context):
-        """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
-        if ctx.channel.id not in self.config.auto_reply_channel_ids:
-            return
-
-        channel_id = ctx.channel.id
-        aborted = False
-
-        # 1. Interrupt sending tasks
-        if channel_id in self.sending_tasks:
-            task = self.sending_tasks[channel_id]
-            if not task.done():
-                task.cancel()
-                aborted = True
-
-        # 2. Interrupt processing tasks (LLM API call)
-        if channel_id in self.processing_tasks:
-            task = self.processing_tasks[channel_id]
-            if not task.done():
-                task.cancel()
-                aborted = True
-        
-        if aborted:
-            await ctx.message.add_reaction("🛑")
-            logger.info("User %s requested abort in channel %s", ctx.author.name, channel_id)
-        else:
-            await ctx.message.add_reaction("❓")
-
 
     async def _process_batch(self, messages: list[discord.Message]):
+
         if not messages:
             return
 
