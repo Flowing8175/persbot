@@ -60,6 +60,7 @@ class SessionManager:
         self.llm_service = llm_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
+        self.channel_prompts: Dict[int, str] = {} # channel_id -> prompt_content override
 
     def _evict_if_needed(self) -> None:
         """Ensure the session cache does not grow without bounds."""
@@ -123,7 +124,7 @@ class SessionManager:
 
         logger.info(f"Creating new session {session_key} for user {user_id}")
 
-        system_prompt = BOT_PERSONA_PROMPT
+        system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
 
         assistant_model = self.llm_service.create_assistant_model(system_prompt)
         chat = assistant_model.start_chat()
@@ -142,6 +143,16 @@ class SessionManager:
         self._evict_if_needed()
 
         return chat, session_key
+
+    def set_channel_prompt(self, channel_id: int, prompt_content: Optional[str]) -> None:
+        """Set a custom system prompt for a specific channel."""
+        if prompt_content:
+            self.channel_prompts[channel_id] = prompt_content
+        else:
+            self.channel_prompts.pop(channel_id, None)
+        
+        # Reset current session for this channel to apply the new prompt
+        self.reset_session_by_channel(channel_id)
 
     def reset_session_by_channel(self, channel_id: int) -> bool:
         """Clear cached session and metadata for a channel, if present."""

@@ -16,6 +16,7 @@ from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
 from bot.cogs.finetune import FineTuneCog
+from services.prompt_service import PromptService
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +68,10 @@ async def main(config):
 
     bot = commands.Bot(command_prefix=config.command_prefix, intents=intents, help_command=None)
 
-    # Initialize services
+        # Initialize services
     llm_service = LLMService(config)
     session_manager = SessionManager(config, llm_service)
+    prompt_service = PromptService()
 
     @bot.event
     async def on_ready():
@@ -83,7 +85,7 @@ async def main(config):
 
         # Initialize cogs
         await bot.add_cog(SummarizerCog(bot, config, llm_service))
-        await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager))
+        await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager, prompt_service))
         if auto_channel_cog_cls:
             await bot.add_cog(auto_channel_cog_cls(bot, config, llm_service, session_manager))
 
