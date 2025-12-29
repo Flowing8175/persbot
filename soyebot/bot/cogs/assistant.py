@@ -448,9 +448,9 @@ class AssistantCog(commands.Cog):
 
     @commands.group(name='prompt', invoke_without_command=True)
     async def prompt_group(self, ctx: commands.Context):
-        """프롬프트 관리 명령입니다. (!prompt <new|list|show|rename|select>)"""
+        """프롬프트 관리 명령입니다. (!prompt <new|list|show|rename|select|delete>)"""
         if ctx.invoked_subcommand is None:
-            await ctx.send("사용법: `!prompt <new|list|show|rename|select> [인자]`")
+            await ctx.send("사용법: `!prompt <new|list|show|rename|select|delete> [인자]`")
 
     @prompt_group.command(name='new')
     @commands.has_permissions(manage_guild=True)
