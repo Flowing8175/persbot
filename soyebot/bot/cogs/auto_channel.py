@@ -213,7 +213,6 @@ class AutoChannelCog(commands.Cog):
             full_text = "\n".join(combined_content)
 
             if not full_text:
-                await primary_message.channel.send("❌ 메시지 내용이 없는데요.")
                 return
 
             logger.info(
@@ -231,7 +230,6 @@ class AutoChannelCog(commands.Cog):
                 )
 
                 if not resolution:
-                    await primary_message.channel.send("❌ 메시지 내용이 없는데요.")
                     return
 
                 reply = await create_chat_reply(

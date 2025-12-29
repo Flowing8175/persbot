@@ -343,14 +343,6 @@ class AssistantCog(commands.Cog):
             self.llm_service.update_parameters(thinking_budget=target_value)
             await ctx.message.add_reaction("✅")
 
-            if target_value is None:
-                status_text = "**OFF**"
-            elif target_value == -1:
-                status_text = "**AUTO**"
-            else:
-                status_text = f"**{target_value}** tokens"
-
-            await ctx.reply(f"✅ Thinking Budget가 {status_text}로 설정되었습니다.", mention_author=False)
         except Exception as e:
             logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
