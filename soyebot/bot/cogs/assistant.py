@@ -503,7 +503,7 @@ class AssistantCog(commands.Cog):
 
     @prompt_group.command(name='rename')
     @commands.has_permissions(manage_guild=True)
-    async def prompt_rename(self, ctx: commands.Context, index: int, new_name: str):
+    async def prompt_rename(self, ctx: commands.Context, index: int, *, new_name: str):
         """프롬프트 이름을 변경합니다. (!prompt rename [인덱스] "새 이름")"""
         if self.prompt_service.rename_prompt(index, new_name):
             await ctx.message.add_reaction("✅")
