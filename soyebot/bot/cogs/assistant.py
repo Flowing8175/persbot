@@ -207,6 +207,30 @@ class AssistantCog(commands.Cog):
             await ctx.send("❌ 재시도할 사용자 메시지를 찾을 수 없습니다.")
             return
 
+        # [Defensive Check] Ensure the user message is not stuck in history
+        # This prevents "same content received twice" if undo failed to update history properly
+        session = self.session_manager.sessions.get(session_key)
+        if session and hasattr(session.chat, 'history') and session.chat.history:
+            last_msg = session.chat.history[-1]
+            # Check if last message is the user content we are about to retry
+            # (Note: roles might differ slightly in naming, but checking content is a good heuristic)
+            if last_msg.role == user_role and last_msg.content == user_content:
+                logger.warning(
+                    "Duplicate user message detected in history during retry for session %s. Forcing removal.",
+                    session_key
+                )
+                session.chat.history.pop()
+                # If using OpenAI, we might need to sync deque if it was a property setter?
+                # But typically pop() on the list returned by getter won't affect deque if it returns a copy.
+                # However, SessionManager.sessions stores the session object.
+                # For Gemini (_ChatSession), history is a list. pop() works.
+                # For OpenAI (ResponseChatSession), history property returns list(self._history).
+                # So modifying the returned list does NOT modify the deque.
+                # We need to handle this.
+                if hasattr(session.chat, '_history') and hasattr(session.chat._history, 'pop'):
+                     # Direct access to deque if available (ResponseChatSession/ChatCompletionSession)
+                     session.chat._history.pop()
+
         # Re-generate response
         async with ctx.channel.typing():
             resolution = ResolvedSession(session_key, user_content)

@@ -135,6 +135,8 @@ async def send_split_response(
                 session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
 
     except asyncio.CancelledError:
-        logger.info(f"Sending interrupted for channel {channel.id}. Undoing last exchange.")
-        session_manager.undo_last_exchanges(reply.session_key, 1)
+        logger.info(f"Sending interrupted for channel {channel.id}. Keeping partial response.")
+        # We no longer undo the last exchange here.
+        # This allows the partial response (and the user prompt) to remain in history,
+        # so that subsequent messages (or !undo commands) act on the correct context.
         raise  # Re-raise to signal cancellation
