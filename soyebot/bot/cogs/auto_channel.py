@@ -37,6 +37,10 @@ class AutoChannelCog(commands.Cog):
         self.sending_tasks: dict[int, asyncio.Task] = {}
         self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
+        # Track active processing tasks (LLM generation) to allow debouncing/merging
+        self.processing_tasks: dict[int, asyncio.Task] = {}
+        self.active_batches: dict[int, list[discord.Message]] = {}
+
     async def _send_auto_reply(self, message: discord.Message, reply: ChatReply) -> None:
         if not reply.text:
             logger.debug("LLM returned no text response for the auto-reply message.")
@@ -90,7 +94,28 @@ class AutoChannelCog(commands.Cog):
                 logger.info(f"New message from {message.author} interrupted auto-reply in channel {message.channel.id}")
                 task.cancel()
 
+        # Interrupt current processing (Processing/Debounce Mode)
+        messages_to_prepend = []
+        if message.channel.id in self.processing_tasks:
+            task = self.processing_tasks[message.channel.id]
+            if not task.done():
+                logger.info(f"New message from {message.author} interrupted processing in channel {message.channel.id}. Merging messages.")
+                
+                # Retrieve messages being processed
+                messages_to_prepend = self.active_batches.get(message.channel.id, [])
+                
+                # Cancel the processing task
+                task.cancel()
+                
+                # We expect the task to handle CancelledError and clean up, 
+                # but we've already grabbed the messages we need to retry.
+
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+        
+        # If we merged messages from a cancelled task, inject them at the front of the buffer
+        # add_message guarantees buffers[channel_id] exists and has at least [message]
+        if messages_to_prepend:
+             self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
 
     @commands.Cog.listener()
     async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
@@ -196,6 +221,12 @@ class AutoChannelCog(commands.Cog):
             return
 
         primary_message = messages[0]
+        channel_id = primary_message.channel.id
+        
+        # Register this task as the active processing task for the channel
+        self.active_batches[channel_id] = messages
+        self.processing_tasks[channel_id] = asyncio.current_task()
+
         start_time = time.perf_counter()
         metrics = get_metrics()
 
@@ -246,8 +277,18 @@ class AutoChannelCog(commands.Cog):
             metrics.record_latency('message_processing', duration_ms)
             metrics.increment_counter('messages_processed')
 
+        except asyncio.CancelledError:
+            logger.info("Batch processing cancelled for channel #%s (likely due to new message).", primary_message.channel.name)
+            raise
+
         except Exception as exc:
             logger.error("자동 응답 메시지 처리 중 오류 발생: %s", exc, exc_info=True)
             await primary_message.channel.send(GENERIC_ERROR_MESSAGE)
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
+        
+        finally:
+            # Cleanup only if we are the current task (handling race conditions slightly safer)
+            if self.processing_tasks.get(channel_id) == asyncio.current_task():
+                self.processing_tasks.pop(channel_id, None)
+                self.active_batches.pop(channel_id, None)
