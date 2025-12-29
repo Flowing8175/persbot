@@ -122,20 +122,40 @@ class AssistantCog(commands.Cog):
         metrics = get_metrics()
 
         try:
-            # Combine contents
+            # 1. Fetch recent context (10 messages before the primary message)
+            context_messages = [
+                msg async for msg in primary_message.channel.history(limit=10, before=primary_message)
+            ]
+            context_messages.reverse()  # Chronological order
+
+            context_text = ""
+            if context_messages:
+                context_lines = []
+                for msg in context_messages:
+                    c_content = extract_message_content(msg)
+                    if c_content:
+                        context_lines.append(f"{msg.author.id}: {c_content}")
+
+                if context_lines:
+                    context_text = "=== 이전 대화 문맥 (참고용) ===\n" + "\n".join(context_lines) + "\n=== 현재 메시지 ===\n"
+
+            # 2. Combine current batch contents
             combined_content = []
             for msg in messages:
                 content = extract_message_content(msg)
                 if content:
-                    if len(messages) > 1 and msg.author.name:
-                         combined_content.append(f"{msg.author.name}: {content}")
+                    if len(messages) > 1 and msg.author.id:
+                         combined_content.append(f"{msg.author.id}: {content}")
                     else:
                          combined_content.append(content)
 
-            full_text = "\n".join(combined_content)
+            current_text = "\n".join(combined_content)
 
-            if not full_text:
+            if not current_text:
                 return
+
+            # Prepend context to the full text
+            full_text = context_text + current_text
 
             logger.info("Processing batch of %d messages from %s: %s", len(messages), primary_message.author.name, full_text[:100])
 

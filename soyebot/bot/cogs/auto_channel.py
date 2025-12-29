@@ -205,8 +205,8 @@ class AutoChannelCog(commands.Cog):
             for msg in messages:
                 content = extract_message_content(msg)
                 if content:
-                    if len(messages) > 1 and msg.author.name:
-                         combined_content.append(f"{msg.author.name}: {content}")
+                    if len(messages) > 1 and msg.author.id:
+                         combined_content.append(f"{msg.author.id}: {content}")
                     else:
                          combined_content.append(content)
 
