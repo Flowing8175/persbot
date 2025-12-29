@@ -382,12 +382,7 @@ class AssistantCog(commands.Cog):
             
             await status_msg.edit(content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})")
             
-            # Optional: show a preview if not too long
-            if len(prompt_content) < 1500:
-                embed = discord.Embed(title=f"설계된 페르소나: {name}", description=prompt_content, color=discord.Color.green())
-                await ctx.send(embed=embed)
-            else:
-                await ctx.send(f"💡 내용이 너무 길어 임베드로 표시하지 않았습니다. `!prompt show {idx}`로 확인하세요.")
+            await ctx.send(f"💡 페르소나 설계가 완료되었습니다. `!prompt show {idx}`로 전체 내용을 확인할 수 있습니다.")
 
         except Exception as e:
             logger.error(f"Error in prompt_new: {e}", exc_info=True)
@@ -420,8 +415,15 @@ class AssistantCog(commands.Cog):
             await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
             return
 
-        embed = discord.Embed(title=f"프롬프트: {prompt['name']}", description=prompt['content'], color=discord.Color.blue())
-        await ctx.reply(embed=embed)
+        # Use send_split_response style or just direct messages if it's long
+        content = f"**📋 프롬프트: {prompt['name']}**\n\n{prompt['content']}"
+        
+        if len(content) <= 2000:
+            await ctx.reply(content, mention_author=False)
+        else:
+            # Simple chunking for Discord message limit (2000 chars)
+            for i in range(0, len(content), 1900):
+                await ctx.send(content[i:i+1900])
 
     @prompt_group.command(name='rename')
     @commands.has_permissions(manage_guild=True)
