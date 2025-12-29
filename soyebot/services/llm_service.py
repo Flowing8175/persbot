@@ -7,6 +7,7 @@ from soyebot.config import AppConfig
 from soyebot.metrics import get_metrics
 from soyebot.services.gemini_service import GeminiService
 from soyebot.services.openai_service import OpenAIService
+from soyebot.prompts import META_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,31 @@ class LLMService:
 
     async def summarize_text(self, text: str):
         return await self.summarizer_backend.summarize_text(text)
+
+    async def generate_prompt_from_concept(self, concept: str) -> Optional[str]:
+        """Generate a detailed system prompt from a simple concept using Meta Prompt."""
+        # Use a powerful model for this task (usually the summarizer or assistant model)
+        # We'll create a temporary model instance with the META_PROMPT
+        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT)
+        
+        # We manually call a generation method. BaseLLMService might not have one, 
+        # so we'll ensure backend has a clean way.
+        # For now, we can use hypothesize a 'generate_text' on backend or use existing ones.
+        # summarizer_backend.summarize_text(text) does: model.generate_content(prompt)
+        # Let's add 'generate_response_with_system_instruction' to backends.
+        
+        # Actually, let's just make it simple if the backend supports it.
+        # summarizer_backend.summary_model is a _CachedModel with SUMMARY_SYSTEM_INSTRUCTION.
+        # We want one with META_PROMPT.
+        
+        if hasattr(self.summarizer_backend, 'assistant_model'):
+             # Create meta model
+             result = await self.summarizer_backend.execute_with_retry(
+                 lambda: meta_model.generate_content(concept),
+                 "프롬프트 생성"
+             )
+             return result
+        return None
 
     async def generate_chat_response(
         self,
