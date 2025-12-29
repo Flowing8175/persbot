@@ -178,13 +178,8 @@ class AutoChannelCog(commands.Cog):
         if removed_messages:
             try:
                 await ctx.message.delete()
-            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-                await ctx.message.add_reaction("✅")
-                logger.warning(
-                    "Could not delete undo command message from %s in #%s; left reaction instead.",
-                    ctx.author.name,
-                    ctx.channel.name,
-                )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
 
             assistant_role = self.llm_service.get_assistant_role_name()
             user_role = self.llm_service.get_user_role_name()
@@ -196,12 +191,12 @@ class AutoChannelCog(commands.Cog):
                             try:
                                 message_to_delete = await ctx.channel.fetch_message(int(mid))
                                 await message_to_delete.delete()
-                            except discord.NotFound:
-                                logger.warning("Could not find message %s to delete in #%s.", mid, ctx.channel.name)
-                            except discord.Forbidden:
-                                logger.warning("Could not delete message %s in #%s, probably missing permissions.", mid, ctx.channel.name)
+                            except asyncio.CancelledError:
+                                pass
+                            except (discord.NotFound, discord.Forbidden):
+                                pass
                             except Exception as e:
-                                logger.warning("Error deleting message %s: %s", mid, e)
+                                logger.warning(f"Error deleting message {mid} during undo: {e}")
 
                         elif msg.role == user_role:
                             try:
@@ -215,6 +210,36 @@ class AutoChannelCog(commands.Cog):
                                 logger.warning("Error deleting user message %s: %s", mid, e)
         else:
             await ctx.message.add_reaction("❌")
+
+    @commands.command(name='abort', aliases=['중단', '멈춰'])
+    async def abort_command(self, ctx: commands.Context):
+        """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
+        if ctx.channel.id not in self.config.auto_reply_channel_ids:
+            return
+
+        channel_id = ctx.channel.id
+        aborted = False
+
+        # 1. Interrupt sending tasks
+        if channel_id in self.sending_tasks:
+            task = self.sending_tasks[channel_id]
+            if not task.done():
+                task.cancel()
+                aborted = True
+
+        # 2. Interrupt processing tasks (LLM API call)
+        if channel_id in self.processing_tasks:
+            task = self.processing_tasks[channel_id]
+            if not task.done():
+                task.cancel()
+                aborted = True
+        
+        if aborted:
+            await ctx.message.add_reaction("🛑")
+            logger.info("User %s requested abort in channel %s", ctx.author.name, channel_id)
+        else:
+            await ctx.message.add_reaction("❓")
+
 
     async def _process_batch(self, messages: list[discord.Message]):
         if not messages:

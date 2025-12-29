@@ -254,6 +254,29 @@ class AssistantCog(commands.Cog):
         except (discord.Forbidden, discord.HTTPException):
             pass
 
+    @commands.command(name='abort', aliases=['중단', '멈춰'])
+    async def abort_command(self, ctx: commands.Context):
+        """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
+        channel_id = ctx.channel.id
+        aborted = False
+
+        # 1. Interrupt sending tasks (Break-Cut)
+        if channel_id in self.sending_tasks:
+            task = self.sending_tasks[channel_id]
+            if not task.done():
+                task.cancel()
+                aborted = True
+
+        # 2. Interrupt processing tasks (LLM API call) - only if tracked in this cog
+        # Note: AssistantCog doesn't track processing_tasks like AutoChannelCog yet,
+        # but we can add it if needed. For now, focus on sending.
+        
+        if aborted:
+            await ctx.message.add_reaction("🛑")
+            logger.info("User %s requested abort in channel %s", ctx.author.name, channel_id)
+        else:
+            await ctx.message.add_reaction("❓")
+
     @commands.command(name='초기화', aliases=['reset'])
     async def reset_session(self, ctx: commands.Context):
         """현재 채널의 대화 세션을 수동으로 초기화합니다."""
