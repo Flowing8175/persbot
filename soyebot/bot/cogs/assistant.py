@@ -15,6 +15,7 @@ from config import AppConfig
 from metrics import get_metrics
 from services.llm_service import LLMService
 from services.base import ChatMessage
+from services.prompt_service import PromptService
 from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,13 @@ class AssistantCog(commands.Cog):
         config: AppConfig,
         llm_service: LLMService,
         session_manager: SessionManager,
+        prompt_service: PromptService,
     ):
         self.bot = bot
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
-        self.session_manager = session_manager
+        self.prompt_service = prompt_service
         self.sending_tasks: dict[int, asyncio.Task] = {}
         
         # Use config for default delay (now 0.1)
@@ -346,3 +348,74 @@ class AssistantCog(commands.Cog):
         except Exception as e:
             logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+
+    @commands.group(name='prompt', invoke_without_command=True)
+    async def prompt_group(self, ctx: commands.Context):
+        """프롬프트 관리 명령입니다. (!prompt <new|list|show|rename|select>)"""
+        if ctx.invoked_subcommand is None:
+            await ctx.send("사용법: `!prompt <new|list|show|rename|select> [인자]`")
+
+    @prompt_group.command(name='new')
+    @commands.has_permissions(manage_guild=True)
+    async def prompt_new(self, ctx: commands.Context, name: str, *, content: str):
+        """새로운 프롬프트를 생성합니다. (!prompt new "이름" "내용")"""
+        idx = self.prompt_service.add_prompt(name, content)
+        await ctx.reply(f"✅ 새 프롬프트가 생성되었습니다. (인덱스: {idx})")
+
+    @prompt_group.command(name='list')
+    async def prompt_list(self, ctx: commands.Context):
+        """저장된 프롬프트 목록을 보여줍니다."""
+        prompts = self.prompt_service.list_prompts()
+        if not prompts:
+            await ctx.reply("저장된 프롬프트가 없습니다.")
+            return
+
+        active_content = self.session_manager.channel_prompts.get(ctx.channel.id)
+        
+        response = "**📋 저장된 프롬프트 목록:**\n"
+        for i, p in enumerate(prompts):
+            marker = "🔹"
+            if active_content == p['content']:
+                marker = "✅"
+            response += f"{marker} **[{i}]** {p['name']}\n"
+        
+        await ctx.reply(response)
+
+    @prompt_group.command(name='show')
+    async def prompt_show(self, ctx: commands.Context, index: int):
+        """특정 인덱스의 프롬프트 내용을 보여줍니다. (!prompt show [인덱스])"""
+        prompt = self.prompt_service.get_prompt(index)
+        if not prompt:
+            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
+            return
+
+        embed = discord.Embed(title=f"프롬프트: {prompt['name']}", description=prompt['content'], color=discord.Color.blue())
+        await ctx.reply(embed=embed)
+
+    @prompt_group.command(name='rename')
+    @commands.has_permissions(manage_guild=True)
+    async def prompt_rename(self, ctx: commands.Context, index: int, new_name: str):
+        """프롬프트 이름을 변경합니다. (!prompt rename [인덱스] "새 이름")"""
+        if self.prompt_service.rename_prompt(index, new_name):
+            await ctx.message.add_reaction("✅")
+        else:
+            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
+
+    @prompt_group.command(name='select')
+    @commands.has_permissions(manage_guild=True)
+    async def prompt_select(self, ctx: commands.Context, index: Optional[int] = None):
+        """채널에 적용할 프롬프트를 선택하거나 초기화합니다. (!prompt select [인덱스], 생략 시 초기화)"""
+        if index is None:
+            # Reset to default
+            self.session_manager.set_channel_prompt(ctx.channel.id, None)
+            await ctx.reply("✅ 채널 프롬프트가 기본값으로 초기화되었습니다.")
+            return
+
+        prompt = self.prompt_service.get_prompt(index)
+        if not prompt:
+            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
+            return
+
+        self.session_manager.set_channel_prompt(ctx.channel.id, prompt['content'])
+        await ctx.reply(f"✅ 채널 프롬프트가 **{prompt['name']}** (으)로 변경되었습니다. 대화 세션이 초기화됩니다.")
+
