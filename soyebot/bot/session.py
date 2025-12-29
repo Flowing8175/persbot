@@ -127,7 +127,7 @@ class SessionManager:
         system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
 
         assistant_model = self.llm_service.create_assistant_model(system_prompt)
-        chat = assistant_model.start_chat()
+        chat = assistant_model.start_chat(system_prompt)
 
         self.sessions[session_key] = ChatSession(
             chat=chat,

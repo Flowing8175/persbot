@@ -49,8 +49,9 @@ def extract_clean_text(response_obj: Any) -> str:
 
 class _ChatSession:
     """A wrapper for a Gemini chat session to manage history with author tracking."""
-    def __init__(self, underlying_chat):
+    def __init__(self, underlying_chat, system_instruction: str):
         self._chat = underlying_chat
+        self._system_instruction = system_instruction
         # We will manage the history manually to include author_id
         self.history: list[ChatMessage] = []
 
@@ -123,12 +124,12 @@ class _CachedModel:
             config=self._config,
         )
 
-    def start_chat(self):
+    def start_chat(self, system_instruction: str):
         underlying_chat = self._client.chats.create(
             model=self._model_name,
             config=self._config,
         )
-        return _ChatSession(underlying_chat)
+        return _ChatSession(underlying_chat, system_instruction)
 
 
 class GeminiService(BaseLLMService):
@@ -233,6 +234,12 @@ class GeminiService(BaseLLMService):
     def _is_rate_limit_error(self, error: Exception) -> bool:
         error_str = str(error)
         return "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower()
+
+    def _is_fatal_error(self, error: Exception) -> bool:
+        """Check if the error is a fatal cache error."""
+        error_str = str(error).lower()
+        # "CachedContent not found" or "403 PERMISSION_DENIED" on a cached resource
+        return "cachedcontent not found" in error_str or ("403" in error_str and "permission" in error_str)
 
     def _extract_retry_delay(self, error: Exception) -> Optional[float]:
         error_str = str(error)
@@ -354,17 +361,25 @@ class GeminiService(BaseLLMService):
                 if cache.display_name == cache_display_name:
                     logger.info("Found existing Gemini context cache: %s", cache.name)
                     
+                    # Check if it has expired (though list() shouldn't show it if it is)
+                    # But the API key might have changed or permissions issue.
+                    
                     # Refresh TTL
                     try:
+                        # Ensure ttl_seconds is a string with 's' or just an int if required
+                        # The new SDK often accepts a string like '3600s' or an int.
                         self.client.caches.update(
                             name=cache.name,
                             config=genai_types.UpdateCachedContentConfig(ttl=f"{ttl_seconds}s")
                         )
-                        logger.info("Refreshed TTL for cache: %s", cache.name)
+                        logger.info("Refreshed TTL for cache: %s (New TTL: %ds)", cache.name, ttl_seconds)
+                        # Re-calculate local expiration based on actual state
+                        return cache.name, local_expiration
                     except Exception as update_err:
-                        logger.warning("Failed to refresh TTL: %s", update_err)
-                    
-                    return cache.name, local_expiration
+                        logger.warning("Failed to refresh TTL for %s: %s", cache.name, update_err)
+                        if "permission" in str(update_err).lower() or "not found" in str(update_err).lower():
+                            continue # Try next or create new
+                        return cache.name, local_expiration
 
         except Exception as e:
             logger.warning("Error listing caches: %s", e)
@@ -407,19 +422,23 @@ class GeminiService(BaseLLMService):
             return "요약할 메시지가 없습니다."
         logger.info(f"Summarizing text ({len(text)} characters)...")
         prompt = f"Discord 대화 내용:\n{text}"
-
-        async def _refresh_summary_model():
-            self._model_cache.clear()
-            self.summary_model = self._get_or_create_model(
-                self._summary_model_name, SUMMARY_SYSTEM_INSTRUCTION
+        
+        try:
+            return await self.execute_with_retry(
+                lambda: self.summary_model.generate_content(prompt),
+                "요약"
             )
-            logger.info("Refreshed summary model after cache invalidation.")
-
-        # Use _gemini_retry to handle cache errors
-        return await self._gemini_retry(
-            lambda: self.summary_model.generate_content(prompt),
-            on_cache_error=_refresh_summary_model
-        )
+        except Exception as e:
+            if self._is_fatal_error(e):
+                logger.warning("Cache missing in summarize_text. Refreshing and retrying...")
+                self._model_cache.clear()
+                self.summary_model = self._get_or_create_model(self._summary_model_name, SUMMARY_SYSTEM_INSTRUCTION)
+                # Retry once more
+                return await self.execute_with_retry(
+                    lambda: self.summary_model.generate_content(prompt),
+                    "요약 (재시도)"
+                )
+            return None
 
     async def generate_chat_response(
         self,
@@ -438,115 +457,48 @@ class GeminiService(BaseLLMService):
             logger.info("Refreshing chat session due to 403 Cache Error...")
             self._model_cache.clear()
 
-            # Create a fresh model
-            fresh_model = self._get_or_create_model(
-                self._assistant_model_name, BOT_PERSONA_PROMPT
+        try:
+            response_obj = await self.execute_with_retry(
+                api_call,
+                "응답 생성",
+                return_full_response=True,
+                discord_message=discord_message,
             )
 
-            # Create a new underlying chat session
-            new_underlying_chat = fresh_model._client.chats.create(
-                model=fresh_model._model_name,
-                config=fresh_model._config,
-            )
+            if response_obj is None:
+                return None
 
-            # Inject it into the existing _ChatSession wrapper
-            # We preserve the history structure but replace the API object
-            old_history = chat_session.history
-
-            # Update the wrapper's internal object
-            chat_session._chat = new_underlying_chat
-
-            # Restore history to the new chat object
-            # Note: We must convert our ChatMessage objects back to API format
-            api_history = []
-            for msg in old_history:
-                api_history.append({"role": msg.role, "parts": msg.parts})
-            chat_session._chat.history = api_history
-
-            logger.info("Chat session successfully refreshed with new model/cache.")
-
-        response_obj = await self._gemini_retry(
-            lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
-            on_cache_error=_refresh_chat_session,
-            discord_message=discord_message
-        )
-
-        if response_obj is None:
+            response_text = self._extract_text_from_response(response_obj)
+            return (response_text, response_obj)
+            
+        except Exception as e:
+            if self._is_fatal_error(e) and hasattr(chat_session, '_system_instruction'):
+                logger.warning("Cache missing in generate_chat_response. Refreshing model and retrying...")
+                self._model_cache.clear()
+                
+                # Re-create underlying chat session for this specific ChatSession
+                system_instr = chat_session._system_instruction
+                new_model = self.create_assistant_model(system_instr)
+                chat_session._chat = new_model._client.chats.create(
+                    model=new_model._model_name,
+                    config=new_model._config,
+                )
+                
+                # Retry the call
+                try:
+                    response_obj = await self.execute_with_retry(
+                        api_call,
+                        "응답 생성 (재시도)",
+                        return_full_response=True,
+                        discord_message=discord_message,
+                    )
+                    if response_obj:
+                        response_text = self._extract_text_from_response(response_obj)
+                        return (response_text, response_obj)
+                except Exception as retry_e:
+                    logger.error(f"Generate chat response retry failed after cache refresh: {retry_e}", exc_info=True)
+            else:
+                logger.error(f"Generate chat response failed with non-fatal error: {e}", exc_info=True)
+            
+            # Re-raise or return None if still failing
             return None
-
-        response_text = self._extract_text_from_response(response_obj)
-        return (response_text, response_obj)
-
-    async def _gemini_retry(
-        self,
-        model_call: Callable[[], Union[Any, Any]],
-        on_cache_error: Callable[[], Awaitable[None]],
-        discord_message: Optional[discord.Message] = None,
-    ) -> Optional[Any]:
-        """Custom retry logic for Gemini to handle 403 Cache Errors."""
-        request_start = time.perf_counter()
-        last_error = None
-
-        # We assume model_call is a lambda that uses the CURRENT state of objects.
-        # If on_cache_error updates those objects, the next call to model_call will use them.
-
-        for attempt in range(1, self.config.api_max_retries + 1):
-            try:
-                response = await asyncio.wait_for(
-                    self._execute_model_call(model_call),
-                    timeout=self.config.api_request_timeout,
-                )
-                self._log_raw_response(response, attempt)
-
-                duration_ms = (time.perf_counter() - request_start) * 1000
-
-                # GeminiService methods usually expect the raw response object here,
-                # or text depending on what model_call returns.
-                # Here model_call returns the response object (generate_content or send_message result).
-                return response
-
-            except Exception as e:
-                last_error = e
-
-                if self._is_cache_error(e):
-                    logger.warning("Gemini 403 Cache Error (Attempt %s). Refreshing session...", attempt)
-                    try:
-                        await on_cache_error()
-                        # After refreshing, we immediately retry in the NEXT loop iteration.
-                        # We do NOT decrement attempt, so this consumes a retry slot.
-                        # This avoids infinite loops.
-                        continue
-                    except Exception as refresh_err:
-                        logger.error("Failed to refresh session during cache error handling: %s", refresh_err)
-                        # If refresh fails, we probably can't recover.
-                        break
-
-                if self._is_rate_limit_error(e):
-                    logger.warning("Gemini Rate Limit (Attempt %s). Waiting...", attempt)
-                    delay = self._extract_retry_delay(e) or self.config.api_rate_limit_retry_after
-                    await self._wait_with_countdown(delay, discord_message)
-                    continue
-
-                logger.error("Gemini API Error (Attempt %s): %s", attempt, e)
-
-                if attempt >= self.config.api_max_retries:
-                    break
-
-                backoff = min(
-                    self.config.api_retry_backoff_base ** attempt,
-                    self.config.api_retry_backoff_max,
-                )
-                await asyncio.sleep(backoff)
-
-        if isinstance(last_error, asyncio.TimeoutError):
-             logger.error("❌ Gemini API Timeout")
-        else:
-            logger.error("❌ Gemini API Failed after retries: %s", last_error)
-
-        if discord_message:
-            try:
-                await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-            except discord.HTTPException:
-                pass
-
-        return None

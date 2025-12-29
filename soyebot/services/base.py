@@ -67,6 +67,14 @@ class BaseLLMService(ABC):
         """Return the name for the 'assistant' role in the chat history."""
         pass
 
+    def reload_parameters(self) -> None:
+        """Reload service parameters (e.g. clear caches). To be overridden."""
+        pass
+
+    def _is_fatal_error(self, error: Exception) -> bool:
+        """Check if the exception is a fatal error that requires immediate intervention."""
+        return False
+
     async def _execute_model_call(self, model_call: Callable[[], Union[Any, Awaitable[Any]]]) -> Any:
         """Execute a model call, handling both sync and async functions."""
         if asyncio.iscoroutinefunction(model_call):
@@ -167,6 +175,10 @@ class BaseLLMService(ABC):
                     delay = self._extract_retry_delay(e) or self.config.api_rate_limit_retry_after
                     await self._wait_with_countdown(delay, discord_message)
                     continue
+
+                if self._is_fatal_error(e):
+                    logger.warning("%s encountered a fatal error. Re-throwing to allow recovery.", self.__class__.__name__)
+                    raise e
 
                 if attempt >= self.config.api_max_retries:
                     break
