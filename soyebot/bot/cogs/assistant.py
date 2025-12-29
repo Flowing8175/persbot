@@ -39,6 +39,10 @@ class AssistantCog(commands.Cog):
         self.prompt_service = prompt_service
         self.sending_tasks: dict[int, asyncio.Task] = {}
         
+        # Track active processing tasks (LLM generation) to allow debouncing/merging
+        self.processing_tasks: dict[int, asyncio.Task] = {}
+        self.active_batches: dict[int, list[discord.Message]] = {}
+        
         # Use config for default delay (now 0.1)
         self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
@@ -94,10 +98,22 @@ class AssistantCog(commands.Cog):
             if not task.done():
                 logger.info(f"New message from {message.author} interrupted sending in channel {message.channel.id}")
                 task.cancel()
-                # We don't await here to avoid blocking on_message, 
-                # but the task.cancel() scheduling is sufficient.
+
+        # Interrupt current processing (Processing/Debounce Mode)
+        messages_to_prepend = []
+        if message.channel.id in self.processing_tasks:
+            task = self.processing_tasks[message.channel.id]
+            if not task.done():
+                logger.info(f"New message from {message.author} interrupted processing in channel {message.channel.id}. Merging messages.")
+                messages_to_prepend = self.active_batches.get(message.channel.id, [])
+                task.cancel()
 
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+        
+        if messages_to_prepend:
+             # Ensure the list exists before prepending
+             if message.channel.id in self.message_buffer.buffers:
+                 self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
 
     @commands.Cog.listener()
     async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
@@ -121,6 +137,12 @@ class AssistantCog(commands.Cog):
 
         # Use the first message for context/reply target, but could be improved
         primary_message = messages[0]
+        channel_id = primary_message.channel.id
+        
+        # Register this task as the active processing task for the channel
+        self.active_batches[channel_id] = messages
+        self.processing_tasks[channel_id] = asyncio.current_task()
+
         start_time = time.perf_counter()
         metrics = get_metrics()
 
@@ -188,11 +210,21 @@ class AssistantCog(commands.Cog):
             metrics.record_latency('message_processing', duration_ms)
             metrics.increment_counter('messages_processed')
 
+        except asyncio.CancelledError:
+            logger.info("Batch processing cancelled for channel #%s (likely due to new message or !abort).", primary_message.channel.name)
+            raise
+
         except Exception as e:
             logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
             await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
             duration_ms = (time.perf_counter() - start_time) * 1000
             metrics.record_latency('message_processing', duration_ms)
+        
+        finally:
+            # Cleanup only if we are the current task
+            if self.processing_tasks.get(channel_id) == asyncio.current_task():
+                self.processing_tasks.pop(channel_id, None)
+                self.active_batches.pop(channel_id, None)
 
     @commands.command(name='retry', aliases=['재생성', '다시'])
     async def retry_command(self, ctx: commands.Context):
@@ -260,9 +292,17 @@ class AssistantCog(commands.Cog):
         channel_id = ctx.channel.id
         aborted = False
 
-        # 1. Interrupt sending tasks in AssistantCog
+        # 1. Interrupt tasks in AssistantCog
+        # Cancel sending
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
+            if not task.done():
+                task.cancel()
+                aborted = True
+
+        # Cancel processing
+        if channel_id in self.processing_tasks:
+            task = self.processing_tasks[channel_id]
             if not task.done():
                 task.cancel()
                 aborted = True
