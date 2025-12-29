@@ -1,12 +1,14 @@
 "Gemini API service for SoyeBot."
 
+import time
 import datetime
 import hashlib
 import json
 import logging
+import asyncio
 import re
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union, Callable, Awaitable
 
 import discord
 import google.genai as genai
@@ -475,9 +477,7 @@ class GeminiService(BaseLLMService):
         discord_message: Optional[discord.Message] = None,
     ) -> Optional[Any]:
         """Custom retry logic for Gemini to handle 403 Cache Errors."""
-        metrics = get_metrics()
         request_start = time.perf_counter()
-        metrics.increment_counter('api_requests_total')
         last_error = None
 
         # We assume model_call is a lambda that uses the CURRENT state of objects.
@@ -492,8 +492,6 @@ class GeminiService(BaseLLMService):
                 self._log_raw_response(response, attempt)
 
                 duration_ms = (time.perf_counter() - request_start) * 1000
-                metrics.record_latency('llm_api', duration_ms)
-                metrics.increment_counter('api_requests_success')
 
                 # GeminiService methods usually expect the raw response object here,
                 # or text depending on what model_call returns.
@@ -537,8 +535,6 @@ class GeminiService(BaseLLMService):
              logger.error("❌ Gemini API Timeout")
         else:
             logger.error("❌ Gemini API Failed after retries: %s", last_error)
-
-        metrics.increment_counter('api_requests_error')
 
         if discord_message:
             try:
