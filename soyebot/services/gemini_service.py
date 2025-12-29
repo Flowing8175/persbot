@@ -157,9 +157,9 @@ class GeminiService(BaseLLMService):
             self._summary_model_name,
         )
 
-    def _get_or_create_model(self, model_name: str, system_instruction: str) -> _CachedModel:
+    def _get_or_create_model(self, model_name: str, system_instruction: str, use_cache: bool = True) -> _CachedModel:
         """Get cached model instance or create new one."""
-        key = hash((model_name, system_instruction))
+        key = hash((model_name, system_instruction, use_cache))
         now = datetime.datetime.now(datetime.timezone.utc)
 
         # Check existing cache validity
@@ -173,7 +173,10 @@ class GeminiService(BaseLLMService):
 
         # Check logic for caching (token count check)
         # If valid for caching, this returns the cache name (resource ID)
-        cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction)
+        cache_name = None
+        cache_expiration = None
+        if use_cache:
+            cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction)
 
         config_kwargs = {
             "temperature": getattr(self.config, 'temperature', 1.0),
@@ -210,9 +213,9 @@ class GeminiService(BaseLLMService):
         self._model_cache[key] = (model, cache_expiration)
         return model
 
-    def create_assistant_model(self, system_instruction: str) -> _CachedModel:
+    def create_assistant_model(self, system_instruction: str, use_cache: bool = True) -> _CachedModel:
         """Create or retrieve a cached assistant model with custom system instruction."""
-        return self._get_or_create_model(self._assistant_model_name, system_instruction)
+        return self._get_or_create_model(self._assistant_model_name, system_instruction, use_cache=use_cache)
 
     def reload_parameters(self) -> None:
         """Reload parameters by clearing the model cache."""

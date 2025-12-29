@@ -61,8 +61,8 @@ class LLMService:
             summary_model_name=summary_model_name,
         )
 
-    def create_assistant_model(self, system_instruction: str):
-        return self.assistant_backend.create_assistant_model(system_instruction)
+    def create_assistant_model(self, system_instruction: str, use_cache: bool = True):
+        return self.assistant_backend.create_assistant_model(system_instruction, use_cache=use_cache)
 
     async def summarize_text(self, text: str):
         return await self.summarizer_backend.summarize_text(text)
@@ -71,7 +71,8 @@ class LLMService:
         """Generate a detailed system prompt from a simple concept using Meta Prompt."""
         # Use a powerful model for this task (usually the summarizer or assistant model)
         # We'll create a temporary model instance with the META_PROMPT
-        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT)
+        # Disable caching for the meta prompt generation itself
+        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
         
         # We manually call a generation method. BaseLLMService might not have one, 
         # so we'll ensure backend has a clean way.
