@@ -458,6 +458,10 @@ class GeminiService(BaseLLMService):
             logger.warning("Refreshing chat session due to 403 Cache Error...")
             self._model_cache.clear()
 
+            # Determine system instruction to use
+            # Use the session's system instruction if available, otherwise fallback to default
+            system_instruction = getattr(chat_session, '_system_instruction', BOT_PERSONA_PROMPT)
+
             # Create a fresh model
             # Use the system instruction from the existing session to ensure continuity
             # Fallback to active prompt if somehow missing
@@ -502,7 +506,7 @@ class GeminiService(BaseLLMService):
 
             response_text = self._extract_text_from_response(response_obj)
             return (response_text, response_obj)
-            
+
         except Exception as e:
             if self._is_fatal_error(e) and hasattr(chat_session, '_system_instruction'):
                 logger.warning("Cache missing in generate_chat_response. Refreshing model and retrying...")
