@@ -149,8 +149,53 @@ class AutoChannelCog(commands.Cog):
             await ctx.message.add_reaction("❌")
             return
 
-        # Permission check
-        session_key = f"channel:{ctx.channel.id}"
+        channel_id = ctx.channel.id
+        undo_performed_on_pending = False
+
+        # 1. Check and Undo active Processing Task (Thinking)
+        # If the bot is currently thinking, we cancel it and delete the triggering user message.
+        if channel_id in self.processing_tasks:
+            task = self.processing_tasks[channel_id]
+            if not task.done():
+                logger.info("Undo command interrupted active processing in channel #%s", ctx.channel.name)
+                task.cancel()
+                
+                # Delete the pending messages that were being processed
+                pending_messages = self.active_batches.get(channel_id, [])
+                for msg in pending_messages:
+                    try:
+                        await msg.delete()
+                    except (discord.NotFound, discord.Forbidden):
+                        pass
+                
+                # We consider this as 1 "undo" action (the current pending turn)
+                undo_performed_on_pending = True
+                num_to_undo -= 1
+        
+        # 2. Check and Undo active Sending Task (Break-Cut Mode)
+        # If the bot is currently sending a split response, we cancel it.
+        # We generally don't decrement num_to_undo here because the partial response 
+        # is likely already in history (or parts of it), so we rely on the standard
+        # undo logic below to clean up the partial exchange.
+        if channel_id in self.sending_tasks:
+            task = self.sending_tasks[channel_id]
+            if not task.done():
+                logger.info("Undo command interrupted active sending in channel #%s", ctx.channel.name)
+                task.cancel()
+                # We do NOT return or decrement here, as we want to proceed to delete 
+                # whatever partial messages made it to the history.
+
+        # If we only wanted to undo 1 item and we already undid the pending one, we are done
+        # (unless the user wanted to undo more).
+        if num_to_undo <= 0:
+            try:
+                await ctx.message.delete()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            return
+
+        # Permission check for historical undo
+        session_key = f"channel:{channel_id}"
         session = self.session_manager.sessions.get(session_key)
         user_message_count = 0
         if session and hasattr(session.chat, 'history'):
@@ -163,18 +208,26 @@ class AutoChannelCog(commands.Cog):
         has_permission = is_admin or user_message_count >= 5
 
         if not has_permission:
-            await ctx.message.add_reaction("❌")
-            logger.warning(
-                "User %s (admin=%s, messages=%d) tried to use undo command without permission in #%s.",
-                ctx.author.name, is_admin, user_message_count, ctx.channel.name
-            )
+            # If we successfully cancelled a pending task, we still consider the command "successful" enough to not show X
+            # but we won't undo history.
+            if not undo_performed_on_pending:
+                await ctx.message.add_reaction("❌")
+                logger.warning(
+                    "User %s (admin=%s, messages=%d) tried to use undo command without permission in #%s.",
+                    ctx.author.name, is_admin, user_message_count, ctx.channel.name
+                )
+            else:
+                 try:
+                    await ctx.message.delete()
+                 except: 
+                    pass
             return
 
         # Execute undo, respecting the max limit
         num_to_actually_undo = min(num_to_undo, 10)
         removed_messages = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
 
-        if removed_messages:
+        if removed_messages or undo_performed_on_pending:
             try:
                 await ctx.message.delete()
             except (discord.Forbidden, discord.HTTPException):
@@ -265,10 +318,6 @@ class AutoChannelCog(commands.Cog):
 
                 if reply:
                     await self._send_auto_reply(primary_message, reply)
-
-        except asyncio.CancelledError:
-            logger.info("Batch processing cancelled for channel #%s (likely due to new message).", primary_message.channel.name)
-            raise
 
         except asyncio.CancelledError:
             logger.info("Batch processing cancelled for channel #%s (likely due to new message).", primary_message.channel.name)

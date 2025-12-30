@@ -206,10 +206,6 @@ class AssistantCog(commands.Cog):
             logger.info("Batch processing cancelled for channel #%s (likely due to new message or !abort).", primary_message.channel.name)
             raise
 
-        except asyncio.CancelledError:
-            logger.info("Batch processing cancelled for channel #%s (likely due to new message or !abort).", primary_message.channel.name)
-            raise
-
         except Exception as e:
             logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
             await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
@@ -282,9 +278,23 @@ class AssistantCog(commands.Cog):
     @commands.command(name='retry', aliases=['재생성', '다시'])
     async def retry_command(self, ctx: commands.Context):
         """Re-generate the last assistant response."""
-        session_key = f"channel:{ctx.channel.id}"
+        channel_id = ctx.channel.id
+        session_key = f"channel:{channel_id}"
 
-        # Undo the last exchange (assistant + user message)
+        # 1. Cancel any active tasks first
+        if channel_id in self.processing_tasks:
+            task = self.processing_tasks[channel_id]
+            if not task.done():
+                logger.info("Retry command interrupted active processing in channel #%s", ctx.channel.name)
+                task.cancel()
+        
+        if channel_id in self.sending_tasks:
+            task = self.sending_tasks[channel_id]
+            if not task.done():
+                logger.info("Retry command interrupted active sending in channel #%s", ctx.channel.name)
+                task.cancel()
+
+        # 2. Undo the last exchange (assistant + user message)
         removed_messages: list[ChatMessage] = self.session_manager.undo_last_exchanges(session_key, 1)
 
         if not removed_messages:
