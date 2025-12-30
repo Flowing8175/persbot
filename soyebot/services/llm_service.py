@@ -4,9 +4,9 @@ import logging
 from typing import Optional
 
 from soyebot.config import AppConfig
-from soyebot.metrics import get_metrics
 from soyebot.services.gemini_service import GeminiService
 from soyebot.services.openai_service import OpenAIService
+from soyebot.services.prompt_service import PromptService
 from soyebot.prompts import META_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,8 @@ class LLMService:
 
     def __init__(self, config: AppConfig):
         self.config = config
+        self.prompt_service = PromptService()
+
         assistant_provider = (config.assistant_llm_provider or 'gemini').lower()
         summarizer_provider = (config.summarizer_llm_provider or assistant_provider).lower()
 
@@ -37,7 +39,6 @@ class LLMService:
 
         provider_label = 'OpenAI' if assistant_provider == 'openai' else 'Gemini'
         self.provider_label = provider_label
-        get_metrics().set_llm_provider(provider_label)
         logger.info(
             "LLM provider 설정: assistant=%s, summarizer=%s", assistant_provider, summarizer_provider
         )
@@ -54,11 +55,13 @@ class LLMService:
                 self.config,
                 assistant_model_name=assistant_model_name,
                 summary_model_name=summary_model_name,
+                prompt_service=self.prompt_service
             )
         return GeminiService(
             self.config,
             assistant_model_name=assistant_model_name,
             summary_model_name=summary_model_name,
+            prompt_service=self.prompt_service
         )
 
     def create_assistant_model(self, system_instruction: str, use_cache: bool = True):

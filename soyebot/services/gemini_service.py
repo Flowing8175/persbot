@@ -16,10 +16,8 @@ from google.genai import types as genai_types
 from google.genai.errors import ClientError
 
 from soyebot.config import AppConfig
-from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
 from soyebot.services.base import BaseLLMService, ChatMessage
-from soyebot.metrics import get_metrics
-from soyebot.utils import GENERIC_ERROR_MESSAGE
+from soyebot.services.prompt_service import PromptService
 
 logger = logging.getLogger(__name__)
 
@@ -137,11 +135,19 @@ class _CachedModel:
 class GeminiService(BaseLLMService):
     """Gemini API와의 모든 상호작용을 관리합니다."""
 
-    def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
+    def __init__(
+        self,
+        config: AppConfig,
+        *,
+        assistant_model_name: str,
+        summary_model_name: Optional[str] = None,
+        prompt_service: PromptService
+    ):
         super().__init__(config)
         self.client = genai.Client(api_key=config.gemini_api_key)
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
+        self.prompt_service = prompt_service
 
         # Cache wrapper instances keyed by system instruction hash
         # Stores tuple: (model_wrapper, expiration_time: Optional[datetime.datetime])
@@ -149,10 +155,10 @@ class GeminiService(BaseLLMService):
 
         # Pre-load default models using cache
         self.summary_model = self._get_or_create_model(
-            self._summary_model_name, SUMMARY_SYSTEM_INSTRUCTION
+            self._summary_model_name, self.prompt_service.get_summary_prompt()
         )
         self.assistant_model = self._get_or_create_model(
-            self._assistant_model_name, BOT_PERSONA_PROMPT
+            self._assistant_model_name, self.prompt_service.get_active_assistant_prompt()
         )
         logger.info(
             "Gemini 모델 assistant='%s', summary='%s' 로드 완료. (구성 캐시 활성화)",
@@ -340,7 +346,7 @@ class GeminiService(BaseLLMService):
 
         min_tokens = getattr(self.config, 'gemini_cache_min_tokens', 32768)
         if token_count < min_tokens:
-            logger.debug(
+            logger.warning(
                 "System instruction too short for caching (%d < %d tokens). Using standard context.",
                 token_count, min_tokens
             )
@@ -425,7 +431,7 @@ class GeminiService(BaseLLMService):
         async def _refresh_summary_model():
             self._model_cache.clear()
             self.summary_model = self._get_or_create_model(
-                self._summary_model_name, SUMMARY_SYSTEM_INSTRUCTION
+                self._summary_model_name, self.prompt_service.get_summary_prompt()
             )
             logger.info("Refreshed summary model after cache invalidation.")
 
@@ -449,7 +455,7 @@ class GeminiService(BaseLLMService):
         message_id = str(discord_message.id)
  
         async def _refresh_chat_session():
-            logger.info("Refreshing chat session due to 403 Cache Error...")
+            logger.warning("Refreshing chat session due to 403 Cache Error...")
             self._model_cache.clear()
 
             # Determine system instruction to use
@@ -457,6 +463,10 @@ class GeminiService(BaseLLMService):
             system_instruction = getattr(chat_session, '_system_instruction', BOT_PERSONA_PROMPT)
 
             # Create a fresh model
+            # Use the system instruction from the existing session to ensure continuity
+            # Fallback to active prompt if somehow missing
+            system_instruction = getattr(chat_session, '_system_instruction', None) or self.prompt_service.get_active_assistant_prompt()
+
             fresh_model = self._get_or_create_model(
                 self._assistant_model_name, system_instruction
             )
@@ -484,6 +494,7 @@ class GeminiService(BaseLLMService):
             logger.info("Chat session successfully refreshed with new model/cache.")
 
         try:
+            # First attempt: normal flow with retry for cache errors
             response_obj = await self._gemini_retry(
                 lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
                 on_cache_error=_refresh_chat_session,
@@ -497,7 +508,35 @@ class GeminiService(BaseLLMService):
             return (response_text, response_obj)
 
         except Exception as e:
-            logger.error(f"Generate chat response failed: {e}", exc_info=True)
+            if self._is_fatal_error(e) and hasattr(chat_session, '_system_instruction'):
+                logger.warning("Cache missing in generate_chat_response. Refreshing model and retrying...")
+                self._model_cache.clear()
+                
+                # Re-create underlying chat session for this specific ChatSession
+                system_instr = chat_session._system_instruction
+                new_model = self.create_assistant_model(system_instr)
+                chat_session._chat = new_model._client.chats.create(
+                    model=new_model._model_name,
+                    config=new_model._config,
+                )
+                
+                # Retry the call
+                try:
+                    response_obj = await self.execute_with_retry(
+                        lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
+                        "응답 생성 (재시도)",
+                        return_full_response=True,
+                        discord_message=discord_message,
+                    )
+                    if response_obj:
+                        response_text = self._extract_text_from_response(response_obj)
+                        return (response_text, response_obj)
+                except Exception as retry_e:
+                    logger.error(f"Generate chat response retry failed after cache refresh: {retry_e}", exc_info=True)
+            else:
+                logger.error(f"Generate chat response failed with non-fatal error: {e}", exc_info=True)
+            
+            # Re-raise or return None if still failing
             return None
 
     async def _gemini_retry(
@@ -507,9 +546,6 @@ class GeminiService(BaseLLMService):
         discord_message: Optional[discord.Message] = None,
     ) -> Optional[Any]:
         """Custom retry logic for Gemini to handle 403 Cache Errors."""
-        metrics = get_metrics()
-        request_start = time.perf_counter()
-        metrics.increment_counter('api_requests_total')
         last_error = None
 
         # We assume model_call is a lambda that uses the CURRENT state of objects.
@@ -522,10 +558,6 @@ class GeminiService(BaseLLMService):
                     timeout=self.config.api_request_timeout,
                 )
                 self._log_raw_response(response, attempt)
-
-                duration_ms = (time.perf_counter() - request_start) * 1000
-                metrics.record_latency('llm_api', duration_ms)
-                metrics.increment_counter('api_requests_success')
 
                 # GeminiService methods usually expect the raw response object here,
                 # or text depending on what model_call returns.
@@ -569,8 +601,6 @@ class GeminiService(BaseLLMService):
              logger.error("❌ Gemini API Timeout")
         else:
             logger.error("❌ Gemini API Failed after retries: %s", last_error)
-
-        metrics.increment_counter('api_requests_error')
 
         if discord_message:
             try:
