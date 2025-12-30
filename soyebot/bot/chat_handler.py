@@ -135,6 +135,5 @@ async def send_split_response(
                 session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
 
     except asyncio.CancelledError:
-        logger.info(f"Sending interrupted for channel {channel.id}. Undoing last exchange.")
-        session_manager.undo_last_exchanges(reply.session_key, 1)
+        logger.info(f"Sending interrupted for channel {channel.id}.")
         raise  # Re-raise to signal cancellation
