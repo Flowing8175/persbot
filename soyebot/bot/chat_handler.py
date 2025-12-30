@@ -123,8 +123,8 @@ async def send_split_response(
             if not line.strip():
                 continue
 
-            # Calculate delay: proportional to length, clamped 0.5s - 1.7s
-            delay = max(0.1, min(1.7, len(line) * 0.1))
+            # Calculate delay: proportional to length, clamped 0.1s - 1.7s
+                        delay = max(0.1, min(1.7, len(line) * 0.05))
 
             # Send typing status while waiting
             async with channel.typing():
