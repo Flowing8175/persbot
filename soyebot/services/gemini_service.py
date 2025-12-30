@@ -459,8 +459,12 @@ class GeminiService(BaseLLMService):
             self._model_cache.clear()
 
             # Create a fresh model
+            # Use the system instruction from the existing session to ensure continuity
+            # Fallback to active prompt if somehow missing
+            system_instruction = getattr(chat_session, '_system_instruction', None) or self.prompt_service.get_active_assistant_prompt()
+
             fresh_model = self._get_or_create_model(
-                self._assistant_model_name, self.prompt_service.get_active_assistant_prompt()
+                self._assistant_model_name, system_instruction
             )
 
             # Create a new underlying chat session
