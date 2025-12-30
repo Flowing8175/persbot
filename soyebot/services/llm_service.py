@@ -4,7 +4,6 @@ import logging
 from typing import Optional
 
 from soyebot.config import AppConfig
-from soyebot.metrics import get_metrics
 from soyebot.services.gemini_service import GeminiService
 from soyebot.services.openai_service import OpenAIService
 from soyebot.services.prompt_service import PromptService
@@ -40,7 +39,6 @@ class LLMService:
 
         provider_label = 'OpenAI' if assistant_provider == 'openai' else 'Gemini'
         self.provider_label = provider_label
-        get_metrics().set_llm_provider(provider_label)
         logger.info(
             "LLM provider 설정: assistant=%s, summarizer=%s", assistant_provider, summarizer_provider
         )
