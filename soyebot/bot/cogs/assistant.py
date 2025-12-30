@@ -206,6 +206,10 @@ class AssistantCog(commands.Cog):
             logger.info("Batch processing cancelled for channel #%s (likely due to new message or !abort).", primary_message.channel.name)
             raise
 
+        except asyncio.CancelledError:
+            logger.info("Batch processing cancelled for channel #%s (likely due to new message or !abort).", primary_message.channel.name)
+            raise
+
         except Exception as e:
             logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
             await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)

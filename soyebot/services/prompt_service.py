@@ -25,7 +25,7 @@ class PromptService:
         # If prompts list is empty (either file missing or empty file/load error), use default
         if not self.prompts:
             self.prompts = [
-                {"name": "Default (백진우)", "content": BOT_PERSONA_PROMPT}
+                {"name": "기본값", "content": BOT_PERSONA_PROMPT}
             ]
             self._save()
 

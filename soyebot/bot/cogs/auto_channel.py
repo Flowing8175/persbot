@@ -270,6 +270,10 @@ class AutoChannelCog(commands.Cog):
             logger.info("Batch processing cancelled for channel #%s (likely due to new message).", primary_message.channel.name)
             raise
 
+        except asyncio.CancelledError:
+            logger.info("Batch processing cancelled for channel #%s (likely due to new message).", primary_message.channel.name)
+            raise
+
         except Exception as exc:
             logger.error("자동 응답 메시지 처리 중 오류 발생: %s", exc, exc_info=True)
             await primary_message.channel.send(GENERIC_ERROR_MESSAGE)

@@ -27,9 +27,10 @@ uv.lock
 
 # Virtual environment
 venv/
+.venv/
 ENV/
 env/
-.env
+*.*env
 
 # IDE
 .vscode/
@@ -41,6 +42,6 @@ env/
 
 # Project specific
 *.log
-.config/
-config.json
+*.txt
+*.json
 *.db

@@ -346,7 +346,7 @@ class GeminiService(BaseLLMService):
 
         min_tokens = getattr(self.config, 'gemini_cache_min_tokens', 32768)
         if token_count < min_tokens:
-            logger.debug(
+            logger.warning(
                 "System instruction too short for caching (%d < %d tokens). Using standard context.",
                 token_count, min_tokens
             )
@@ -455,7 +455,7 @@ class GeminiService(BaseLLMService):
         message_id = str(discord_message.id)
  
         async def _refresh_chat_session():
-            logger.info("Refreshing chat session due to 403 Cache Error...")
+            logger.warning("Refreshing chat session due to 403 Cache Error...")
             self._model_cache.clear()
 
             # Create a fresh model
