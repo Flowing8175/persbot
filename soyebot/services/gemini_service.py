@@ -18,6 +18,8 @@ from google.genai.errors import ClientError
 from soyebot.config import AppConfig
 from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
 from soyebot.services.base import BaseLLMService, ChatMessage
+from soyebot.metrics import get_metrics
+from soyebot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -450,9 +452,13 @@ class GeminiService(BaseLLMService):
             logger.info("Refreshing chat session due to 403 Cache Error...")
             self._model_cache.clear()
 
+            # Determine system instruction to use
+            # Use the session's system instruction if available, otherwise fallback to default
+            system_instruction = getattr(chat_session, '_system_instruction', BOT_PERSONA_PROMPT)
+
             # Create a fresh model
             fresh_model = self._get_or_create_model(
-                self._assistant_model_name, BOT_PERSONA_PROMPT
+                self._assistant_model_name, system_instruction
             )
 
             # Create a new underlying chat session
@@ -477,52 +483,22 @@ class GeminiService(BaseLLMService):
 
             logger.info("Chat session successfully refreshed with new model/cache.")
 
-        response_obj = await self._gemini_retry(
-            lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
-            on_cache_error=_refresh_chat_session,
-            discord_message=discord_message
-        )
+        try:
+            response_obj = await self._gemini_retry(
+                lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
+                on_cache_error=_refresh_chat_session,
+                discord_message=discord_message
+            )
 
             if response_obj is None:
                 return None
 
             response_text = self._extract_text_from_response(response_obj)
             return (response_text, response_obj)
-            
-        except Exception as e:
-            if self._is_fatal_error(e) and hasattr(chat_session, '_system_instruction'):
-                logger.warning("Cache missing in generate_chat_response. Refreshing model and retrying...")
-                self._model_cache.clear()
-                
-                # Re-create underlying chat session for this specific ChatSession
-                system_instr = chat_session._system_instruction
-                new_model = self.create_assistant_model(system_instr)
-                chat_session._chat = new_model._client.chats.create(
-                    model=new_model._model_name,
-                    config=new_model._config,
-                )
-                
-                # Retry the call
-                try:
-                    response_obj = await self.execute_with_retry(
-                        api_call,
-                        "응답 생성 (재시도)",
-                        return_full_response=True,
-                        discord_message=discord_message,
-                    )
-                    if response_obj:
-                        response_text = self._extract_text_from_response(response_obj)
-                        return (response_text, response_obj)
-                except Exception as retry_e:
-                    logger.error(f"Generate chat response retry failed after cache refresh: {retry_e}", exc_info=True)
-            else:
-                logger.error(f"Generate chat response failed with non-fatal error: {e}", exc_info=True)
-            
-            # Re-raise or return None if still failing
-            return None
 
-        response_text = self._extract_text_from_response(response_obj)
-        return (response_text, response_obj)
+        except Exception as e:
+            logger.error(f"Generate chat response failed: {e}", exc_info=True)
+            return None
 
     async def _gemini_retry(
         self,
