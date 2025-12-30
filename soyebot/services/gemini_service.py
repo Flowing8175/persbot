@@ -18,6 +18,7 @@ from google.genai.errors import ClientError
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
+from soyebot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -457,10 +458,6 @@ class GeminiService(BaseLLMService):
         async def _refresh_chat_session():
             logger.warning("Refreshing chat session due to 403 Cache Error...")
             self._model_cache.clear()
-
-            # Determine system instruction to use
-            # Use the session's system instruction if available, otherwise fallback to default
-            system_instruction = getattr(chat_session, '_system_instruction', BOT_PERSONA_PROMPT)
 
             # Create a fresh model
             # Use the system instruction from the existing session to ensure continuity
