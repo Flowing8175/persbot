@@ -3,6 +3,8 @@ import os
 import logging
 from typing import List, Dict, Optional
 
+from soyebot.prompts import BOT_PERSONA_PROMPT, SUMMARY_SYSTEM_INSTRUCTION
+
 logger = logging.getLogger(__name__)
 
 class PromptService:
@@ -19,10 +21,11 @@ class PromptService:
             except Exception as e:
                 logger.error(f"Failed to load prompts: {e}")
                 self.prompts = []
-        else:
-            # Add default prompt if empty
+
+        # If prompts list is empty (either file missing or empty file/load error), use default
+        if not self.prompts:
             self.prompts = [
-                {"name": "Default (백진우)", "content": "Default assistant prompt"} 
+                {"name": "Default (백진우)", "content": BOT_PERSONA_PROMPT}
             ]
             self._save()
 
@@ -45,6 +48,16 @@ class PromptService:
         if 0 <= index < len(self.prompts):
             return self.prompts[index]
         return None
+
+    def get_active_assistant_prompt(self) -> str:
+        """Returns the content of the currently active assistant prompt (default: index 0)."""
+        if self.prompts:
+            return self.prompts[0].get("content", BOT_PERSONA_PROMPT)
+        return BOT_PERSONA_PROMPT
+
+    def get_summary_prompt(self) -> str:
+        """Returns the system instruction for the summarizer."""
+        return SUMMARY_SYSTEM_INSTRUCTION
 
     def rename_prompt(self, index: int, new_name: str) -> bool:
         if 0 <= index < len(self.prompts):

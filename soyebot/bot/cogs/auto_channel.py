@@ -13,7 +13,6 @@ from soyebot.bot.chat_handler import ChatReply, create_chat_reply, resolve_sessi
 from soyebot.bot.session import SessionManager
 from soyebot.bot.buffer import MessageBuffer
 from soyebot.config import AppConfig
-from soyebot.metrics import get_metrics
 from soyebot.services.llm_service import LLMService
 from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
@@ -224,9 +223,6 @@ class AutoChannelCog(commands.Cog):
         self.active_batches[channel_id] = messages
         self.processing_tasks[channel_id] = asyncio.current_task()
 
-        start_time = time.perf_counter()
-        metrics = get_metrics()
-
         try:
              # Combine contents
             combined_content = []
@@ -270,10 +266,6 @@ class AutoChannelCog(commands.Cog):
                 if reply:
                     await self._send_auto_reply(primary_message, reply)
 
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            metrics.record_latency('message_processing', duration_ms)
-            metrics.increment_counter('messages_processed')
-
         except asyncio.CancelledError:
             logger.info("Batch processing cancelled for channel #%s (likely due to new message).", primary_message.channel.name)
             raise
@@ -281,8 +273,6 @@ class AutoChannelCog(commands.Cog):
         except Exception as exc:
             logger.error("자동 응답 메시지 처리 중 오류 발생: %s", exc, exc_info=True)
             await primary_message.channel.send(GENERIC_ERROR_MESSAGE)
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            metrics.record_latency('message_processing', duration_ms)
         
         finally:
             # Cleanup only if we are the current task (handling race conditions slightly safer)
