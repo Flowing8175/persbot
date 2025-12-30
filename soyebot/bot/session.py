@@ -10,7 +10,6 @@ from typing import Optional, Tuple
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
 from soyebot.prompts import BOT_PERSONA_PROMPT
-from soyebot.metrics import get_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +136,6 @@ class SessionManager:
             last_message_id=message_id,
         )
 
-        get_metrics().increment_counter('sessions_created')
-
         self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts)
         self._evict_if_needed()
 
@@ -246,6 +243,10 @@ class SessionManager:
                     new_history.append(msg)
 
             session.chat.history = new_history
+
+            # Force sync if the chat session supports it (e.g. Gemini)
+            if hasattr(session.chat, 'sync_history'):
+                session.chat.sync_history()
 
             logger.info(
                 "Undid last %d exchanges from session %s. New history length: %d",

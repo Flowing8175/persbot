@@ -51,7 +51,7 @@ async def resolve_session_for_message(
             # Add reply context to the content
             # Using clean_content to get readable names instead of mention IDs
             ref_text = ref_msg.clean_content
-            reply_context = f"(답장 대상: {ref_msg.author.display_name}, 내용: \"{ref_text}\")\n"
+            reply_context = f"(답장 대상: {ref_msg.author.id}, 내용: \"{ref_text}\")\n"
             content = reply_context + content
 
             # Check if this is a reply to a summary message
@@ -124,7 +124,7 @@ async def send_split_response(
                 continue
 
             # Calculate delay: proportional to length, clamped 0.5s - 1.7s
-            delay = max(0.5, min(1.7, len(line) * 0.05))
+            delay = max(0.1, min(1.7, len(line) * 0.1))
 
             # Send typing status while waiting
             async with channel.typing():

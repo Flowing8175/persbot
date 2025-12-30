@@ -10,7 +10,6 @@ from typing import Any, Awaitable, Callable, Optional, Union, List
 import discord
 
 from soyebot.config import AppConfig
-from soyebot.metrics import get_metrics
 from soyebot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
@@ -129,10 +128,6 @@ class BaseLLMService(ABC):
         """
         Execute the API call with retries, logging, and countdown notifications.
         """
-        metrics = get_metrics()
-        request_start = time.perf_counter()
-        metrics.increment_counter('api_requests_total')
-
         last_error: Optional[Exception] = None
 
         for attempt in range(1, self.config.api_max_retries + 1):
@@ -143,10 +138,6 @@ class BaseLLMService(ABC):
                 )
 
                 self._log_raw_response(response, attempt)
-
-                duration_ms = (time.perf_counter() - request_start) * 1000
-                metrics.record_latency('llm_api', duration_ms)
-                metrics.increment_counter('api_requests_success')
 
                 if return_full_response:
                     return response
@@ -199,8 +190,6 @@ class BaseLLMService(ABC):
                 self.config.api_max_retries,
                 error_prefix,
             )
-
-        metrics.increment_counter('api_requests_error')
 
         if discord_message:
             try:

@@ -10,8 +10,8 @@ import discord
 from openai import OpenAI, RateLimitError
 
 from soyebot.config import AppConfig
-from soyebot.prompts import SUMMARY_SYSTEM_INSTRUCTION, BOT_PERSONA_PROMPT
 from soyebot.services.base import BaseLLMService, ChatMessage
+from soyebot.services.prompt_service import PromptService
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,10 @@ class ResponseChatSession:
         self._append_history("assistant", message_content)
         return message_content, response
 
+    def sync_history(self) -> None:
+        """No-op for OpenAI as we rebuild history per request."""
+        pass
+
 
 class ChatCompletionSession:
     """Chat Completion API-backed chat session for fine-tuned models."""
@@ -170,6 +174,10 @@ class ChatCompletionSession:
 
         self._append_history("assistant", message_content)
         return message_content, response
+
+    def sync_history(self) -> None:
+        """No-op for OpenAI as we rebuild history per request."""
+        pass
 
 
 class _ChatCompletionModel:
@@ -247,16 +255,26 @@ class _ResponseModel:
 class OpenAIService(BaseLLMService):
     """OpenAI API와의 모든 상호작용을 관리합니다."""
 
-    def __init__(self, config: AppConfig, *, assistant_model_name: str, summary_model_name: Optional[str] = None):
+    def __init__(
+        self,
+        config: AppConfig,
+        *,
+        assistant_model_name: str,
+        summary_model_name: Optional[str] = None,
+        prompt_service: PromptService
+    ):
         super().__init__(config)
         self.client = OpenAI(api_key=config.openai_api_key)
         self._assistant_cache: dict[int, _ResponseModel] = {}
         self._max_messages = 7
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
+        self.prompt_service = prompt_service
 
         # Preload default response model
-        self.assistant_model = self._get_or_create_assistant(self._assistant_model_name, BOT_PERSONA_PROMPT)
+        self.assistant_model = self._get_or_create_assistant(
+            self._assistant_model_name, self.prompt_service.get_active_assistant_prompt()
+        )
         logger.info("OpenAI Response 모델 '%s' 준비 완료.", self._assistant_model_name)
 
     def _get_or_create_assistant(self, model_name: str, system_instruction: str):
@@ -413,7 +431,7 @@ class OpenAIService(BaseLLMService):
                 messages=[
                     {
                         "role": "system",
-                        "content": SUMMARY_SYSTEM_INSTRUCTION,
+                        "content": self.prompt_service.get_summary_prompt(),
                         "cache_control": {"type": "ephemeral"},
                     },
                     {"role": "user", "content": prompt},

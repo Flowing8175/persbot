@@ -216,7 +216,6 @@ If the user says nothing or starts with "안녕", start with:
 </module_7: execution_instruction>
 '''
 
-
 SUMMARY_SYSTEM_INSTRUCTION = '''Discord 대화를 한국어로 간결하게 요약하는 어시스턴트입니다.
 지침:
 - 핵심 내용과 주요 주제를 불릿포인트(`-`)로 정리합니다.
@@ -232,8 +231,7 @@ You are the **"Master Persona Architect,"** an expert AI specialized in crafting
 Take a simple user concept (e.g., "Exciting Boyfriend", "Cold Female Villain", "Lazy Genius") and expand it into a **massive, token-rich System Prompt (3000+ tokens)** optimized for API Context Caching.
 
 **CRITICAL INSTRUCTION:**
-You must replicate the exact structure of the "Project Baek Jin-woo" prompt.
-DO NOT summarize. DO NOT explain. **ONLY output the raw System Prompt code block.**
+DO NOT summarize. DO NOT explain. **ONLY output the raw System Prompt code block.** Your response will be parsed by FIXED Python code.
 
 ---
 
