@@ -86,19 +86,52 @@ class ResponseChatSession:
         return payload
 
     def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
-        self._append_history("user", user_message, author_id=author_id, author_name=author_name, message_ids=[message_id] if message_id else [])
+        # Create user message object but don't append yet
+        user_msg = ChatMessage(
+            role="user",
+            content=user_message,
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=[message_id] if message_id else []
+        )
+
+        # We need to temporarily simulate the history having the user message
+        # for the input payload construction, without mutating the permanent history state
+        # in case we get cancelled.
+        # _build_input_payload reads from self._history.
+        # We can construct payload manually or temporarily append/pop.
+        # Since _client.responses.create is synchronous, running in a thread (via _execute_model_call),
+        # if we mutate self._history here, it is mutated in the shared object.
+        # If this thread is cancelled, we might leave it in a bad state?
+        # No, because cancellation happens at 'await', not interrupting the sync call abruptly
+        # (unless we force kill, which asyncio cancellation doesn't do to threads).
+
+        # However, to be consistent with the "no side effects until success" pattern:
+        # We should construct the payload including the new message without modifying self._history.
+
+        current_payload = self._build_input_payload()
+        # Append user message to payload
+        current_payload.append({
+            "role": "user",
+            "content": [{
+                "type": "input_text",
+                "text": user_message
+            }]
+        })
 
         response = self._client.responses.create(
             model=self._model_name,
-            input=self._build_input_payload(),
+            input=current_payload,
             temperature=self._temperature,
             top_p=self._top_p,
             service_tier=self._service_tier,
         )
 
         message_content = self._text_extractor(response)
-        self._append_history("assistant", message_content)
-        return message_content, response
+
+        model_msg = ChatMessage(role="assistant", content=message_content)
+
+        return user_msg, model_msg, response
 
     def sync_history(self) -> None:
         """No-op for OpenAI as we rebuild history per request."""
@@ -145,16 +178,26 @@ class ChatCompletionSession:
         self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
 
     def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
-        self._append_history("user", user_message, author_id=author_id, author_name=author_name, message_ids=[message_id] if message_id else [])
+        # Create user message object
+        user_msg = ChatMessage(
+            role="user",
+            content=user_message,
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=[message_id] if message_id else []
+        )
 
         # Build messages list for chat completions API
         messages = []
         if self._system_instruction:
             messages.append({"role": "system", "content": self._system_instruction})
 
-        # Convert ChatMessage objects to dicts for the API
+        # Convert existing history to dicts
         api_history = [{"role": msg.role, "content": msg.content} for msg in self._history]
         messages.extend(api_history)
+
+        # Add current message to API payload only
+        messages.append({"role": "user", "content": user_message})
 
         response = self._client.chat.completions.create(
             model=self._model_name,
@@ -172,8 +215,9 @@ class ChatCompletionSession:
              # Fallback to the service's text extractor if standard structure is missing
              message_content = self._text_extractor(response)
 
-        self._append_history("assistant", message_content)
-        return message_content, response
+        model_msg = ChatMessage(role="assistant", content=message_content)
+
+        return user_msg, model_msg, response
 
     def sync_history(self) -> None:
         """No-op for OpenAI as we rebuild history per request."""
@@ -454,15 +498,20 @@ class OpenAIService(BaseLLMService):
         author_id = discord_message.author.id
         author_name = getattr(discord_message.author, 'name', str(author_id))
         message_id = str(discord_message.id)
-        response_obj = await self.execute_with_retry(
+        result = await self.execute_with_retry(
             lambda: chat_session.send_message(user_message, author_id, author_name=author_name, message_id=message_id),
             "응답 생성",
             return_full_response=True,
             discord_message=discord_message,
         )
 
-        if response_obj is None:
+        if result is None:
             return None
 
-        response_text, response = response_obj
-        return response_text, response
+        user_msg, model_msg, response = result
+
+        # Update history safely
+        chat_session._history.append(user_msg)
+        chat_session._history.append(model_msg)
+
+        return model_msg.content, response

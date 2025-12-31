@@ -66,33 +66,27 @@ class _ChatSession:
 
         response = self._chat.send_message(user_message)
 
-        # After sending, save the user message and response to our custom history
-        self.history.append(ChatMessage(
+        # Create ChatMessage objects but do NOT append to self.history yet.
+        # This prevents "phantom" history if the task is cancelled while running in a thread.
+        user_msg = ChatMessage(
             role="user",
             content=user_message,
             parts=[{"text": user_message}],
             author_id=author_id,
             author_name=author_name,
             message_ids=[message_id] if message_id else []
-        ))
-        # Assuming the response text is in response.text
-        # We need to ensure we don't store thoughts in history, so we use our helper
-        # to extract only the text content (which filters out thoughts).
-        clean_content = extract_clean_text(response)
+        )
 
-        self.history.append(ChatMessage(
+        clean_content = extract_clean_text(response)
+        model_msg = ChatMessage(
             role="model",
             content=clean_content,
             parts=[{"text": clean_content}],
             author_id=None # Bot messages have no author
-        ))
+        )
 
-        # Keep the underlying history in sync, though we are the source of truth
-        self._chat.history = [
-            {"role": msg.role, "parts": msg.parts} for msg in self.history
-        ]
-
-        return response
+        # Return the new messages and the raw response
+        return user_msg, model_msg, response
 
     def sync_history(self) -> None:
         """Force sync the underlying chat history with our local history."""
@@ -492,14 +486,22 @@ class GeminiService(BaseLLMService):
 
         try:
             # First attempt: normal flow with retry for cache errors
-            response_obj = await self._gemini_retry(
+            result = await self._gemini_retry(
                 lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
                 on_cache_error=_refresh_chat_session,
                 discord_message=discord_message
             )
 
-            if response_obj is None:
+            if result is None:
                 return None
+
+            # Unpack the result from send_message
+            user_msg, model_msg, response_obj = result
+
+            # Safely update history now that we are back in the main thread (and not cancelled)
+            chat_session.history.append(user_msg)
+            chat_session.history.append(model_msg)
+            chat_session.sync_history()
 
             response_text = self._extract_text_from_response(response_obj)
             return (response_text, response_obj)
@@ -519,13 +521,18 @@ class GeminiService(BaseLLMService):
                 
                 # Retry the call
                 try:
-                    response_obj = await self.execute_with_retry(
+                    result = await self.execute_with_retry(
                         lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
                         "응답 생성 (재시도)",
                         return_full_response=True,
                         discord_message=discord_message,
                     )
-                    if response_obj:
+                    if result:
+                        user_msg, model_msg, response_obj = result
+                        chat_session.history.append(user_msg)
+                        chat_session.history.append(model_msg)
+                        chat_session.sync_history()
+
                         response_text = self._extract_text_from_response(response_obj)
                         return (response_text, response_obj)
                 except Exception as retry_e:
