@@ -66,6 +66,19 @@ class BaseLLMService(ABC):
         """Return the name for the 'assistant' role in the chat history."""
         pass
 
+    @abstractmethod
+    async def generate_chat_response(
+        self,
+        chat_session: Any,
+        user_message: str,
+        discord_message: Union[discord.Message, List[discord.Message]],
+    ) -> Optional[Tuple[str, Any]]:
+        """
+        Generate chat response.
+        Should be implemented by subclasses if they support chat generation.
+        """
+        pass
+
     def reload_parameters(self) -> None:
         """Reload service parameters (e.g. clear caches). To be overridden."""
         pass

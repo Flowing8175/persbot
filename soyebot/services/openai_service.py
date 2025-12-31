@@ -85,14 +85,14 @@ class ResponseChatSession:
             )
         return payload
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None):
         # Create user message object but don't append yet
         user_msg = ChatMessage(
             role="user",
             content=user_message,
             author_id=author_id,
             author_name=author_name,
-            message_ids=[message_id] if message_id else []
+            message_ids=message_ids or []
         )
 
         # We need to temporarily simulate the history having the user message
@@ -173,14 +173,14 @@ class ChatCompletionSession:
             return
         self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None):
         # Create user message object
         user_msg = ChatMessage(
             role="user",
             content=user_message,
             author_id=author_id,
             author_name=author_name,
-            message_ids=[message_id] if message_id else []
+            message_ids=message_ids or []
         )
 
         # Build messages list for chat completions API
@@ -483,18 +483,25 @@ class OpenAIService(BaseLLMService):
         self,
         chat_session,
         user_message: str,
-        discord_message: discord.Message,
+        discord_message: Union[discord.Message, list[discord.Message]],
     ) -> Optional[Tuple[str, Any]]:
         self._log_raw_request(user_message, chat_session)
 
-        author_id = discord_message.author.id
-        author_name = getattr(discord_message.author, 'name', str(author_id))
-        message_id = str(discord_message.id)
+        if isinstance(discord_message, list):
+            primary_msg = discord_message[0]
+            message_ids = [str(m.id) for m in discord_message]
+        else:
+            primary_msg = discord_message
+            message_ids = [str(discord_message.id)]
+
+        author_id = primary_msg.author.id
+        author_name = getattr(primary_msg.author, 'name', str(author_id))
+
         result = await self.execute_with_retry(
-            lambda: chat_session.send_message(user_message, author_id, author_name=author_name, message_id=message_id),
+            lambda: chat_session.send_message(user_message, author_id, author_name=author_name, message_ids=message_ids),
             "응답 생성",
             return_full_response=True,
-            discord_message=discord_message,
+            discord_message=primary_msg,
         )
 
         if result is None:

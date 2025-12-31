@@ -310,7 +310,7 @@ class AutoChannelCog(commands.Cog):
                     return
 
                 reply = await create_chat_reply(
-                    primary_message,
+                    messages, # Pass list of messages
                     resolution=resolution,
                     llm_service=self.llm_service,
                     session_manager=self.session_manager,

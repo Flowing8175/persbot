@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import discord
 
@@ -76,7 +76,7 @@ async def resolve_session_for_message(
 
 
 async def create_chat_reply(
-    message: discord.Message,
+    message: Union[discord.Message, list[discord.Message]],
     *,
     resolution: ResolvedSession,
     llm_service: LLMService,
@@ -84,20 +84,30 @@ async def create_chat_reply(
 ) -> Optional[ChatReply]:
     """Create or reuse a chat session and fetch an LLM reply."""
 
+    # Determine primary message for metadata
+    if isinstance(message, list):
+        primary_msg = message[0]
+        # We don't link message_id here for get_or_create because it's for session resumption
+        # The actual message linking happens in generate_chat_response
+        msg_id_for_session = str(primary_msg.id)
+    else:
+        primary_msg = message
+        msg_id_for_session = str(message.id)
+
     chat_session, session_key = await session_manager.get_or_create(
-        user_id=message.author.id,
-        username=message.author.name,
+        user_id=primary_msg.author.id,
+        username=primary_msg.author.name,
         session_key=resolution.session_key,
-        channel_id=message.channel.id,
+        channel_id=primary_msg.channel.id,
         message_content=resolution.cleaned_message,
-        message_ts=message.created_at,
-        message_id=str(message.id),
+        message_ts=primary_msg.created_at,
+        message_id=msg_id_for_session,
     )
 
     response_result = await llm_service.generate_chat_response(
         chat_session,
         resolution.cleaned_message,
-        message,
+        message, # This can be a list of messages if AutoChannelCog passes it, but type hint says discord.Message
         use_summarizer_backend=resolution.is_reply_to_summary,
     )
 

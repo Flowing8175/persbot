@@ -63,7 +63,7 @@ class _ChatSession:
             api_history.append({"role": msg.role, "parts": msg.parts})
         return api_history
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None):
         # 1. Build the full content list for this turn (History + Current Message)
         contents = self._get_api_history()
         contents.append({"role": "user", "parts": [{"text": user_message}]})
@@ -78,7 +78,7 @@ class _ChatSession:
             parts=[{"text": user_message}],
             author_id=author_id,
             author_name=author_name,
-            message_ids=[message_id] if message_id else []
+            message_ids=message_ids or []
         )
 
         clean_content = extract_clean_text(response)
@@ -430,14 +430,20 @@ class GeminiService(BaseLLMService):
         self,
         chat_session,
         user_message: str,
-        discord_message: discord.Message,
+        discord_message: Union[discord.Message, list[discord.Message]],
     ) -> Optional[Tuple[str, Any]]:
         """Generate chat response."""
         self._log_raw_request(user_message, chat_session)
 
-        author_id = discord_message.author.id
-        author_name = getattr(discord_message.author, 'name', str(author_id))
-        message_id = str(discord_message.id)
+        if isinstance(discord_message, list):
+            primary_msg = discord_message[0]
+            message_ids = [str(m.id) for m in discord_message]
+        else:
+            primary_msg = discord_message
+            message_ids = [str(discord_message.id)]
+
+        author_id = primary_msg.author.id
+        author_name = getattr(primary_msg.author, 'name', str(author_id))
  
         async def _refresh_chat_session():
             logger.warning("Refreshing chat session due to 403 Cache Error...")
@@ -460,9 +466,9 @@ class GeminiService(BaseLLMService):
         try:
             # First attempt: normal flow with retry for cache errors
             result = await self._gemini_retry(
-                lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
+                lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_ids=message_ids),
                 on_cache_error=_refresh_chat_session,
-                discord_message=discord_message
+                discord_message=primary_msg
             )
 
             if result is None:
@@ -493,10 +499,10 @@ class GeminiService(BaseLLMService):
                 # Retry the call
                 try:
                     result = await self.execute_with_retry(
-                        lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_id=message_id),
+                        lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_ids=message_ids),
                         "응답 생성 (재시도)",
                         return_full_response=True,
-                        discord_message=discord_message,
+                        discord_message=primary_msg,
                     )
                     if result:
                         user_msg, model_msg, response_obj = result
