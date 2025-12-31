@@ -5,7 +5,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Union, List
+from typing import Any, Awaitable, Callable, Optional, Union, List, Tuple
 
 import discord
 

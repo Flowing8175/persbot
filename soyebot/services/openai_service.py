@@ -4,7 +4,7 @@ import json
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Optional, Tuple
+from typing import Any, Deque, Optional, Tuple, Union
 
 import discord
 from openai import OpenAI, RateLimitError
