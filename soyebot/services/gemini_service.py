@@ -92,10 +92,6 @@ class _ChatSession:
         # Return the new messages and the raw response
         return user_msg, model_msg, response
 
-    def sync_history(self) -> None:
-        """No-op for stateless implementation."""
-        pass
-
 class _CachedModel:
     """Lightweight wrapper that mimics the old GenerativeModel interface."""
 
@@ -478,7 +474,6 @@ class GeminiService(BaseLLMService):
             # Safely update history now that we are back in the main thread (and not cancelled)
             chat_session.history.append(user_msg)
             chat_session.history.append(model_msg)
-            chat_session.sync_history()
 
             response_text = self._extract_text_from_response(response_obj)
             return (response_text, response_obj)
@@ -507,7 +502,6 @@ class GeminiService(BaseLLMService):
                         user_msg, model_msg, response_obj = result
                         chat_session.history.append(user_msg)
                         chat_session.history.append(model_msg)
-                        chat_session.sync_history()
 
                         response_text = self._extract_text_from_response(response_obj)
                         return (response_text, response_obj)

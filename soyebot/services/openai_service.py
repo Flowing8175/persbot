@@ -133,10 +133,6 @@ class ResponseChatSession:
 
         return user_msg, model_msg, response
 
-    def sync_history(self) -> None:
-        """No-op for OpenAI as we rebuild history per request."""
-        pass
-
 
 class ChatCompletionSession:
     """Chat Completion API-backed chat session for fine-tuned models."""
@@ -218,10 +214,6 @@ class ChatCompletionSession:
         model_msg = ChatMessage(role="assistant", content=message_content)
 
         return user_msg, model_msg, response
-
-    def sync_history(self) -> None:
-        """No-op for OpenAI as we rebuild history per request."""
-        pass
 
 
 class _ChatCompletionModel:
