@@ -50,24 +50,28 @@ def extract_clean_text(response_obj: Any) -> str:
 
 class _ChatSession:
     """A wrapper for a Gemini chat session to manage history with author tracking."""
-    def __init__(self, underlying_chat, system_instruction: str):
-        self._chat = underlying_chat
+    def __init__(self, system_instruction: str, factory: '_CachedModel'):
         self._system_instruction = system_instruction
+        self._factory = factory
         # We will manage the history manually to include author_id
         self.history: list[ChatMessage] = []
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
-        # Reconstruct history for the API call
+    def _get_api_history(self) -> list[dict]:
+        """Convert local history to API format."""
         api_history = []
         for msg in self.history:
             api_history.append({"role": msg.role, "parts": msg.parts})
+        return api_history
 
-        self._chat.history = api_history
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_id: Optional[str] = None):
+        # 1. Build the full content list for this turn (History + Current Message)
+        contents = self._get_api_history()
+        contents.append({"role": "user", "parts": [{"text": user_message}]})
 
-        response = self._chat.send_message(user_message)
+        # 2. Call generate_content directly (Stateless)
+        response = self._factory.generate_content(contents=contents)
 
-        # Create ChatMessage objects but do NOT append to self.history yet.
-        # This prevents "phantom" history if the task is cancelled while running in a thread.
+        # 3. Create ChatMessage objects but do NOT append to self.history yet.
         user_msg = ChatMessage(
             role="user",
             content=user_message,
@@ -89,15 +93,8 @@ class _ChatSession:
         return user_msg, model_msg, response
 
     def sync_history(self) -> None:
-        """Force sync the underlying chat history with our local history."""
-        try:
-            api_history = []
-            for msg in self.history:
-                api_history.append({"role": msg.role, "parts": msg.parts})
-            self._chat.history = api_history
-            logger.debug("Synced Gemini chat history. Length: %d", len(self.history))
-        except Exception as e:
-            logger.error("Failed to sync Gemini history: %s", e)
+        """No-op for stateless implementation."""
+        pass
 
 class _CachedModel:
     """Lightweight wrapper that mimics the old GenerativeModel interface."""
@@ -112,7 +109,7 @@ class _CachedModel:
         self._model_name = model_name
         self._config = config
 
-    def generate_content(self, contents: str):
+    def generate_content(self, contents: Union[str, list]):
         return self._client.models.generate_content(
             model=self._model_name,
             contents=contents,
@@ -120,11 +117,8 @@ class _CachedModel:
         )
 
     def start_chat(self, system_instruction: str):
-        underlying_chat = self._client.chats.create(
-            model=self._model_name,
-            config=self._config,
-        )
-        return _ChatSession(underlying_chat, system_instruction)
+        # No underlying chat needed
+        return _ChatSession(system_instruction, self)
 
 
 class GeminiService(BaseLLMService):
@@ -462,25 +456,8 @@ class GeminiService(BaseLLMService):
                 self._assistant_model_name, system_instruction
             )
 
-            # Create a new underlying chat session
-            new_underlying_chat = fresh_model._client.chats.create(
-                model=fresh_model._model_name,
-                config=fresh_model._config,
-            )
-
-            # Inject it into the existing _ChatSession wrapper
-            # We preserve the history structure but replace the API object
-            old_history = chat_session.history
-
-            # Update the wrapper's internal object
-            chat_session._chat = new_underlying_chat
-
-            # Restore history to the new chat object
-            # Note: We must convert our ChatMessage objects back to API format
-            api_history = []
-            for msg in old_history:
-                api_history.append({"role": msg.role, "parts": msg.parts})
-            chat_session._chat.history = api_history
+            # Update the wrapper's factory reference
+            chat_session._factory = fresh_model
 
             logger.info("Chat session successfully refreshed with new model/cache.")
 
@@ -514,10 +491,9 @@ class GeminiService(BaseLLMService):
                 # Re-create underlying chat session for this specific ChatSession
                 system_instr = chat_session._system_instruction
                 new_model = self.create_assistant_model(system_instr)
-                chat_session._chat = new_model._client.chats.create(
-                    model=new_model._model_name,
-                    config=new_model._config,
-                )
+
+                # Update the wrapper's factory reference
+                chat_session._factory = new_model
                 
                 # Retry the call
                 try:
