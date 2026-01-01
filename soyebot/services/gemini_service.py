@@ -165,12 +165,20 @@ class GeminiService(BaseLLMService):
             else:
                 return model
 
+        # Enable Google Search Grounding for the assistant model
+        tools = None
+        if model_name == self._assistant_model_name:
+            grounding_tool = genai_types.Tool(
+                google_search=genai_types.GoogleSearch()
+            )
+            tools = [grounding_tool]
+
         # Check logic for caching (token count check)
         # If valid for caching, this returns the cache name (resource ID)
         cache_name = None
         cache_expiration = None
         if use_cache:
-            cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction)
+            cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction, tools=tools)
 
         config_kwargs = {
             "temperature": getattr(self.config, 'temperature', 1.0),
@@ -181,9 +189,13 @@ class GeminiService(BaseLLMService):
             # Use the cached content
             config_kwargs["cached_content"] = cache_name
             logger.debug("Using cached content: %s", cache_name)
+            # When using CachedContent, tools must be part of the cache configuration,
+            # NOT passed in GenerateContentConfig.
         else:
             # Standard mode: pass system_instruction directly
             config_kwargs["system_instruction"] = system_instruction
+            if tools:
+                config_kwargs["tools"] = tools
 
         if getattr(self.config, 'thinking_budget', None):
             thinking_budget_val = self.config.thinking_budget
@@ -200,13 +212,6 @@ class GeminiService(BaseLLMService):
                 include_thoughts=True,
                 thinking_budget=thinking_budget_val
             )
-
-        # Enable Google Search Grounding for the assistant model
-        if model_name == self._assistant_model_name:
-            grounding_tool = genai_types.Tool(
-                google_search=genai_types.GoogleSearch()
-            )
-            config_kwargs["tools"] = [grounding_tool]
 
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
@@ -314,14 +319,15 @@ class GeminiService(BaseLLMService):
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
-    def _get_cache_key(self, model_name: str, content: str) -> str:
+    def _get_cache_key(self, model_name: str, content: str, tools: Optional[list] = None) -> str:
         """Generate a consistent cache key/name based on model and content hash."""
         # Clean model name for use in display_name
         safe_model = re.sub(r'[^a-zA-Z0-9-]', '-', model_name)
         content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
-        return f"soyebot-{safe_model}-{content_hash[:10]}"
+        tool_suffix = "-tools" if tools else ""
+        return f"soyebot-{safe_model}-{content_hash[:10]}{tool_suffix}"
 
-    def _get_gemini_cache(self, model_name: str, system_instruction: str) -> Tuple[Optional[str], Optional[datetime.datetime]]:
+    def _get_gemini_cache(self, model_name: str, system_instruction: str, tools: Optional[list] = None) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
         Attempts to find or create a Gemini cache for the given system instruction.
         Returns: (cache_name, local_expiration_datetime)
@@ -349,7 +355,7 @@ class GeminiService(BaseLLMService):
             return None, None
 
         # 2. Config setup
-        cache_display_name = self._get_cache_key(model_name, system_instruction)
+        cache_display_name = self._get_cache_key(model_name, system_instruction, tools)
         ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
         ttl_seconds = ttl_minutes * 60
         
@@ -397,6 +403,7 @@ class GeminiService(BaseLLMService):
                 config=genai_types.CreateCachedContentConfig(
                     display_name=cache_display_name,
                     system_instruction=system_instruction,
+                    tools=tools,
                     ttl=f"{ttl_seconds}s",
                 )
             )
