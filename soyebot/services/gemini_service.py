@@ -208,12 +208,6 @@ class GeminiService(BaseLLMService):
             )
             config_kwargs["tools"] = [grounding_tool]
 
-            # Disable thinking config if tools are enabled to prevent 400 Bad Request
-            # (Thinking models or API might not support both simultaneously or on this model)
-            if "thinking_config" in config_kwargs:
-                logger.warning("Disabling thinking_config because tools (Google Search) are enabled.")
-                del config_kwargs["thinking_config"]
-
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
 
