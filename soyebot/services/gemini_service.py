@@ -208,6 +208,12 @@ class GeminiService(BaseLLMService):
             )
             config_kwargs["tools"] = [grounding_tool]
 
+            # Disable thinking config if tools are enabled to prevent 400 Bad Request
+            # (Thinking models or API might not support both simultaneously or on this model)
+            if "thinking_config" in config_kwargs:
+                logger.warning("Disabling thinking_config because tools (Google Search) are enabled.")
+                del config_kwargs["thinking_config"]
+
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
 
@@ -233,7 +239,11 @@ class GeminiService(BaseLLMService):
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
         error_str = str(error)
-        return "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower()
+        # Avoid matching "rate" in generic error messages (e.g. "operate")
+        # 400 errors should typically not be retried as rate limits unless "quota" is explicit.
+        if "400" in error_str and "quota" not in error_str.lower():
+            return False
+        return "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower()
 
     def _is_fatal_error(self, error: Exception) -> bool:
         """Check if the error is a fatal cache error."""
