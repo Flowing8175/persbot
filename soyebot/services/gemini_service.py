@@ -201,6 +201,13 @@ class GeminiService(BaseLLMService):
                 thinking_budget=thinking_budget_val
             )
 
+        # Enable Google Search Grounding for the assistant model
+        if model_name == self._assistant_model_name:
+            grounding_tool = genai_types.Tool(
+                google_search=genai_types.GoogleSearch()
+            )
+            config_kwargs["tools"] = [grounding_tool]
+
         config = genai_types.GenerateContentConfig(**config_kwargs)
         model = _CachedModel(self.client, model_name, config)
 
