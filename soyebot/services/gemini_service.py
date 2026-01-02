@@ -320,6 +320,7 @@ class GeminiService(BaseLLMService):
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw API response data for debugging."""
+        metadata = getattr(response_obj, 'usage_metadata', None)
         try:
             if metadata:
                 prompt_tokens = getattr(metadata, 'prompt_token_count', 'unknown')
@@ -348,7 +349,6 @@ class GeminiService(BaseLLMService):
                         if texts:
                             logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}")
 
-            metadata = getattr(response_obj, 'usage_metadata', None)
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
