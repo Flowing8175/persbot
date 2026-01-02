@@ -168,17 +168,22 @@ class PromptManagerView(discord.ui.View):
         btn_manual.callback = self.on_manual_add
         self.add_item(btn_manual)
 
-        btn_apply = discord.ui.Button(label="채널에 적용", style=discord.ButtonStyle.primary, emoji="✅", disabled=(self.selected_index is None), row=1)
+        btn_apply = discord.ui.Button(label="채널에 적용", style=discord.ButtonStyle.primary, emoji="✅", disabled=(self.selected_index is None), row=2)
         btn_apply.callback = self.on_apply
         self.add_item(btn_apply)
 
-        btn_rename = discord.ui.Button(label="이름 변경", style=discord.ButtonStyle.secondary, emoji="✏️", disabled=(self.selected_index is None), row=1)
+        btn_rename = discord.ui.Button(label="이름 변경", style=discord.ButtonStyle.secondary, emoji="✏️", disabled=(self.selected_index is None), row=2)
         btn_rename.callback = self.on_rename
         self.add_item(btn_rename)
 
-        btn_delete = discord.ui.Button(label="삭제", style=discord.ButtonStyle.danger, emoji="🗑️", disabled=(self.selected_index is None), row=1)
+        btn_delete = discord.ui.Button(label="삭제", style=discord.ButtonStyle.danger, emoji="🗑️", disabled=(self.selected_index is None), row=2)
         btn_delete.callback = self.on_delete
         self.add_item(btn_delete)
+
+        # Row 3 (Close)
+        btn_close = discord.ui.Button(label="닫기", style=discord.ButtonStyle.secondary, emoji="❌", row=3)
+        btn_close.callback = self.on_close
+        self.add_item(btn_close)
 
     async def refresh_view(self, interaction: Optional[discord.Interaction] = None):
         self.update_components()
@@ -263,6 +268,12 @@ class PromptManagerView(discord.ui.View):
                     await self.refresh_view(interaction)
                 else:
                     await interaction.response.send_message("❌ 삭제 실패.", ephemeral=True)
+
+    async def on_close(self, interaction: discord.Interaction):
+        # Allow anyone to close the menu, or just the author? Usually anyone or author.
+        # Let's delete the message.
+        await interaction.message.delete()
+        self.stop()
 
 
 class PersonaCog(commands.Cog):
