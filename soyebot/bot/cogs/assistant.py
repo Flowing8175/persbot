@@ -20,6 +20,210 @@ from utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
 
+# --- UI Components for Prompt Manager ---
+
+class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성"):
+    concept = discord.ui.TextInput(
+        label="페르소나 컨셉",
+        placeholder="예: 츤데레 여사친, 게으른 천재 해커...",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=100
+    )
+
+    def __init__(self, view: "PromptManagerView"):
+        super().__init__()
+        self.view_ref = view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Use deferred response because generation takes time
+        await interaction.response.defer(ephemeral=True)
+
+        concept_str = self.concept.value
+        msg = await interaction.followup.send(f"🧠 '{concept_str}' 컨셉으로 페르소나 설계 중... (약 10~20초 소요)", ephemeral=True)
+
+        cog = self.view_ref.cog
+        try:
+            generated_prompt = await cog.llm_service.generate_prompt_from_concept(concept_str)
+
+            if not generated_prompt:
+                await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                return
+
+            name_match = re.search(r"Project\s+['\"]?(.+?)['\"]?\]", generated_prompt, re.IGNORECASE)
+            name = name_match.group(1) if name_match else f"Generated ({concept_str[:10]}...)"
+            prompt_content = generated_prompt.strip()
+
+            idx = cog.prompt_service.add_prompt(name, prompt_content)
+
+            await msg.edit(content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})")
+            await self.view_ref.refresh_view(interaction)
+
+        except Exception as e:
+            logger.error(f"Error in PromptCreateModal: {e}", exc_info=True)
+            await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+
+class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
+    new_name = discord.ui.TextInput(
+        label="새로운 이름",
+        placeholder="변경할 이름을 입력하세요",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=50
+    )
+
+    def __init__(self, view: "PromptManagerView", index: int, old_name: str):
+        super().__init__()
+        self.view_ref = view
+        self.index = index
+        self.new_name.default = old_name
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = self.view_ref.cog
+        if cog.prompt_service.rename_prompt(self.index, self.new_name.value):
+            await interaction.response.send_message(f"✅ **{self.new_name.value}**로 변경되었습니다.", ephemeral=True)
+            await self.view_ref.refresh_view(interaction)
+        else:
+            await interaction.response.send_message("❌ 변경 실패.", ephemeral=True)
+
+class PromptManagerView(discord.ui.View):
+    def __init__(self, cog, ctx: commands.Context):
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.ctx = ctx
+        self.selected_index: Optional[int] = None
+        self.message: Optional[discord.Message] = None
+        self.update_components()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # Check permissions globally for the view
+        if not interaction.user.guild_permissions.manage_guild:
+            await interaction.response.send_message("❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
+            return False
+        return True
+
+    def update_components(self):
+        prompts = self.cog.prompt_service.list_prompts()
+        self.clear_items()
+
+        # Select Menu
+        options = []
+        active_content = self.cog.session_manager.channel_prompts.get(self.ctx.channel.id)
+
+        # Limit to 25 items due to Discord Select Menu limits
+        # TODO: Implement pagination if prompt list grows beyond 25
+        for i, p in enumerate(prompts[:25]):
+            is_active = (p['content'] == active_content)
+            label = p['name'][:100]
+            desc = "✅ 현재 적용됨" if is_active else None
+            options.append(discord.SelectOption(
+                label=label,
+                value=str(i),
+                description=desc,
+                default=(i == self.selected_index)
+            ))
+
+        select = discord.ui.Select(
+            placeholder="관리할 페르소나를 선택하세요...",
+            options=options if options else [discord.SelectOption(label="저장된 프롬프트 없음", value="-1")],
+            min_values=1,
+            max_values=1,
+            row=0,
+            disabled=(not options)
+        )
+        select.callback = self.on_select
+        self.add_item(select)
+
+        # Buttons
+        btn_new = discord.ui.Button(label="새로 만들기", style=discord.ButtonStyle.success, emoji="✨", row=1)
+        btn_new.callback = self.on_new
+        self.add_item(btn_new)
+
+        btn_apply = discord.ui.Button(label="채널에 적용", style=discord.ButtonStyle.primary, emoji="✅", disabled=(self.selected_index is None), row=1)
+        btn_apply.callback = self.on_apply
+        self.add_item(btn_apply)
+
+        btn_rename = discord.ui.Button(label="이름 변경", style=discord.ButtonStyle.secondary, emoji="✏️", disabled=(self.selected_index is None), row=1)
+        btn_rename.callback = self.on_rename
+        self.add_item(btn_rename)
+
+        btn_delete = discord.ui.Button(label="삭제", style=discord.ButtonStyle.danger, emoji="🗑️", disabled=(self.selected_index is None), row=1)
+        btn_delete.callback = self.on_delete
+        self.add_item(btn_delete)
+
+    async def refresh_view(self, interaction: Optional[discord.Interaction] = None):
+        self.update_components()
+        embed = self.build_embed()
+
+        try:
+            if interaction and not interaction.response.is_done():
+                await interaction.response.edit_message(embed=embed, view=self)
+            elif self.message:
+                 await self.message.edit(embed=embed, view=self)
+        except Exception as e:
+            logger.error(f"Failed to refresh view: {e}")
+
+    def build_embed(self):
+        prompts = self.cog.prompt_service.list_prompts()
+        embed = discord.Embed(title="🎭 페르소나 관리자", color=discord.Color.gold())
+
+        list_text = ""
+        active_content = self.cog.session_manager.channel_prompts.get(self.ctx.channel.id)
+
+        for i, p in enumerate(prompts[:25]):
+            marker = "✅" if p['content'] == active_content else "🔹"
+            bold = "**" if i == self.selected_index else ""
+            name_display = f"{bold}{p['name']}{bold}"
+            list_text += f"{marker} `[{i}]` {name_display}\n"
+
+        embed.description = list_text or "저장된 페르소나가 없습니다. '새로 만들기'를 눌러 시작하세요."
+
+        if self.selected_index is not None and 0 <= self.selected_index < len(prompts):
+             p = prompts[self.selected_index]
+             embed.add_field(name="선택된 페르소나", value=f"**{p['name']}**", inline=False)
+             # embed.add_field(name="미리보기", value="내용은 보안상 생략되었습니다.", inline=False)
+
+        return embed
+
+    async def on_select(self, interaction: discord.Interaction):
+        # Permission check handled by interaction_check
+        val = int(interaction.data['values'][0])
+        if val == -1: return
+        self.selected_index = val
+        await interaction.response.defer()
+        await self.refresh_view(interaction)
+
+    async def on_new(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(PromptCreateModal(self))
+
+    async def on_apply(self, interaction: discord.Interaction):
+        if self.selected_index is not None:
+            p = self.cog.prompt_service.get_prompt(self.selected_index)
+            if p:
+                self.cog.session_manager.set_channel_prompt(self.ctx.channel.id, p['content'])
+                await interaction.response.send_message(f"✅ **{p['name']}** 페르소나가 이 채널에 적용되었습니다! (세션 초기화)", ephemeral=True)
+                await self.refresh_view(interaction)
+            else:
+                await interaction.response.send_message("❌ 페르소나를 찾을 수 없습니다.", ephemeral=True)
+
+    async def on_rename(self, interaction: discord.Interaction):
+        if self.selected_index is not None:
+             p = self.cog.prompt_service.get_prompt(self.selected_index)
+             if p:
+                 await interaction.response.send_modal(PromptRenameModal(self, self.selected_index, p['name']))
+
+    async def on_delete(self, interaction: discord.Interaction):
+        if self.selected_index is not None:
+            p = self.cog.prompt_service.get_prompt(self.selected_index)
+            if p:
+                if self.cog.prompt_service.delete_prompt(self.selected_index):
+                    self.selected_index = None
+                    await interaction.response.send_message(f"🗑️ **{p['name']}** 삭제 완료.", ephemeral=True)
+                    await self.refresh_view(interaction)
+                else:
+                    await interaction.response.send_message("❌ 삭제 실패.", ephemeral=True)
+
+
 class AssistantCog(commands.Cog):
     """@mention을 통한 AI 어시스턴트 기능을 처리하는 Cog"""
 
@@ -252,11 +456,7 @@ class AssistantCog(commands.Cog):
         embed.add_field(
             name="🎭 프롬프트 (페르소나) 관리",
             value=(
-                "`!prompt list`: 저장된 프롬프트 목록을 보여줍니다.\n"
-                "`!prompt select <번호>`: 채널에 적용할 프롬프트를 선택합니다. (생략 시 기본값)\n"
-                "`!prompt new <컨셉>`: AI가 새로운 고품질 프롬프트를 자동 생성합니다.\n"
-                "`!prompt show <번호>`: 프롬프트의 전체 상세 내용을 확인합니다.\n"
-                "`!prompt delete <번호>`: 프롬프트를 삭제합니다."
+                "`!prompt`: 프롬프트 관리 UI를 엽니다. (생성, 목록, 선택, 삭제 등)\n"
             ),
             inline=False
         )
@@ -509,121 +709,13 @@ class AssistantCog(commands.Cog):
             logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
-    @commands.group(name='prompt', invoke_without_command=True)
-    async def prompt_group(self, ctx: commands.Context):
-        """프롬프트 관리 명령입니다. (!prompt <new|list|show|rename|select|delete>)"""
-        if ctx.invoked_subcommand is None:
-            await ctx.send("사용법: `!prompt <new|list|show|rename|select|delete> [인자]`")
-
-    @prompt_group.command(name='new')
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_new(self, ctx: commands.Context, *, concept: str):
-        """새로운 프롬프트를 자동으로 생성합니다. (!prompt new <컨셉>)"""
-        status_msg = await ctx.reply("🧠 고품질 페르소나 설계 중... (약 10~20초 소요)")
-        
-        try:
-            generated_prompt = await self.llm_service.generate_prompt_from_concept(concept)
-            
-            if not generated_prompt:
-                await status_msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
-                return
-
-            # Extract name and content
-            # Pattern: **[System Prompt: Project '{Character Name}']**
-            # or sometimes without asterisks or with different casing
-            name_match = re.search(r"Project\s+['\"]?(.+?)['\"]?\]", generated_prompt, re.IGNORECASE)
-            name = name_match.group(1) if name_match else f"Generated ({concept[:10]}...)"
-            
-            # Remove the title line from the content if possible, or just keep it all
-            prompt_content = generated_prompt.strip()
-
-            idx = self.prompt_service.add_prompt(name, prompt_content)
-            
-            await status_msg.edit(content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})")
-            
-            await ctx.send(f"💡 페르소나 설계가 완료되었습니다. `!prompt show {idx}`로 전체 내용을 확인할 수 있습니다.")
-
-        except Exception as e:
-            logger.error(f"Error in prompt_new: {e}", exc_info=True)
-            await status_msg.edit(content=f"❌ 오류 발생: {str(e)}")
-
-    @prompt_group.command(name='list')
-    async def prompt_list(self, ctx: commands.Context):
-        """저장된 프롬프트 목록을 보여줍니다."""
-        prompts = self.prompt_service.list_prompts()
-        if not prompts:
-            await ctx.reply("저장된 프롬프트가 없습니다.")
-            return
-
-        active_content = self.session_manager.channel_prompts.get(ctx.channel.id)
-        
-        response = "**📋 저장된 프롬프트 목록:**\n"
-        for i, p in enumerate(prompts):
-            marker = "🔹"
-            if active_content == p['content']:
-                marker = "✅"
-            response += f"{marker} **[{i}]** {p['name']}\n"
-        
-        await ctx.reply(response)
-
-    @prompt_group.command(name='show')
-    async def prompt_show(self, ctx: commands.Context, index: int):
-        """특정 인덱스의 프롬프트 내용을 보여줍니다. (!prompt show [인덱스])"""
-        prompt = self.prompt_service.get_prompt(index)
-        if not prompt:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-            return
-
-        # Use send_split_response style or just direct messages if it's long
-        content = f"**📋 프롬프트: {prompt['name']}**\n\n{prompt['content']}"
-        
-        if len(content) <= 2000:
-            await ctx.reply(content, mention_author=False)
-        else:
-            # Simple chunking for Discord message limit (2000 chars)
-            for i in range(0, len(content), 1900):
-                await ctx.send(content[i:i+1900])
-
-    @prompt_group.command(name='rename')
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_rename(self, ctx: commands.Context, index: int, *, new_name: str):
-        """프롬프트 이름을 변경합니다. (!prompt rename [인덱스] "새 이름")"""
-        if self.prompt_service.rename_prompt(index, new_name):
-            await ctx.message.add_reaction("✅")
-        else:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-
-    @prompt_group.command(name='delete', aliases=['삭제'])
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_delete(self, ctx: commands.Context, index: int):
-        """저장된 프롬프트를 삭제합니다. (!prompt delete [인덱스])"""
-        prompt = self.prompt_service.get_prompt(index)
-        if not prompt:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-            return
-
-        if self.prompt_service.delete_prompt(index):
-            await ctx.reply(f"✅ 프롬프트 **'{prompt['name']}'**이(가) 삭제되었습니다.")
-        else:
-            await ctx.reply("❌ 삭제에 실패했습니다.")
-
-    @prompt_group.command(name='select')
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_select(self, ctx: commands.Context, index: Optional[int] = None):
-        """채널에 적용할 프롬프트를 선택하거나 초기화합니다. (!prompt select [인덱스], 생략 시 초기화)"""
-        if index is None:
-            # Reset to default
-            self.session_manager.set_channel_prompt(ctx.channel.id, None)
-            await ctx.reply("✅ 채널 프롬프트가 기본값으로 초기화되었습니다.")
-            return
-
-        prompt = self.prompt_service.get_prompt(index)
-        if not prompt:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-            return
-
-        self.session_manager.set_channel_prompt(ctx.channel.id, prompt['content'])
-        await ctx.reply(f"✅ 채널 프롬프트가 **{prompt['name']}** (으)로 변경되었습니다. 대화 세션이 초기화됩니다.")
+    @commands.command(name='prompt')
+    async def prompt_command(self, ctx: commands.Context):
+        """프롬프트(페르소나) 관리 UI를 엽니다."""
+        view = PromptManagerView(self, ctx)
+        embed = view.build_embed()
+        msg = await ctx.reply(embed=embed, view=view, mention_author=False)
+        view.message = msg
 
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
         """Cog 내 명령어 에러 핸들러"""
@@ -638,5 +730,3 @@ class AssistantCog(commands.Cog):
             # 기본 에러 메시지는 이미 globally 처리될 수도 있지만, cog 레벨에서 한번 더 확인
             if not ctx.command.has_error_handler():
                 await ctx.reply(f"❌ 명령어 실행 중 오류가 발생했습니다: {str(error)}", mention_author=False)
-
-
