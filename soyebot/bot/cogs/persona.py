@@ -2,6 +2,7 @@
 
 import logging
 import re
+import asyncio
 from typing import Optional
 
 import discord
@@ -59,40 +60,6 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
         except Exception as e:
             logger.error(f"Error in PromptCreateModal: {e}", exc_info=True)
             await msg.edit(content=f"❌ 오류 발생: {str(e)}")
-
-class PromptManualAddModal(discord.ui.Modal, title="프롬프트 직접 추가"):
-    name = discord.ui.TextInput(
-        label="이름",
-        placeholder="프롬프트 이름 (예: 나의 커스텀 봇)",
-        style=discord.TextStyle.short,
-        required=True,
-        max_length=50
-    )
-    content = discord.ui.TextInput(
-        label="내용",
-        placeholder="시스템 프롬프트 전체 내용...",
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=4000
-    )
-
-    def __init__(self, view: "PromptManagerView"):
-        super().__init__()
-        self.view_ref = view
-
-    async def on_submit(self, interaction: discord.Interaction):
-        cog = self.view_ref.cog
-        try:
-            name_val = self.name.value
-            content_val = self.content.value
-
-            idx = cog.prompt_service.add_prompt(name_val, content_val)
-
-            await interaction.response.send_message(f"✅ 새 페르소나 **'{name_val}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=True)
-            await self.view_ref.refresh_view(interaction)
-        except Exception as e:
-            logger.error(f"Error in PromptManualAddModal: {e}", exc_info=True)
-            await interaction.response.send_message(f"❌ 오류 발생: {str(e)}", ephemeral=True)
 
 
 class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
@@ -164,9 +131,9 @@ class PromptManagerView(discord.ui.View):
         btn_new.callback = self.on_new
         self.add_item(btn_new)
 
-        btn_manual = discord.ui.Button(label="프롬프트 추가(고급)", style=discord.ButtonStyle.secondary, emoji="📝", row=1)
-        btn_manual.callback = self.on_manual_add
-        self.add_item(btn_manual)
+        btn_file_add = discord.ui.Button(label="프롬프트 추가(파일)", style=discord.ButtonStyle.secondary, emoji="📂", row=1)
+        btn_file_add.callback = self.on_file_add
+        self.add_item(btn_file_add)
 
         btn_rename = discord.ui.Button(label="이름 변경", style=discord.ButtonStyle.secondary, emoji="✏️", disabled=(self.selected_index is None), row=1)
         btn_rename.callback = self.on_rename
@@ -233,11 +200,51 @@ class PromptManagerView(discord.ui.View):
             return
         await interaction.response.send_modal(PromptCreateModal(self))
 
-    async def on_manual_add(self, interaction: discord.Interaction):
+    async def on_file_add(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.manage_guild:
             await interaction.response.send_message("❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
             return
-        await interaction.response.send_modal(PromptManualAddModal(self))
+
+        await interaction.response.send_message("📂 프롬프트로 사용할 `.txt` 파일을 이 채널에 업로드해 주세요. (60초 대기)", ephemeral=True)
+
+        def check(m):
+            return (
+                m.author.id == interaction.user.id
+                and m.channel.id == interaction.channel.id
+                and m.attachments
+            )
+
+        try:
+            msg = await self.cog.bot.wait_for('message', check=check, timeout=60.0)
+
+            attachment = msg.attachments[0]
+            if not attachment.filename.lower().endswith('.txt'):
+                await interaction.followup.send("❌ `.txt` 파일만 지원합니다.", ephemeral=True)
+                return
+
+            # Read content
+            try:
+                content_bytes = await attachment.read()
+                content_str = content_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                await interaction.followup.send("❌ 파일 인코딩 오류: UTF-8 형식이 아닙니다.", ephemeral=True)
+                return
+            except Exception as e:
+                logger.error(f"File read error: {e}")
+                await interaction.followup.send(f"❌ 파일 읽기 오류: {e}", ephemeral=True)
+                return
+
+            name = attachment.filename.rsplit('.', 1)[0]
+            idx = self.cog.prompt_service.add_prompt(name, content_str)
+
+            await interaction.followup.send(f"✅ 새 페르소나 **'{name}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=True)
+            await self.refresh_view(interaction)
+
+            # Optional: Delete the user's upload message to keep channel clean?
+            # await msg.delete() # Might be annoying if user wants to keep it. Leaving it.
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("⏳ 시간 초과: 파일 업로드가 취소되었습니다.", ephemeral=True)
 
     async def on_apply(self, interaction: discord.Interaction):
         if self.selected_index is not None:
