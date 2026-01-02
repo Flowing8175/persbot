@@ -47,3 +47,15 @@ def extract_message_content(message: discord.Message) -> str:
         user_message = user_message.replace(f"<@{mention.id}>", "")
         user_message = user_message.replace(f"<@!{mention.id}>", "")
     return user_message.strip()
+
+def get_mime_type(data: bytes) -> str:
+    """Detect basic image mime type from bytes."""
+    if data.startswith(b'\xff\xd8'):
+        return "image/jpeg"
+    elif data.startswith(b'\x89PNG'):
+        return "image/png"
+    elif data.startswith(b'GIF8'):
+        return "image/gif"
+    elif data.startswith(b'RIFF') and b'WEBP' in data[:20]:
+        return "image/webp"
+    return "image/jpeg" # Default fallback

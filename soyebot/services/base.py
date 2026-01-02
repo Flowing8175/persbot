@@ -3,11 +3,13 @@
 import asyncio
 import logging
 import time
+import io
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional, Union, List, Tuple
 
 import discord
+from PIL import Image
 
 from soyebot.config import AppConfig
 from soyebot.utils import GENERIC_ERROR_MESSAGE
@@ -25,6 +27,8 @@ class ChatMessage:
     message_ids: List[str] = field(default_factory=list)
     # For Gemini, content is stored in 'parts'
     parts: Optional[list[dict[str, str]]] = None
+    # For storing image data (bytes)
+    images: List[bytes] = field(default_factory=list)
 
 class BaseLLMService(ABC):
     """Abstract base class for LLM services handling retries, logging, and common behavior."""
@@ -86,6 +90,54 @@ class BaseLLMService(ABC):
     def _is_fatal_error(self, error: Exception) -> bool:
         """Check if the exception is a fatal error that requires immediate intervention."""
         return False
+
+    async def _extract_images_from_message(self, message: discord.Message) -> List[bytes]:
+        """Extract image bytes from message attachments, downscaling to ~1MP."""
+        images = []
+        if not message.attachments:
+            return images
+
+        target_pixels = 1_000_000 # 1 Megapixel
+
+        for attachment in message.attachments:
+            if attachment.content_type and attachment.content_type.startswith('image/'):
+                try:
+                    image_data = await attachment.read()
+
+                    # Process image with Pillow
+                    try:
+                        with Image.open(io.BytesIO(image_data)) as img:
+                            # Check current dimensions
+                            width, height = img.size
+                            pixels = width * height
+
+                            if pixels > target_pixels:
+                                # Calculate scaling factor
+                                ratio = (target_pixels / pixels) ** 0.5
+                                new_width = int(width * ratio)
+                                new_height = int(height * ratio)
+
+                                logger.info(f"Downscaling image {attachment.filename} from {width}x{height} to {new_width}x{new_height}")
+
+                                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                            # Convert to JPEG (compatible and efficient)
+                            output_buffer = io.BytesIO()
+                            # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
+                            if img.mode in ('RGBA', 'P'):
+                                img = img.convert('RGB')
+
+                            img.save(output_buffer, format='JPEG', quality=85)
+                            images.append(output_buffer.getvalue())
+                    except Exception as img_err:
+                        logger.error(f"Failed to process image {attachment.filename}: {img_err}")
+                        # Fallback to original if processing fails (unless strictly required otherwise)
+                        images.append(image_data)
+
+                except Exception as e:
+                    logger.error(f"Failed to read attachment {attachment.filename}: {e}")
+
+        return images
 
     async def _execute_model_call(self, model_call: Callable[[], Union[Any, Awaitable[Any]]]) -> Any:
         """Execute a model call, handling both sync and async functions."""

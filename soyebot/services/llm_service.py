@@ -7,7 +7,9 @@ from soyebot.config import AppConfig
 from soyebot.services.gemini_service import GeminiService
 from soyebot.services.openai_service import OpenAIService
 from soyebot.services.prompt_service import PromptService
+from soyebot.services.usage_service import ImageUsageService
 from soyebot.prompts import META_PROMPT
+import discord
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ class LLMService:
     def __init__(self, config: AppConfig):
         self.config = config
         self.prompt_service = PromptService()
+        self.image_usage_service = ImageUsageService()
 
         assistant_provider = (config.assistant_llm_provider or 'gemini').lower()
         summarizer_provider = (config.summarizer_llm_provider or assistant_provider).lower()
@@ -103,8 +106,47 @@ class LLMService:
         discord_message,
         use_summarizer_backend: bool = False,
     ):
+        # 1. Rate Limiting Check for Images
+        # Extract attachment count
+        image_count = 0
+        primary_author = None
+
+        if isinstance(discord_message, list):
+             for msg in discord_message:
+                 image_count += len([a for a in msg.attachments if a.content_type and a.content_type.startswith('image/')])
+             if discord_message:
+                 primary_author = discord_message[0].author
+        else:
+             image_count = len([a for a in discord_message.attachments if a.content_type and a.content_type.startswith('image/')])
+             primary_author = discord_message.author
+
+        if image_count > 0 and primary_author:
+            # Check permissions (Member only has guild_permissions)
+            is_admin = False
+            if isinstance(primary_author, discord.Member):
+                 is_admin = primary_author.guild_permissions.manage_guild
+
+            if not is_admin:
+                if not self.image_usage_service.check_can_upload(primary_author.id, image_count, limit=3):
+                    return ("❌ 이미지는 하루에 최대 3개 업로드하실 수 있습니다.", None)
+
+        # 2. Proceed with generation
         backend = self.summarizer_backend if use_summarizer_backend else self.assistant_backend
-        return await backend.generate_chat_response(chat_session, user_message, discord_message)
+        response = await backend.generate_chat_response(chat_session, user_message, discord_message)
+
+        # 3. If successful and images were sent, record usage
+        # We assume success if response is not None
+        if response is not None and image_count > 0 and primary_author:
+             # Double check permissions to avoid recording for admins (though doesn't hurt, but requirement implied limit applies to regular users)
+             is_admin = False
+             if isinstance(primary_author, discord.Member):
+                 is_admin = primary_author.guild_permissions.manage_guild
+
+             if not is_admin:
+                 # Use await because record_upload is now async
+                 await self.image_usage_service.record_upload(primary_author.id, image_count)
+
+        return response
 
     def get_user_role_name(self) -> str:
         """Pass through to the active assistant backend."""

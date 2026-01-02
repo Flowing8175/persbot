@@ -2,6 +2,7 @@
 
 import json
 import logging
+import base64
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Deque, Optional, Tuple, Union
@@ -12,6 +13,7 @@ from openai import OpenAI, RateLimitError
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
+from soyebot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
 
@@ -85,38 +87,44 @@ class ResponseChatSession:
             )
         return payload
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None):
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None):
         # Create user message object but don't append yet
         user_msg = ChatMessage(
             role="user",
             content=user_message,
             author_id=author_id,
             author_name=author_name,
-            message_ids=message_ids or []
+            message_ids=message_ids or [],
+            images=images or []
         )
 
         # We need to temporarily simulate the history having the user message
-        # for the input payload construction, without mutating the permanent history state
-        # in case we get cancelled.
-        # _build_input_payload reads from self._history.
-        # We can construct payload manually or temporarily append/pop.
-        # Since _client.responses.create is synchronous, running in a thread (via _execute_model_call),
-        # if we mutate self._history here, it is mutated in the shared object.
-        # If this thread is cancelled, we might leave it in a bad state?
-        # No, because cancellation happens at 'await', not interrupting the sync call abruptly
-        # (unless we force kill, which asyncio cancellation doesn't do to threads).
-
-        # However, to be consistent with the "no side effects until success" pattern:
-        # We should construct the payload including the new message without modifying self._history.
-
+        # for the input payload construction, without mutating the permanent history state.
         current_payload = self._build_input_payload()
+
+        # Build current message content
+        content_list = []
+        if user_message:
+            content_list.append({
+                "type": "input_text",
+                "text": user_message
+            })
+
+        # Note: 'client.responses' (Realtime API via REST) support for images is experimental/undocumented here.
+        # We try to use 'input_image' if possible, or skip if not supported.
+        # Standard Chat Completions uses 'image_url'.
+        # Assuming 'responses' endpoint follows similar pattern or we accept that it might fail if we pass unsupported types.
+        # For now, we omit images in ResponseChatSession as specific schema is unknown/unstable,
+        # or we rely on the user to use ChatCompletionSession (fine-tuned) or we switch logic.
+        # However, to avoid breaking 'ResponseChatSession', we log a warning if images are present.
+        if images:
+            logger.warning("Images provided to ResponseChatSession (OpenAI Responses API), but image support is not fully implemented for this endpoint. Ignoring images.")
+            # If we wanted to support it, we'd need to know the schema (e.g. 'type': 'input_image'?)
+
         # Append user message to payload
         current_payload.append({
             "role": "user",
-            "content": [{
-                "type": "input_text",
-                "text": user_message
-            }]
+            "content": content_list
         })
 
         response = self._client.responses.create(
@@ -173,14 +181,15 @@ class ChatCompletionSession:
             return
         self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None):
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None):
         # Create user message object
         user_msg = ChatMessage(
             role="user",
             content=user_message,
             author_id=author_id,
             author_name=author_name,
-            message_ids=message_ids or []
+            message_ids=message_ids or [],
+            images=images or []
         )
 
         # Build messages list for chat completions API
@@ -189,11 +198,50 @@ class ChatCompletionSession:
             messages.append({"role": "system", "content": self._system_instruction})
 
         # Convert existing history to dicts
-        api_history = [{"role": msg.role, "content": msg.content} for msg in self._history]
+        api_history = []
+        for msg in self._history:
+            # Reconstruct content with images if present
+            if msg.images:
+                content_blocks = []
+                if msg.content:
+                    content_blocks.append({"type": "text", "text": msg.content})
+
+                for img_bytes in msg.images:
+                     b64_str = base64.b64encode(img_bytes).decode('utf-8')
+                     mime_type = get_mime_type(img_bytes)
+                     content_blocks.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{b64_str}"
+                        }
+                    })
+                api_history.append({"role": msg.role, "content": content_blocks})
+            else:
+                api_history.append({"role": msg.role, "content": msg.content})
+
         messages.extend(api_history)
 
-        # Add current message to API payload only
-        messages.append({"role": "user", "content": user_message})
+        # Add current message to API payload
+        if images:
+            content_list = []
+            if user_message:
+                content_list.append({"type": "text", "text": user_message})
+
+            for img_bytes in images:
+                # Convert bytes to base64
+                b64_str = base64.b64encode(img_bytes).decode('utf-8')
+                # Determine mime type
+                mime_type = get_mime_type(img_bytes)
+
+                content_list.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{b64_str}"
+                    }
+                })
+            messages.append({"role": "user", "content": content_list})
+        else:
+            messages.append({"role": "user", "content": user_message})
 
         response = self._client.chat.completions.create(
             model=self._model_name,
@@ -497,8 +545,17 @@ class OpenAIService(BaseLLMService):
         author_id = primary_msg.author.id
         author_name = getattr(primary_msg.author, 'name', str(author_id))
 
+        # Extract images from messages
+        images = []
+        if isinstance(discord_message, list):
+            for msg in discord_message:
+                imgs = await self._extract_images_from_message(msg)
+                images.extend(imgs)
+        else:
+            images = await self._extract_images_from_message(discord_message)
+
         result = await self.execute_with_retry(
-            lambda: chat_session.send_message(user_message, author_id, author_name=author_name, message_ids=message_ids),
+            lambda: chat_session.send_message(user_message, author_id, author_name=author_name, message_ids=message_ids, images=images),
             "응답 생성",
             return_full_response=True,
             discord_message=primary_msg,
