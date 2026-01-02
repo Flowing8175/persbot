@@ -18,7 +18,7 @@ from google.genai.errors import ClientError
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
-from soyebot.utils import GENERIC_ERROR_MESSAGE
+from soyebot.utils import GENERIC_ERROR_MESSAGE, get_mime_type
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +60,39 @@ class _ChatSession:
         """Convert local history to API format."""
         api_history = []
         for msg in self.history:
-            api_history.append({"role": msg.role, "parts": msg.parts})
+            final_parts = []
+
+            # Add existing text/content parts
+            if msg.parts:
+                 for p in msg.parts:
+                     if isinstance(p, dict) and 'text' in p:
+                         final_parts.append(p)
+                     elif hasattr(p, 'text') and p.text: # It's a Part object
+                         final_parts.append(p)
+
+            # Reconstruct image parts from stored bytes
+            if hasattr(msg, 'images') and msg.images:
+                for img_data in msg.images:
+                    mime_type = get_mime_type(img_data)
+                    final_parts.append(genai_types.Part.from_bytes(img_data, mime_type))
+
+            api_history.append({"role": msg.role, "parts": final_parts})
         return api_history
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None):
+    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None):
         # 1. Build the full content list for this turn (History + Current Message)
         contents = self._get_api_history()
-        contents.append({"role": "user", "parts": [{"text": user_message}]})
+
+        current_parts = []
+        if user_message:
+            current_parts.append({"text": user_message})
+
+        if images:
+            for img_data in images:
+                mime_type = get_mime_type(img_data)
+                current_parts.append(genai_types.Part.from_bytes(img_data, mime_type))
+
+        contents.append({"role": "user", "parts": current_parts})
 
         # 2. Call generate_content directly (Stateless)
         response = self._factory.generate_content(contents=contents)
@@ -75,7 +101,9 @@ class _ChatSession:
         user_msg = ChatMessage(
             role="user",
             content=user_message,
-            parts=[{"text": user_message}],
+            parts=[{"text": user_message}], # We store text part only in parts for compatibility/simplicity?
+            # Or we should store the text part. Images are stored in 'images' field.
+            images=images or [],
             author_id=author_id,
             author_name=author_name,
             message_ids=message_ids or []
@@ -462,6 +490,17 @@ class GeminiService(BaseLLMService):
 
         author_id = primary_msg.author.id
         author_name = getattr(primary_msg.author, 'name', str(author_id))
+
+        # Extract images from the primary message (and potentially others if batched?)
+        # BaseLLMService supports single message extraction.
+        # If batched, we might want to extract from all.
+        images = []
+        if isinstance(discord_message, list):
+            for msg in discord_message:
+                imgs = await self._extract_images_from_message(msg)
+                images.extend(imgs)
+        else:
+            images = await self._extract_images_from_message(discord_message)
  
         async def _refresh_chat_session():
             logger.warning("Refreshing chat session due to 403 Cache Error...")
@@ -484,7 +523,7 @@ class GeminiService(BaseLLMService):
         try:
             # First attempt: normal flow with retry for cache errors
             result = await self._gemini_retry(
-                lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_ids=message_ids),
+                lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_ids=message_ids, images=images),
                 on_cache_error=_refresh_chat_session,
                 discord_message=primary_msg
             )
