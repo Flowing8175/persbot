@@ -50,6 +50,9 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
             idx = cog.prompt_service.add_prompt(name, prompt_content)
 
+            # Record usage after successful creation
+            cog.prompt_service.increment_today_usage(interaction.user.id)
+
             await msg.edit(content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})")
             await self.view_ref.refresh_view(interaction)
 
@@ -123,13 +126,6 @@ class PromptManagerView(discord.ui.View):
         self.selected_index: Optional[int] = None
         self.message: Optional[discord.Message] = None
         self.update_components()
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Check permissions globally for the view
-        if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
-            return False
-        return True
 
     def update_components(self):
         prompts = self.cog.prompt_service.list_prompts()
@@ -227,9 +223,15 @@ class PromptManagerView(discord.ui.View):
         await self.refresh_view(interaction)
 
     async def on_new(self, interaction: discord.Interaction):
+        if not self.cog.prompt_service.check_today_limit(interaction.user.id):
+            await interaction.response.send_message("❌ 오늘 생성 한도(2개)를 모두 사용하셨습니다. 내일 다시 시도해 주세요.", ephemeral=True)
+            return
         await interaction.response.send_modal(PromptCreateModal(self))
 
     async def on_manual_add(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.manage_guild:
+            await interaction.response.send_message("❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
+            return
         await interaction.response.send_modal(PromptManualAddModal(self))
 
     async def on_apply(self, interaction: discord.Interaction):
@@ -249,6 +251,9 @@ class PromptManagerView(discord.ui.View):
                  await interaction.response.send_modal(PromptRenameModal(self, self.selected_index, p['name']))
 
     async def on_delete(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.manage_guild:
+            await interaction.response.send_message("❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
+            return
         if self.selected_index is not None:
             p = self.cog.prompt_service.get_prompt(self.selected_index)
             if p:
