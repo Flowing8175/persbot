@@ -23,6 +23,36 @@ from soyebot.utils import GENERIC_ERROR_MESSAGE, get_mime_type
 logger = logging.getLogger(__name__)
 
 
+# --- Monkey Patch for google-genai SDK Issue ---
+# The SDK v1.56.0+ defines Part.from_bytes as keyword-only (*, data, mime_type),
+# but internal calls (possibly when parsing responses with tools) might pass arguments positionally.
+# We patch it to accept positional arguments and map them to keywords.
+
+try:
+    _original_from_bytes = genai_types.Part.from_bytes
+
+    def _patched_from_bytes(cls, *args, **kwargs):
+        if args:
+            # Map positional args to keywords based on signature: (data, mime_type)
+            if len(args) >= 1:
+                kwargs['data'] = args[0]
+            if len(args) >= 2:
+                kwargs['mime_type'] = args[1]
+            if len(args) > 2:
+                logger.warning(f"Part.from_bytes received extra positional args: {args[2:]}")
+        return _original_from_bytes(**kwargs)
+
+    # Apply patch only if not already patched (basic check)
+    if not getattr(genai_types.Part.from_bytes, "_is_patched", False):
+        genai_types.Part.from_bytes = classmethod(_patched_from_bytes)
+        genai_types.Part.from_bytes._is_patched = True
+        logger.info("Applied monkey-patch for google.genai.types.Part.from_bytes")
+
+except Exception as e:
+    logger.error(f"Failed to apply Part.from_bytes monkey patch: {e}")
+# -----------------------------------------------
+
+
 def extract_clean_text(response_obj: Any) -> str:
     """Extract text content from Gemini response, filtering out thoughts."""
     try:
