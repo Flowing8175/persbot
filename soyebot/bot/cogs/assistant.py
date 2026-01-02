@@ -252,11 +252,7 @@ class AssistantCog(commands.Cog):
         embed.add_field(
             name="🎭 프롬프트 (페르소나) 관리",
             value=(
-                "`!prompt list`: 저장된 프롬프트 목록을 보여줍니다.\n"
-                "`!prompt select <번호>`: 채널에 적용할 프롬프트를 선택합니다. (생략 시 기본값)\n"
-                "`!prompt new <컨셉>`: AI가 새로운 고품질 프롬프트를 자동 생성합니다.\n"
-                "`!prompt show <번호>`: 프롬프트의 전체 상세 내용을 확인합니다.\n"
-                "`!prompt delete <번호>`: 프롬프트를 삭제합니다."
+                "`!prompt`: 프롬프트 관리 UI를 엽니다. (생성, 목록, 선택, 삭제 등)\n"
             ),
             inline=False
         )
@@ -509,122 +505,6 @@ class AssistantCog(commands.Cog):
             logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
-    @commands.group(name='prompt', invoke_without_command=True)
-    async def prompt_group(self, ctx: commands.Context):
-        """프롬프트 관리 명령입니다. (!prompt <new|list|show|rename|select|delete>)"""
-        if ctx.invoked_subcommand is None:
-            await ctx.send("사용법: `!prompt <new|list|show|rename|select|delete> [인자]`")
-
-    @prompt_group.command(name='new')
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_new(self, ctx: commands.Context, *, concept: str):
-        """새로운 프롬프트를 자동으로 생성합니다. (!prompt new <컨셉>)"""
-        status_msg = await ctx.reply("🧠 고품질 페르소나 설계 중... (약 10~20초 소요)")
-        
-        try:
-            generated_prompt = await self.llm_service.generate_prompt_from_concept(concept)
-            
-            if not generated_prompt:
-                await status_msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
-                return
-
-            # Extract name and content
-            # Pattern: **[System Prompt: Project '{Character Name}']**
-            # or sometimes without asterisks or with different casing
-            name_match = re.search(r"Project\s+['\"]?(.+?)['\"]?\]", generated_prompt, re.IGNORECASE)
-            name = name_match.group(1) if name_match else f"Generated ({concept[:10]}...)"
-            
-            # Remove the title line from the content if possible, or just keep it all
-            prompt_content = generated_prompt.strip()
-
-            idx = self.prompt_service.add_prompt(name, prompt_content)
-            
-            await status_msg.edit(content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})")
-            
-            await ctx.send(f"💡 페르소나 설계가 완료되었습니다. `!prompt show {idx}`로 전체 내용을 확인할 수 있습니다.")
-
-        except Exception as e:
-            logger.error(f"Error in prompt_new: {e}", exc_info=True)
-            await status_msg.edit(content=f"❌ 오류 발생: {str(e)}")
-
-    @prompt_group.command(name='list')
-    async def prompt_list(self, ctx: commands.Context):
-        """저장된 프롬프트 목록을 보여줍니다."""
-        prompts = self.prompt_service.list_prompts()
-        if not prompts:
-            await ctx.reply("저장된 프롬프트가 없습니다.")
-            return
-
-        active_content = self.session_manager.channel_prompts.get(ctx.channel.id)
-        
-        response = "**📋 저장된 프롬프트 목록:**\n"
-        for i, p in enumerate(prompts):
-            marker = "🔹"
-            if active_content == p['content']:
-                marker = "✅"
-            response += f"{marker} **[{i}]** {p['name']}\n"
-        
-        await ctx.reply(response)
-
-    @prompt_group.command(name='show')
-    async def prompt_show(self, ctx: commands.Context, index: int):
-        """특정 인덱스의 프롬프트 내용을 보여줍니다. (!prompt show [인덱스])"""
-        prompt = self.prompt_service.get_prompt(index)
-        if not prompt:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-            return
-
-        # Use send_split_response style or just direct messages if it's long
-        content = f"**📋 프롬프트: {prompt['name']}**\n\n{prompt['content']}"
-        
-        if len(content) <= 2000:
-            await ctx.reply(content, mention_author=False)
-        else:
-            # Simple chunking for Discord message limit (2000 chars)
-            for i in range(0, len(content), 1900):
-                await ctx.send(content[i:i+1900])
-
-    @prompt_group.command(name='rename')
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_rename(self, ctx: commands.Context, index: int, *, new_name: str):
-        """프롬프트 이름을 변경합니다. (!prompt rename [인덱스] "새 이름")"""
-        if self.prompt_service.rename_prompt(index, new_name):
-            await ctx.message.add_reaction("✅")
-        else:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-
-    @prompt_group.command(name='delete', aliases=['삭제'])
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_delete(self, ctx: commands.Context, index: int):
-        """저장된 프롬프트를 삭제합니다. (!prompt delete [인덱스])"""
-        prompt = self.prompt_service.get_prompt(index)
-        if not prompt:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-            return
-
-        if self.prompt_service.delete_prompt(index):
-            await ctx.reply(f"✅ 프롬프트 **'{prompt['name']}'**이(가) 삭제되었습니다.")
-        else:
-            await ctx.reply("❌ 삭제에 실패했습니다.")
-
-    @prompt_group.command(name='select')
-    @commands.has_permissions(manage_guild=True)
-    async def prompt_select(self, ctx: commands.Context, index: Optional[int] = None):
-        """채널에 적용할 프롬프트를 선택하거나 초기화합니다. (!prompt select [인덱스], 생략 시 초기화)"""
-        if index is None:
-            # Reset to default
-            self.session_manager.set_channel_prompt(ctx.channel.id, None)
-            await ctx.reply("✅ 채널 프롬프트가 기본값으로 초기화되었습니다.")
-            return
-
-        prompt = self.prompt_service.get_prompt(index)
-        if not prompt:
-            await ctx.reply("❌ 해당 인덱스의 프롬프트를 찾을 수 없습니다.")
-            return
-
-        self.session_manager.set_channel_prompt(ctx.channel.id, prompt['content'])
-        await ctx.reply(f"✅ 채널 프롬프트가 **{prompt['name']}** (으)로 변경되었습니다. 대화 세션이 초기화됩니다.")
-
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
         """Cog 내 명령어 에러 핸들러"""
         if isinstance(error, commands.MissingPermissions):
@@ -638,5 +518,3 @@ class AssistantCog(commands.Cog):
             # 기본 에러 메시지는 이미 globally 처리될 수도 있지만, cog 레벨에서 한번 더 확인
             if not ctx.command.has_error_handler():
                 await ctx.reply(f"❌ 명령어 실행 중 오류가 발생했습니다: {str(error)}", mention_author=False)
-
-
