@@ -320,9 +320,20 @@ class GeminiService(BaseLLMService):
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw API response data for debugging."""
+        try:
+            if metadata:
+                prompt_tokens = getattr(metadata, 'prompt_token_count', 'unknown')
+                response_tokens = getattr(metadata, 'candidates_token_count', 'unknown')
+                cached_tokens = getattr(metadata, 'cached_content_token_count', 0)
+                total_tokens = getattr(metadata, 'total_token_count', 'unknown')
+                logger.info(f"(prompt={prompt_tokens}, cached={cached_tokens}, response={response_tokens}, total={total_tokens})")
+            except Exception as e:
+                logger.error(f"[RAW API RESPONSE {attempt}] Error logging token counts: {e}", exc_info=True)
+
+                
         if not logger.isEnabledFor(logging.DEBUG):
             return
-
+            
         try:
             if hasattr(response_obj, 'candidates') and response_obj.candidates:
                 for idx, candidate in enumerate(response_obj.candidates):
@@ -338,14 +349,6 @@ class GeminiService(BaseLLMService):
                             logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}")
 
             metadata = getattr(response_obj, 'usage_metadata', None)
-            if metadata:
-                prompt_tokens = getattr(metadata, 'prompt_token_count', 'unknown')
-                response_tokens = getattr(metadata, 'candidates_token_count', 'unknown')
-                total_tokens = getattr(metadata, 'total_token_count', 'unknown')
-                logger.debug(
-                    f"[RAW API RESPONSE {attempt}] Token usage "
-                    f"(prompt={prompt_tokens}, response={response_tokens}, total={total_tokens})"
-                )
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
