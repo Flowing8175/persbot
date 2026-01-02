@@ -63,6 +63,41 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
             logger.error(f"Error in PromptCreateModal: {e}", exc_info=True)
             await msg.edit(content=f"❌ 오류 발생: {str(e)}")
 
+class PromptManualAddModal(discord.ui.Modal, title="프롬프트 직접 추가"):
+    name = discord.ui.TextInput(
+        label="이름",
+        placeholder="프롬프트 이름 (예: 나의 커스텀 봇)",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=50
+    )
+    content = discord.ui.TextInput(
+        label="내용",
+        placeholder="시스템 프롬프트 전체 내용...",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=4000
+    )
+
+    def __init__(self, view: "PromptManagerView"):
+        super().__init__()
+        self.view_ref = view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cog = self.view_ref.cog
+        try:
+            name_val = self.name.value
+            content_val = self.content.value
+
+            idx = cog.prompt_service.add_prompt(name_val, content_val)
+
+            await interaction.response.send_message(f"✅ 새 페르소나 **'{name_val}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=True)
+            await self.view_ref.refresh_view(interaction)
+        except Exception as e:
+            logger.error(f"Error in PromptManualAddModal: {e}", exc_info=True)
+            await interaction.response.send_message(f"❌ 오류 발생: {str(e)}", ephemeral=True)
+
+
 class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
     new_name = discord.ui.TextInput(
         label="새로운 이름",
@@ -139,6 +174,10 @@ class PromptManagerView(discord.ui.View):
         btn_new.callback = self.on_new
         self.add_item(btn_new)
 
+        btn_manual = discord.ui.Button(label="프롬프트 추가(고급)", style=discord.ButtonStyle.secondary, emoji="📝", row=1)
+        btn_manual.callback = self.on_manual_add
+        self.add_item(btn_manual)
+
         btn_apply = discord.ui.Button(label="채널에 적용", style=discord.ButtonStyle.primary, emoji="✅", disabled=(self.selected_index is None), row=1)
         btn_apply.callback = self.on_apply
         self.add_item(btn_apply)
@@ -195,6 +234,9 @@ class PromptManagerView(discord.ui.View):
 
     async def on_new(self, interaction: discord.Interaction):
         await interaction.response.send_modal(PromptCreateModal(self))
+
+    async def on_manual_add(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(PromptManualAddModal(self))
 
     async def on_apply(self, interaction: discord.Interaction):
         if self.selected_index is not None:
