@@ -320,8 +320,12 @@ class GeminiService(BaseLLMService):
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw API response data for debugging."""
-        metadata = getattr(response_obj, 'usage_metadata', None)
+        # Unpack if tuple (from chat session: user_msg, model_msg, response)
+        actual_response = response_obj
+        if isinstance(response_obj, tuple) and len(response_obj) >= 3:
+            actual_response = response_obj[2]
         try:
+            metadata = getattr(actual_response, 'usage_metadata', None)
             if metadata:
                 prompt_tokens = getattr(metadata, 'prompt_token_count', 'unknown')
                 response_tokens = getattr(metadata, 'candidates_token_count', 'unknown')
@@ -331,13 +335,12 @@ class GeminiService(BaseLLMService):
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging token counts: {e}", exc_info=True)
 
-                
         if not logger.isEnabledFor(logging.DEBUG):
             return
-            
+
         try:
-            if hasattr(response_obj, 'candidates') and response_obj.candidates:
-                for idx, candidate in enumerate(response_obj.candidates):
+            if hasattr(actual_response, 'candidates') and actual_response.candidates:
+                for idx, candidate in enumerate(actual_response.candidates):
                     finish_reason = getattr(candidate, 'finish_reason', 'unknown')
                     logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} finish_reason={finish_reason}")
                     if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
@@ -348,7 +351,10 @@ class GeminiService(BaseLLMService):
                                 texts.append(text[:200].replace('\n', ' '))
                         if texts:
                             logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}")
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/fix-gemini-logging-unbound-local-error-16062376878561443796
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
