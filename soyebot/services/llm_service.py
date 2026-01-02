@@ -91,7 +91,8 @@ class LLMService:
              # Create meta model
              result = await self.summarizer_backend.execute_with_retry(
                  lambda: meta_model.generate_content(concept),
-                 "프롬프트 생성"
+                 "프롬프트 생성",
+                 timeout=60.0
              )
              return result
         return None

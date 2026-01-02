@@ -15,6 +15,7 @@ from services.llm_service import LLMService
 from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
+from bot.cogs.persona import PersonaCog
 from bot.cogs.finetune import FineTuneCog
 from services.prompt_service import PromptService
 
@@ -86,6 +87,7 @@ async def main(config):
         # Initialize cogs
         await bot.add_cog(SummarizerCog(bot, config, llm_service))
         await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager, prompt_service))
+        await bot.add_cog(PersonaCog(bot, config, llm_service, session_manager, prompt_service))
         if auto_channel_cog_cls:
             await bot.add_cog(auto_channel_cog_cls(bot, config, llm_service, session_manager))
 

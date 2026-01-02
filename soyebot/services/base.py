@@ -137,17 +137,19 @@ class BaseLLMService(ABC):
         error_prefix: str = "요청",
         return_full_response: bool = False,
         discord_message: Optional[discord.Message] = None,
+        timeout: Optional[float] = None,
     ) -> Optional[Any]:
         """
         Execute the API call with retries, logging, and countdown notifications.
         """
         last_error: Optional[Exception] = None
+        current_timeout = timeout if timeout is not None else self.config.api_request_timeout
 
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
                 response = await asyncio.wait_for(
                     self._execute_model_call(model_call),
-                    timeout=self.config.api_request_timeout,
+                    timeout=current_timeout,
                 )
 
                 self._log_raw_response(response, attempt)
