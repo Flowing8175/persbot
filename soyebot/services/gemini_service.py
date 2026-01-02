@@ -351,10 +351,6 @@ class GeminiService(BaseLLMService):
                                 texts.append(text[:200].replace('\n', ' '))
                         if texts:
                             logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}")
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/fix-gemini-logging-unbound-local-error-16062376878561443796
         except Exception as e:
             logger.error(f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}", exc_info=True)
 
