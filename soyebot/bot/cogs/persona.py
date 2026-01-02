@@ -159,7 +159,7 @@ class PromptManagerView(discord.ui.View):
         select.callback = self.on_select
         self.add_item(select)
 
-        # Buttons
+        # Row 1: New, Manual, Rename
         btn_new = discord.ui.Button(label="새로 만들기", style=discord.ButtonStyle.success, emoji="✨", row=1)
         btn_new.callback = self.on_new
         self.add_item(btn_new)
@@ -168,20 +168,20 @@ class PromptManagerView(discord.ui.View):
         btn_manual.callback = self.on_manual_add
         self.add_item(btn_manual)
 
+        btn_rename = discord.ui.Button(label="이름 변경", style=discord.ButtonStyle.secondary, emoji="✏️", disabled=(self.selected_index is None), row=1)
+        btn_rename.callback = self.on_rename
+        self.add_item(btn_rename)
+
+        # Row 2: Apply, Delete, Close
         btn_apply = discord.ui.Button(label="채널에 적용", style=discord.ButtonStyle.primary, emoji="✅", disabled=(self.selected_index is None), row=2)
         btn_apply.callback = self.on_apply
         self.add_item(btn_apply)
-
-        btn_rename = discord.ui.Button(label="이름 변경", style=discord.ButtonStyle.secondary, emoji="✏️", disabled=(self.selected_index is None), row=2)
-        btn_rename.callback = self.on_rename
-        self.add_item(btn_rename)
 
         btn_delete = discord.ui.Button(label="삭제", style=discord.ButtonStyle.danger, emoji="🗑️", disabled=(self.selected_index is None), row=2)
         btn_delete.callback = self.on_delete
         self.add_item(btn_delete)
 
-        # Row 3 (Close)
-        btn_close = discord.ui.Button(label="닫기", style=discord.ButtonStyle.secondary, emoji="❌", row=3)
+        btn_close = discord.ui.Button(label="닫기", style=discord.ButtonStyle.secondary, emoji="❌", row=2)
         btn_close.callback = self.on_close
         self.add_item(btn_close)
 
