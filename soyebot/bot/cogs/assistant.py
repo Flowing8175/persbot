@@ -346,6 +346,7 @@ class AssistantCog(commands.Cog):
             pass
 
     @commands.command(name='abort', aliases=['중단', '멈춰'])
+    @commands.has_permissions(manage_guild=True)
     async def abort_command(self, ctx: commands.Context):
         """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
         channel_id = ctx.channel.id
