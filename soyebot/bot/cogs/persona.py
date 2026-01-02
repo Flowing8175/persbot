@@ -20,9 +20,9 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
     concept = discord.ui.TextInput(
         label="페르소나 컨셉",
         placeholder="예: 츤데레 여사친, 게으른 천재 해커...",
-        style=discord.TextStyle.short,
+        style=discord.TextStyle.long,
         required=True,
-        max_length=100
+        max_length=500
     )
 
     def __init__(self, view: "PromptManagerView"):
@@ -34,7 +34,7 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
         await interaction.response.defer(ephemeral=True)
 
         concept_str = self.concept.value
-        msg = await interaction.followup.send(f"🧠 '{concept_str}' 컨셉으로 페르소나 설계 중... (약 10~20초 소요)", ephemeral=True)
+        msg = await interaction.followup.send(f"🧠 입력된 내용을 바탕으로 페르소나 설계 중...", ephemeral=True)
 
         cog = self.view_ref.cog
         try:

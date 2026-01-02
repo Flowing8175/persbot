@@ -41,7 +41,7 @@ env/
 .DS_Store
 
 # Project specific
-*.log
-*.txt
-*.json
-*.db
+*/*.log
+*/*.txt
+*/*.json
+*/*.db
