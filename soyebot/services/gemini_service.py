@@ -327,8 +327,8 @@ class GeminiService(BaseLLMService):
                 cached_tokens = getattr(metadata, 'cached_content_token_count', 0)
                 total_tokens = getattr(metadata, 'total_token_count', 'unknown')
                 logger.info(f"(prompt={prompt_tokens}, cached={cached_tokens}, response={response_tokens}, total={total_tokens})")
-            except Exception as e:
-                logger.error(f"[RAW API RESPONSE {attempt}] Error logging token counts: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[RAW API RESPONSE {attempt}] Error logging token counts: {e}", exc_info=True)
 
                 
         if not logger.isEnabledFor(logging.DEBUG):
