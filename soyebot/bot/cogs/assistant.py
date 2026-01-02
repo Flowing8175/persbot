@@ -203,7 +203,7 @@ class AssistantCog(commands.Cog):
                     await self._send_llm_reply(last_message, reply)
 
         except asyncio.CancelledError:
-            logger.info("Batch processing cancelled for channel #%s (likely due to new message or !abort).", primary_message.channel.name)
+            logger.info("Batch processing cancelled for channel %s.", primary_message.channel.name)
             raise
 
         except Exception as e:
@@ -220,7 +220,7 @@ class AssistantCog(commands.Cog):
     async def help_command(self, ctx: commands.Context):
         """봇의 모든 명령어와 사용법을 안내합니다."""
         embed = discord.Embed(
-            title="🤖 SoyeBot 명령어 가이드",
+            title="🤖 명령어 가이드",
             description=f"접두사: `{self.config.command_prefix}` 또는 `@mention`을 사용하여 명령을 내릴 수 있습니다.",
             color=discord.Color.blue()
         )
