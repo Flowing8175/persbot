@@ -210,6 +210,13 @@ class GeminiService(BaseLLMService):
         if use_cache:
             cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction, tools=tools)
 
+        # Log cache status at creation for clarity
+        if use_cache:
+            if cache_name:
+                logger.info("Gemini Model initialized with CachedContent: %s", cache_name)
+            else:
+                logger.debug("Gemini Model will use standard context (no cache).")
+
         config_kwargs = {
             "temperature": getattr(self.config, 'temperature', 1.0),
             "top_p": getattr(self.config, 'top_p', 1.0),
@@ -378,26 +385,28 @@ class GeminiService(BaseLLMService):
             )
             token_count = count_result.total_tokens
         except Exception as e:
-            logger.warning("Failed to count tokens for caching check: %s", e)
+            logger.warning("Failed to count tokens for caching check: %s. Using standard context.", e)
             return None, None
 
         min_tokens = getattr(self.config, 'gemini_cache_min_tokens', 32768)
         if token_count < min_tokens:
-            logger.warning(
-                "System instruction too short for caching (%d < %d tokens). Using standard context.",
+            logger.debug(
+                "System instruction tokens (%d) < min_tokens (%d). Using standard context.",
                 token_count, min_tokens
             )
             return None, None
+
+        logger.info("Token count (%d) meets requirement for Gemini caching.", token_count)
 
         # 2. Config setup
         cache_display_name = self._get_cache_key(model_name, system_instruction, tools)
         ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
         ttl_seconds = ttl_minutes * 60
         
-        # Calculate local expiration (safe buffer)
         now = datetime.datetime.now(datetime.timezone.utc)
-        safe_ttl_minutes = max(1, ttl_minutes - 5) # Buffer 5 minutes
-        local_expiration = now + datetime.timedelta(minutes=safe_ttl_minutes)
+        # local_expiration: trigger refresh halfway through TTL window or with a 5-minute buffer
+        refresh_buffer_minutes = min(5, max(1, ttl_minutes // 2))
+        local_expiration = now + datetime.timedelta(minutes=ttl_minutes - refresh_buffer_minutes)
 
         # 3. Search for existing cache
         try:
@@ -406,28 +415,21 @@ class GeminiService(BaseLLMService):
                 if cache.display_name == cache_display_name:
                     logger.info("Found existing Gemini context cache: %s", cache.name)
                     
-                    # Check if it has expired (though list() shouldn't show it if it is)
-                    # But the API key might have changed or permissions issue.
-                    
-                    # Refresh TTL
+                    # Refresh TTL to prevent expiration
                     try:
-                        # Ensure ttl_seconds is a string with 's' or just an int if required
-                        # The new SDK often accepts a string like '3600s' or an int.
                         self.client.caches.update(
                             name=cache.name,
                             config=genai_types.UpdateCachedContentConfig(ttl=f"{ttl_seconds}s")
                         )
-                        logger.info("Refreshed TTL for cache: %s (New TTL: %ds)", cache.name, ttl_seconds)
-                        # Re-calculate local expiration based on actual state
+                        logger.info("Successfully refreshed TTL for %s to %ds.", cache.name, ttl_seconds)
                         return cache.name, local_expiration
                     except Exception as update_err:
-                        logger.warning("Failed to refresh TTL for %s: %s", cache.name, update_err)
-                        if "permission" in str(update_err).lower() or "not found" in str(update_err).lower():
-                            continue # Try next or create new
-                        return cache.name, local_expiration
+                        logger.warning("Failed to refresh TTL for %s: %s. Will attempt re-creation.", cache.name, update_err)
+                        # If update fails, DISCARD this cache and continue searching or create new
+                        continue
 
         except Exception as e:
-            logger.warning("Error listing caches: %s", e)
+            logger.error("Error listing Gemini caches: %s", e)
 
         # 4. Create new cache using the user's requested style
         try:
