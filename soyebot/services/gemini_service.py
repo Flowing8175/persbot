@@ -547,6 +547,11 @@ class GeminiService(BaseLLMService):
             chat_session.history.append(user_msg)
             chat_session.history.append(model_msg)
 
+            # Enforce max history limit (Default: 50 messages)
+            max_history = getattr(self.config, 'max_history', 50)
+            if len(chat_session.history) > max_history:
+                chat_session.history = chat_session.history[-max_history:]
+
             response_text = self._extract_text_from_response(response_obj)
             return (response_text, response_obj)
 
