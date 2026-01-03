@@ -112,17 +112,16 @@ class SessionManager:
         """Set the model alias for the current session associated with the channel."""
         session_key = f"channel:{channel_id}"
 
-        # Update active session if exists
-        if session_key in self.sessions:
-            self.sessions[session_key].model_alias = model_alias
-            logger.info(f"Updated active session {session_key} model alias to {model_alias}")
-
-        # Update context (persistent)
+        # We only update the context. This forces get_or_create to detect a mismatch
+        # with the active session (if any) and trigger a recreation/model switch
+        # on the next interaction.
         if session_key in self.session_contexts:
             self.session_contexts[session_key].model_alias = model_alias
+            logger.info(f"Updated session context {session_key} preference to {model_alias}")
         else:
-            # Create a placeholder context if none exists, so preference is saved
-            # We assume a context might be created later, but we need to store the pref.
+            # We can't easily creating context without user details here,
+            # but usually context exists if user interacted.
+            # If not, the preference is lost until next interaction creates context.
             pass
 
     async def get_or_create(
@@ -137,28 +136,41 @@ class SessionManager:
     ) -> Tuple[object, str]:
         """Retrieve a cached chat or start a new one without evicting prior sessions."""
         user_id = str(user_id)
-        existing_session = self.sessions.get(session_key)
 
-        if existing_session:
-            existing_session.last_activity_at = datetime.now(timezone.utc)
-            existing_session.last_message_id = message_id
-            self.sessions.move_to_end(session_key)
-            self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts)
-            return existing_session.chat, session_key
-
-        logger.info(f"Creating new session {session_key} for user {user_id}")
-
-        system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
-
-        assistant_model = self.llm_service.create_assistant_model(system_prompt)
-        chat = assistant_model.start_chat(system_prompt)
-
-        # Determine model alias: Check context -> Check Default
-        model_alias = ModelUsageService.DEFAULT_MODEL_ALIAS
+        # Determine the target model alias first
+        target_model_alias = ModelUsageService.DEFAULT_MODEL_ALIAS
         if session_key in self.session_contexts:
              ctx_alias = self.session_contexts[session_key].model_alias
              if ctx_alias:
-                 model_alias = ctx_alias
+                 target_model_alias = ctx_alias
+
+        existing_session = self.sessions.get(session_key)
+
+        if existing_session:
+            # Check for model compatibility
+            if existing_session.model_alias != target_model_alias:
+                logger.info(f"Session {session_key} model alias changed from {existing_session.model_alias} to {target_model_alias}. Resetting session.")
+                # Discard existing session (force recreate)
+                del self.sessions[session_key]
+                existing_session = None
+            else:
+                existing_session.last_activity_at = datetime.now(timezone.utc)
+                existing_session.last_message_id = message_id
+                self.sessions.move_to_end(session_key)
+                self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts)
+                return existing_session.chat, session_key
+
+        logger.info(f"Creating new session {session_key} for user {user_id} with model {target_model_alias}")
+
+        system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
+
+        # Use the specific creation method for the alias
+        chat = self.llm_service.create_chat_session_for_alias(target_model_alias, system_prompt)
+
+        # Attach the alias to the backend object so LLMService can retrieve it
+        # This fixes the issue where LLMService receives the raw chat object
+        # and cannot determine the alias.
+        chat.model_alias = target_model_alias
 
         self.sessions[session_key] = ChatSession(
             chat=chat,
@@ -166,10 +178,10 @@ class SessionManager:
             session_id=session_key,
             last_activity_at=datetime.now(timezone.utc),
             last_message_id=message_id,
-            model_alias=model_alias,
+            model_alias=target_model_alias,
         )
 
-        self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts, model_alias=model_alias)
+        self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts, model_alias=target_model_alias)
         self._evict_if_needed()
 
         return chat, session_key

@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from soyebot.config import AppConfig
+from soyebot.services.base import BaseLLMService
 from soyebot.services.gemini_service import GeminiService
 from soyebot.services.openai_service import OpenAIService
 from soyebot.services.prompt_service import PromptService
@@ -23,6 +24,9 @@ class LLMService:
         self.prompt_service = PromptService()
         self.image_usage_service = ImageUsageService()
         self.model_usage_service = ModelUsageService()
+
+        # Cache for lazy-loaded auxiliary backends (e.g. OpenAI when Gemini is default)
+        self._aux_backends = {}
 
         assistant_provider = (config.assistant_llm_provider or 'gemini').lower()
         summarizer_provider = (config.summarizer_llm_provider or assistant_provider).lower()
@@ -69,7 +73,89 @@ class LLMService:
             prompt_service=self.prompt_service
         )
 
+    def get_backend_for_model(self, model_alias: str) -> Optional[BaseLLMService]:
+        """
+        Retrieve the appropriate backend service for a given model alias.
+        Lazy loads the service if not already initialized.
+        """
+        # Resolve target provider
+        target_def = self.model_usage_service.MODEL_DEFINITIONS.get(model_alias)
+        target_provider = target_def.provider if target_def else 'gemini'
+
+        # Check current assistant backend
+        current_provider = 'openai' if isinstance(self.assistant_backend, OpenAIService) else 'gemini'
+
+        if target_provider == current_provider:
+            return self.assistant_backend
+
+        # Check cached aux backends
+        if target_provider in self._aux_backends:
+            return self._aux_backends[target_provider]
+
+        # Create new backend if needed
+        # We initialize with the specific model requested, though services should handle dynamic models
+        api_model_name = self.model_usage_service.get_api_model_name(model_alias)
+
+        if target_provider == 'openai':
+            if not self.config.openai_api_key:
+                logger.warning("OpenAI API key missing, cannot switch to OpenAI model.")
+                return None
+            service = OpenAIService(self.config, assistant_model_name=api_model_name, prompt_service=self.prompt_service)
+            self._aux_backends['openai'] = service
+            return service
+
+        elif target_provider == 'gemini':
+            if not self.config.gemini_api_key:
+                logger.warning("Gemini API key missing, cannot switch to Gemini model.")
+                return None
+            service = GeminiService(self.config, assistant_model_name=api_model_name, prompt_service=self.prompt_service)
+            self._aux_backends['gemini'] = service
+            return service
+
+        return None
+
+    def create_chat_session_for_alias(self, model_alias: str, system_instruction: str):
+        """Create a chat session (model wrapper) appropriate for the given model alias."""
+        backend = self.get_backend_for_model(model_alias)
+        if not backend:
+            # Fallback to default if backend unavailable
+            logger.warning(f"Backend unavailable for alias {model_alias}. Falling back to default assistant backend.")
+            backend = self.assistant_backend
+
+        # We need to make sure the backend uses the correct model name for session creation
+        # Backend.create_assistant_model uses its internal _assistant_model_name.
+        # But we want a specific model.
+        # We can update the service's model name? No, dangerous if shared.
+        # We need `create_model(model_name, system_instruction)`.
+        # Existing services have `create_assistant_model` which uses default.
+        # `GeminiService` has `_get_or_create_model`.
+        # `OpenAIService` has `_get_or_create_assistant`.
+        # Both are internal/protected.
+        # But `LLMService` can't access protected members easily (it can but it's dirty).
+
+        # Let's inspect BaseLLMService? No common method for creating arbitrary model session.
+        # However, `create_assistant_model` is public.
+        # If we just use `backend.create_assistant_model`, it uses the backend's configured default.
+        # This is WRONG if the backend was cached with a different default.
+
+        # SOLUTION:
+        # If the backend supports creating a model with specific name, use it.
+        # `GeminiService`: `_get_or_create_model(name, instr)`
+        # `OpenAIService`: `_get_or_create_assistant(name, instr)`
+
+        # I will access them directly as we are in the same package scope context effectively, or rely on python access.
+
+        api_model_name = self.model_usage_service.get_api_model_name(model_alias)
+
+        if isinstance(backend, GeminiService):
+            return backend._get_or_create_model(api_model_name, system_instruction)
+        elif isinstance(backend, OpenAIService):
+            return backend._get_or_create_assistant(api_model_name, system_instruction)
+
+        return backend.create_assistant_model(system_instruction)
+
     def create_assistant_model(self, system_instruction: str, use_cache: bool = True):
+        # Legacy method delegating to default backend
         return self.assistant_backend.create_assistant_model(system_instruction, use_cache=use_cache)
 
     async def summarize_text(self, text: str):
@@ -81,16 +167,6 @@ class LLMService:
         # We'll create a temporary model instance with the META_PROMPT
         # Disable caching for the meta prompt generation itself
         meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
-        
-        # We manually call a generation method. BaseLLMService might not have one, 
-        # so we'll ensure backend has a clean way.
-        # For now, we can use hypothesize a 'generate_text' on backend or use existing ones.
-        # summarizer_backend.summarize_text(text) does: model.generate_content(prompt)
-        # Let's add 'generate_response_with_system_instruction' to backends.
-        
-        # Actually, let's just make it simple if the backend supports it.
-        # summarizer_backend.summary_model is a _CachedModel with SUMMARY_SYSTEM_INSTRUCTION.
-        # We want one with META_PROMPT.
         
         if hasattr(self.summarizer_backend, 'assistant_model'):
              # Create meta model
@@ -112,9 +188,10 @@ class LLMService:
         # 0. Check usage limit
         model_alias = getattr(chat_session, 'model_alias', self.model_usage_service.DEFAULT_MODEL_ALIAS)
 
-        # Determine user_id and channel_id
+        # Determine user_id, channel_id, and guild_id
         user_id = 0
         channel_id = 0
+        guild_id = 0
         primary_author = None
 
         if isinstance(discord_message, list):
@@ -122,16 +199,24 @@ class LLMService:
                 primary_author = discord_message[0].author
                 user_id = primary_author.id
                 channel_id = discord_message[0].channel.id
+                if discord_message[0].guild:
+                    guild_id = discord_message[0].guild.id
+                else:
+                    guild_id = user_id
         else:
              primary_author = discord_message.author
              user_id = primary_author.id
              channel_id = discord_message.channel.id
+             if discord_message.guild:
+                 guild_id = discord_message.guild.id
+             else:
+                 guild_id = user_id
 
         is_allowed, final_alias, notification = await self.model_usage_service.check_and_increment_usage(
-            user_id, channel_id, model_alias
+            guild_id, model_alias
         )
 
-        # Update session if model changed
+        # Update session if model changed due to fallback
         if final_alias != model_alias:
              chat_session.model_alias = final_alias
 
@@ -141,53 +226,10 @@ class LLMService:
         # Resolve API model name
         api_model_name = self.model_usage_service.get_api_model_name(final_alias)
 
-        # Check provider mismatch? For now we assume aliases map to current provider logic or we might need multi-provider switch.
-        # The MODEL_DEFINITIONS has 'provider'. We should check if current backend matches.
-        # But `LLMService` initializes one backend. Swapping backend on the fly is complex.
-        # The user request implies selecting models, some are Gemini, some GPT.
-        # If user selects GPT model but backend is Gemini, we need to switch backend?
-        # Or `LLMService` should just instantiate both backends?
-        # For simplicity, we assume `assistant_backend` can handle the request if it's the right provider,
-        # OR we need to dynamically pick the backend.
-
-        # Current architecture has `self.assistant_backend` set at init.
-        # To support switching providers per request, we need both services available.
-        # Let's lazy load or keep both if needed.
-
-        target_def = self.model_usage_service.MODEL_DEFINITIONS.get(final_alias)
-        target_provider = target_def.provider if target_def else 'gemini'
-
-        active_backend = None
-        if target_provider == 'openai':
-             # We need an OpenAI backend.
-             # If `self.assistant_backend` is OpenAI, use it.
-             # Else we need to instantiate/get one.
-             if isinstance(self.assistant_backend, OpenAIService):
-                 active_backend = self.assistant_backend
-             else:
-                 # Check if we have API key
-                 if self.config.openai_api_key:
-                     # Create temporary or cached service
-                     # For efficiency, we really should have initialized both if keys exist.
-                     # But let's create on fly for now or assume user config matches provider.
-                     # Actually, `!model` allows selecting ANY. So we MUST support switching.
-                     # Let's create a cached OpenAI service instance in LLMService.
-                     if not hasattr(self, '_openai_service'):
-                          self._openai_service = OpenAIService(self.config, assistant_model_name=api_model_name, prompt_service=self.prompt_service)
-                     active_backend = self._openai_service
-                 else:
-                     return ("❌ OpenAI API 키가 설정되지 않아 해당 모델을 사용할 수 없습니다.", None)
-        else:
-             # Gemini
-             if isinstance(self.assistant_backend, GeminiService):
-                 active_backend = self.assistant_backend
-             else:
-                 if self.config.gemini_api_key:
-                     if not hasattr(self, '_gemini_service'):
-                          self._gemini_service = GeminiService(self.config, assistant_model_name=api_model_name, prompt_service=self.prompt_service)
-                     active_backend = self._gemini_service
-                 else:
-                      return ("❌ Gemini API 키가 설정되지 않아 해당 모델을 사용할 수 없습니다.", None)
+        # Get appropriate backend
+        active_backend = self.get_backend_for_model(final_alias)
+        if not active_backend:
+             return ("❌ 선택한 모델을 사용할 수 없습니다 (Provider 설정 오류).", None)
 
         if use_summarizer_backend:
             # Summarizer overrides
@@ -213,7 +255,7 @@ class LLMService:
                     return ("❌ 이미지는 하루에 최대 3개 업로드하실 수 있습니다.", None)
 
         # 2. Proceed with generation
-        # We pass `model_name` argument to generate_chat_response
+        # We pass `model_name` argument to generate_chat_response to ensure dynamic switching inside session works
         response = await active_backend.generate_chat_response(
             chat_session,
             user_message,
@@ -270,10 +312,9 @@ class LLMService:
             self.summarizer_backend.reload_parameters()
 
         # Also reload auxiliary services if they exist
-        if hasattr(self, '_openai_service'):
-            self._openai_service.reload_parameters()
-        if hasattr(self, '_gemini_service'):
-            self._gemini_service.reload_parameters()
+        for key, backend in self._aux_backends.items():
+            if hasattr(backend, 'reload_parameters'):
+                backend.reload_parameters()
 
         logger.info("Updated parameters: temperature=%s, top_p=%s, thinking_budget=%s", 
                     self.config.temperature, self.config.top_p, self.config.thinking_budget)

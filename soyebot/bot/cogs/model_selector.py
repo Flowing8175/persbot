@@ -15,15 +15,17 @@ logger = logging.getLogger(__name__)
 class ModelSelectorView(discord.ui.View):
     """View containing the model selection dropdown."""
 
-    def __init__(self, session_manager: SessionManager, current_model: str):
+    def __init__(self, session_manager: SessionManager, current_model: str, original_message: Optional[discord.Message] = None):
         super().__init__(timeout=60)
         self.session_manager = session_manager
+        self.original_message = original_message
 
         # Populate options from ModelUsageService definitions
         options = []
         for alias, definition in ModelUsageService.MODEL_DEFINITIONS.items():
             # Add description if needed (e.g., daily limit)
-            desc = f"1일 한도: {definition.daily_limit}회 ({'채널' if definition.scope == 'channel' else '유저'} 공통)"
+            # Scope updated to '서버' (Guild)
+            desc = f"1일 한도: {definition.daily_limit}회 (서버 공통)"
 
             options.append(discord.SelectOption(
                 label=alias,
@@ -50,22 +52,32 @@ class ModelSelect(discord.ui.Select):
         view: ModelSelectorView = self.view
         selected_alias = self.values[0]
 
+        # Defer to allow time and prevent interaction failure if slow, though this op is fast.
+        # But mostly to allow us to send a reply to the *original* message comfortably.
+        await interaction.response.defer()
+
         # Update the session model
         # We use the channel ID from interaction
         view.session_manager.set_session_model(interaction.channel_id, selected_alias)
 
-        await interaction.response.send_message(
-            f"✅ 모델이 **{selected_alias}**로 변경되었습니다.",
-            ephemeral=False
-        )
-        # Disable the view after selection
-        self.disabled = True
-        # Update original message to remove dropdown or disable it?
-        # Interaction response is a new message.
-        # We can edit the original message if we want, but 'interaction.message' might be null if slash command?
-        # This is triggered from a !command, so there is an original message.
-        if interaction.message:
-            await interaction.message.edit(view=None)
+        confirmation_text = f"✅ 모델이 **{selected_alias}**로 변경되었습니다."
+
+        # Logic change: Reply to the original !model command message, then delete the embed
+        if view.original_message:
+            try:
+                await view.original_message.reply(confirmation_text, mention_author=False)
+            except (discord.NotFound, discord.HTTPException):
+                # Fallback if original deleted: reply to interaction (as followup since deferred)
+                await interaction.followup.send(confirmation_text)
+        else:
+             await interaction.followup.send(confirmation_text)
+
+        # Delete the interaction message (the embed with dropdown)
+        try:
+            if interaction.message:
+                await interaction.message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
 
 
 class ModelSelectorCog(commands.Cog):
@@ -89,7 +101,8 @@ class ModelSelectorCog(commands.Cog):
             if ctx_alias:
                 current_alias = ctx_alias
 
-        view = ModelSelectorView(self.session_manager, current_alias)
+        # Pass ctx.message as original_message
+        view = ModelSelectorView(self.session_manager, current_alias, original_message=ctx.message)
         await ctx.reply(
             f"현재 모델: **{current_alias}**\n변경할 모델을 선택해 주세요.",
             view=view,

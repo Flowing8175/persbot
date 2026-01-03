@@ -15,7 +15,7 @@ class ModelDefinition:
     display_name: str
     api_model_name: str
     daily_limit: int
-    scope: str  # 'user' or 'channel'
+    scope: str  # 'user', 'channel', or 'guild'
     provider: str # 'gemini' or 'openai'
     fallback_alias: Optional[str] = None
 
@@ -28,7 +28,7 @@ class ModelUsageService:
             display_name="Gemini 3 flash",
             api_model_name="gemini-3-flash",
             daily_limit=20,
-            scope="user",
+            scope="guild",
             provider="gemini",
             fallback_alias="Gemini 2.5 flash"
         ),
@@ -36,7 +36,7 @@ class ModelUsageService:
             display_name="Gemini 2.5 flash",
             api_model_name="gemini-2.5-flash",
             daily_limit=50,
-            scope="channel",
+            scope="guild",
             provider="gemini",
             fallback_alias="Gemini 2.0 flash"
         ),
@@ -44,7 +44,7 @@ class ModelUsageService:
             display_name="Gemini 2.5 flash lite",
             api_model_name="gemini-2.5-flash-lite",
             daily_limit=200,
-            scope="user",
+            scope="guild",
             provider="gemini",
             fallback_alias=None
         ),
@@ -52,7 +52,7 @@ class ModelUsageService:
             display_name="Gemini 2.0 flash",
             api_model_name="gemini-2.0-flash-001",
             daily_limit=100,
-            scope="user",
+            scope="guild",
             provider="gemini",
             fallback_alias="Gemini 2.5 flash lite"
         ),
@@ -60,7 +60,7 @@ class ModelUsageService:
             display_name="GPT-5.2 mini",
             api_model_name="gpt-5.2-mini",
             daily_limit=50,
-            scope="user",
+            scope="guild",
             provider="openai",
             fallback_alias="GPT-5.2 nano"
         ),
@@ -68,7 +68,7 @@ class ModelUsageService:
             display_name="GPT-5.2 nano",
             api_model_name="gpt-5.2-nano",
             daily_limit=200,
-            scope="user",
+            scope="guild",
             provider="openai",
             fallback_alias=None
         ),
@@ -120,14 +120,12 @@ class ModelUsageService:
                 "usage": {}
             }
 
-    def _get_usage_key(self, model_def: ModelDefinition, user_id: int, channel_id: int) -> str:
+    def _get_usage_key(self, model_def: ModelDefinition, guild_id: int) -> str:
         """Generate key based on scope."""
-        if model_def.scope == "channel":
-            return f"channel:{channel_id}:{model_def.display_name}"
-        else:
-            return f"user:{user_id}:{model_def.display_name}"
+        # Now everything is guild scope as requested
+        return f"guild:{guild_id}:{model_def.display_name}"
 
-    async def check_and_increment_usage(self, user_id: int, channel_id: int, model_alias: Optional[str]) -> Tuple[bool, str, Optional[str]]:
+    async def check_and_increment_usage(self, guild_id: int, model_alias: Optional[str]) -> Tuple[bool, str, Optional[str]]:
         """
         Check if usage is within limits. If yes, increment.
         If no, switch to fallback and recurse.
@@ -147,10 +145,9 @@ class ModelUsageService:
         for _ in range(5):
             model_def = self.MODEL_DEFINITIONS.get(current_alias)
             if not model_def:
-                # Should not happen given initial check, but safety fallback
                 return True, self.DEFAULT_MODEL_ALIAS, None
 
-            usage_key = self._get_usage_key(model_def, user_id, channel_id)
+            usage_key = self._get_usage_key(model_def, guild_id)
             current_usage = self.usage_data.get("usage", {}).get(usage_key, 0)
 
             if current_usage < model_def.daily_limit:
@@ -168,16 +165,13 @@ class ModelUsageService:
                     logger.info(f"Usage limit reached for {current_alias} (Key: {usage_key}). Falling back to {model_def.fallback_alias}.")
 
                     if notification is None:
-                        # Only set notification on the FIRST fallback
                         notification = f"1일 사용한도에 도달하여 🔄 {model_def.fallback_alias}모델로 변경되었습니다."
                     else:
-                        # Update notification if we fall back multiple times
                         notification = f"1일 사용한도에 도달하여 🔄 {model_def.fallback_alias}모델로 변경되었습니다."
 
                     current_alias = model_def.fallback_alias
                     continue
                 else:
-                    # No fallback available
                     return False, current_alias, "❌ 금일 사용 가능한 모든 모델의 한도를 초과했습니다."
 
         return False, current_alias, "❌ 모델 전환 오류."
