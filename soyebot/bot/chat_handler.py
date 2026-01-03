@@ -104,6 +104,9 @@ async def create_chat_reply(
         message_id=msg_id_for_session,
     )
 
+    # Note: chat_session now has .model_alias set by get_or_create (via session persistence or default)
+    # llm_service.generate_chat_response will read this alias from chat_session.
+
     response_result = await llm_service.generate_chat_response(
         chat_session,
         resolution.cleaned_message,

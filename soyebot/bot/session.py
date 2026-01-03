@@ -5,10 +5,11 @@ import asyncio
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
+from soyebot.services.model_usage_service import ModelUsageService
 from soyebot.prompts import BOT_PERSONA_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ class ChatSession:
     session_id: str
     last_activity_at: datetime
     last_message_id: Optional[str] = None
+    model_alias: Optional[str] = None
 
 
 @dataclass
@@ -36,6 +38,7 @@ class SessionContext:
     last_activity_at: datetime
     last_message_preview: str = ""
     title: Optional[str] = None
+    model_alias: Optional[str] = None
 
 
 @dataclass
@@ -78,6 +81,7 @@ class SessionManager:
         username: str,
         message_content: str,
         message_ts: Optional[datetime],
+        model_alias: Optional[str] = None,
     ) -> None:
         now = message_ts or datetime.now(timezone.utc)
         preview = message_content.strip()
@@ -86,6 +90,8 @@ class SessionManager:
         if existing:
             existing.last_activity_at = now
             existing.last_message_preview = preview or existing.last_message_preview
+            if model_alias:
+                existing.model_alias = model_alias
             self.session_contexts.move_to_end(session_key)
         else:
             self.session_contexts[session_key] = SessionContext(
@@ -96,9 +102,28 @@ class SessionManager:
                 started_at=now,
                 last_activity_at=now,
                 last_message_preview=preview,
+                title=None,
+                model_alias=model_alias
             )
 
         self._evict_if_needed()
+
+    def set_session_model(self, channel_id: int, model_alias: str) -> None:
+        """Set the model alias for the current session associated with the channel."""
+        session_key = f"channel:{channel_id}"
+
+        # Update active session if exists
+        if session_key in self.sessions:
+            self.sessions[session_key].model_alias = model_alias
+            logger.info(f"Updated active session {session_key} model alias to {model_alias}")
+
+        # Update context (persistent)
+        if session_key in self.session_contexts:
+            self.session_contexts[session_key].model_alias = model_alias
+        else:
+            # Create a placeholder context if none exists, so preference is saved
+            # We assume a context might be created later, but we need to store the pref.
+            pass
 
     async def get_or_create(
         self,
@@ -128,15 +153,23 @@ class SessionManager:
         assistant_model = self.llm_service.create_assistant_model(system_prompt)
         chat = assistant_model.start_chat(system_prompt)
 
+        # Determine model alias: Check context -> Check Default
+        model_alias = ModelUsageService.DEFAULT_MODEL_ALIAS
+        if session_key in self.session_contexts:
+             ctx_alias = self.session_contexts[session_key].model_alias
+             if ctx_alias:
+                 model_alias = ctx_alias
+
         self.sessions[session_key] = ChatSession(
             chat=chat,
             user_id=user_id,
             session_id=session_key,
             last_activity_at=datetime.now(timezone.utc),
             last_message_id=message_id,
+            model_alias=model_alias,
         )
 
-        self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts)
+        self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts, model_alias=model_alias)
         self._evict_if_needed()
 
         return chat, session_key

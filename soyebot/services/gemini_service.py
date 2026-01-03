@@ -196,6 +196,20 @@ class GeminiService(BaseLLMService):
                 return model
 
         # Enable Google Search Grounding for the assistant model
+        # Only if it's NOT a lite model (lite models don't support tools usually or we want to save costs)
+        # But user didn't specify. Standard logic was: if assistant_model, add tools.
+        # Now model_name varies.
+        # Let's add tools if it's NOT a Lite model to be safe/consistent?
+        # Or just enable for all if supported?
+        # "Gemini 2.5 Flash Lite" snippet says "Streamlined... simple tasks".
+        # "Gemini 3 Pro" snippet says "Search grounding: Supported".
+        # Let's keep logic simple: enable search if it's THE assistant model (default) OR if we want to force it?
+        # Actually, `generate_chat_response` calls `_get_or_create_model` with `model_name`.
+        # If `model_name` passed in != `self._assistant_model_name`, we treat it as dynamic.
+        # Let's enable tools only for the default assistant model to avoid errors on small models if they don't support it,
+        # unless we know they do.
+        # Safe bet: disable tools for dynamic models unless configured otherwise.
+
         tools = None
         if model_name == self._assistant_model_name:
             grounding_tool = genai_types.Tool(
@@ -486,6 +500,7 @@ class GeminiService(BaseLLMService):
         chat_session,
         user_message: str,
         discord_message: Union[discord.Message, list[discord.Message]],
+        model_name: Optional[str] = None,
     ) -> Optional[Tuple[str, Any]]:
         """Generate chat response."""
         self._log_raw_request(user_message, chat_session)
@@ -520,8 +535,11 @@ class GeminiService(BaseLLMService):
             # Fallback to active prompt if somehow missing
             system_instruction = getattr(chat_session, '_system_instruction', None) or self.prompt_service.get_active_assistant_prompt()
 
+            # We use the currently requested model name for refresh, or fallback to default assistant model
+            target_model = model_name or self._assistant_model_name
+
             fresh_model = self._get_or_create_model(
-                self._assistant_model_name, system_instruction
+                target_model, system_instruction
             )
 
             # Update the wrapper's factory reference
@@ -530,6 +548,14 @@ class GeminiService(BaseLLMService):
             logger.info("Chat session successfully refreshed with new model/cache.")
 
         try:
+            # Check if we need to switch model for this session
+            current_model_name = getattr(chat_session._factory, '_model_name', None)
+            if model_name and current_model_name != model_name:
+                 logger.info("Switching chat session model from %s to %s", current_model_name, model_name)
+                 system_instr = getattr(chat_session, '_system_instruction', None) or self.prompt_service.get_active_assistant_prompt()
+                 new_model = self._get_or_create_model(model_name, system_instr)
+                 chat_session._factory = new_model
+
             # First attempt: normal flow with retry for cache errors
             result = await self._gemini_retry(
                 lambda: chat_session.send_message(user_message, author_id=author_id, author_name=author_name, message_ids=message_ids, images=images),
@@ -562,7 +588,8 @@ class GeminiService(BaseLLMService):
                 
                 # Re-create underlying chat session for this specific ChatSession
                 system_instr = chat_session._system_instruction
-                new_model = self.create_assistant_model(system_instr)
+                target_model = model_name or self._assistant_model_name
+                new_model = self._get_or_create_model(target_model, system_instr)
 
                 # Update the wrapper's factory reference
                 chat_session._factory = new_model

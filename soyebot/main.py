@@ -17,6 +17,7 @@ from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
 from bot.cogs.persona import PersonaCog
 from bot.cogs.finetune import FineTuneCog
+from bot.cogs.model_selector import ModelSelectorCog
 from services.prompt_service import PromptService
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,7 @@ async def main(config):
         await bot.add_cog(SummarizerCog(bot, config, llm_service))
         await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager, prompt_service))
         await bot.add_cog(PersonaCog(bot, config, llm_service, session_manager, prompt_service))
+        await bot.add_cog(ModelSelectorCog(bot, session_manager))
         if auto_channel_cog_cls:
             await bot.add_cog(auto_channel_cog_cls(bot, config, llm_service, session_manager))
 

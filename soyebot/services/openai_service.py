@@ -349,7 +349,7 @@ class OpenAIService(BaseLLMService):
     ):
         super().__init__(config)
         self.client = OpenAI(api_key=config.openai_api_key)
-        self._assistant_cache: dict[int, _ResponseModel] = {}
+        self._assistant_cache: dict[int, Union[_ResponseModel, _ChatCompletionModel]] = {}
         self._max_messages = 7
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
@@ -532,6 +532,7 @@ class OpenAIService(BaseLLMService):
         chat_session,
         user_message: str,
         discord_message: Union[discord.Message, list[discord.Message]],
+        model_name: Optional[str] = None,
     ) -> Optional[Tuple[str, Any]]:
         self._log_raw_request(user_message, chat_session)
 
@@ -544,6 +545,20 @@ class OpenAIService(BaseLLMService):
 
         author_id = primary_msg.author.id
         author_name = getattr(primary_msg.author, 'name', str(author_id))
+
+        # Check for model switch
+        # OpenAI sessions don't wrap a "factory" as cleanly as GeminiService (which has _ChatSession holding _factory)
+        # In OpenAI service, we create a `ResponseChatSession` which holds `self._model_name`.
+        # We need to recreate the session or update its internal model name if it changed.
+        # But wait, `chat_session` is the OBJECT returned by `start_chat`.
+        # `ResponseChatSession` has `self._model_name`.
+        # If `model_name` is provided and differs, we should update it.
+
+        current_model_name = getattr(chat_session, '_model_name', None)
+        if model_name and current_model_name != model_name:
+             logger.info("Switching OpenAI chat session model from %s to %s", current_model_name, model_name)
+             chat_session._model_name = model_name
+             # We might need to update other params if they depend on model, but usually shared.
 
         # Extract images from messages
         images = []
