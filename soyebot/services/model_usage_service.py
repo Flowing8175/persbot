@@ -24,31 +24,31 @@ class ModelUsageService:
 
     # Define the available models and their constraints
     MODEL_DEFINITIONS: Dict[str, ModelDefinition] = {
-        "Gemini 3 flash": ModelDefinition(
+        "최신 똑똑이": ModelDefinition(
             display_name="Gemini 3 flash",
-            api_model_name="gemini-3-flash",
+            api_model_name="gemini-3-flash-preview",
             daily_limit=20,
             scope="guild",
             provider="gemini",
             fallback_alias="Gemini 2.5 flash"
         ),
-        "Gemini 2.5 flash": ModelDefinition(
+        "가성비 똑똑이": ModelDefinition(
             display_name="Gemini 2.5 flash",
             api_model_name="gemini-2.5-flash",
-            daily_limit=30,
+            daily_limit=50,
             scope="guild",
             provider="gemini",
             fallback_alias="Gemini 2.0 flash"
         ),
-        "Gemini 2.5 flash lite": ModelDefinition(
+        "좀 띨빵한 똑똑이": ModelDefinition(
             display_name="Gemini 2.5 flash lite",
             api_model_name="gemini-2.5-flash-lite",
-            daily_limit=50,
+            daily_limit=100,
             scope="guild",
             provider="gemini",
             fallback_alias=None
         ),
-        "Gemini 2.0 flash lite": ModelDefinition(
+        "의외로 괜찮은 구형 똑똑이": ModelDefinition(
             display_name="Gemini 2.0 flash lite",
             api_model_name="gemini-2.0-flash-lite",
             daily_limit=100,
@@ -56,15 +56,15 @@ class ModelUsageService:
             provider="gemini",
             fallback_alias="Gemini 2.5 flash lite"
         ),
-        "GPT-4.1 mini": ModelDefinition(
+        "비싼데 바보인 애": ModelDefinition(
             display_name="GPT-4.1 mini",
             api_model_name="gpt-4.1-mini",
-            daily_limit=20,
+            daily_limit=15,
             scope="guild",
             provider="openai",
             fallback_alias="GPT-4.1 nano"
         ),
-        "GPT-4.1 nano": ModelDefinition(
+        "똥멍청이": ModelDefinition(
             display_name="GPT-4.1 nano",
             api_model_name="gpt-4.1-nano",
             daily_limit=30,
