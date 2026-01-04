@@ -35,7 +35,7 @@ class ModelUsageService:
         "Gemini 2.5 flash": ModelDefinition(
             display_name="Gemini 2.5 flash",
             api_model_name="gemini-2.5-flash",
-            daily_limit=50,
+            daily_limit=70,
             scope="guild",
             provider="gemini",
             fallback_alias="Gemini 2.0 flash"
@@ -43,30 +43,30 @@ class ModelUsageService:
         "Gemini 2.5 flash lite": ModelDefinition(
             display_name="Gemini 2.5 flash lite",
             api_model_name="gemini-2.5-flash-lite",
-            daily_limit=200,
+            daily_limit=100,
             scope="guild",
             provider="gemini",
             fallback_alias=None
         ),
         "Gemini 2.0 flash": ModelDefinition(
-            display_name="Gemini 2.0 flash",
-            api_model_name="gemini-2.0-flash-001",
-            daily_limit=100,
+            display_name="Gemini 2.0 flash lite",
+            api_model_name="gemini-2.0-flash-lite",
+            daily_limit=300,
             scope="guild",
             provider="gemini",
             fallback_alias="Gemini 2.5 flash lite"
         ),
-        "GPT-5.2 mini": ModelDefinition(
-            display_name="GPT-5.2 mini",
-            api_model_name="gpt-5.2-mini",
+        "GPT-4.1 mini": ModelDefinition(
+            display_name="GPT-4o mini",
+            api_model_name="gpt-4.1-mini",
             daily_limit=50,
             scope="guild",
             provider="openai",
-            fallback_alias="GPT-5.2 nano"
+            fallback_alias="GPT-4.1 nano"
         ),
-        "GPT-5.2 nano": ModelDefinition(
-            display_name="GPT-5.2 nano",
-            api_model_name="gpt-5.2-nano",
+        "GPT-4.1 nano": ModelDefinition(
+            display_name="GPT-4o nano",
+            api_model_name="gpt-4.1-nano",
             daily_limit=200,
             scope="guild",
             provider="openai",
