@@ -32,10 +32,10 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
     async def on_submit(self, interaction: discord.Interaction):
         # Use deferred response because generation takes time
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
         concept_str = self.concept.value
-        msg = await interaction.followup.send(f"🧠 입력된 내용을 바탕으로 페르소나 설계 중...", ephemeral=True)
+        msg = await interaction.followup.send(f"🧠 입력된 내용을 바탕으로 페르소나 설계 중...", ephemeral=False)
 
         cog = self.view_ref.cog
         try:
@@ -80,10 +80,10 @@ class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
     async def on_submit(self, interaction: discord.Interaction):
         cog = self.view_ref.cog
         if cog.prompt_service.rename_prompt(self.index, self.new_name.value):
-            await interaction.response.send_message(f"✅ **{self.new_name.value}**로 변경되었습니다.", ephemeral=True)
+            await interaction.response.send_message(f"✅ **{self.new_name.value}**로 변경되었습니다.", ephemeral=False)
             await self.view_ref.refresh_view(interaction)
         else:
-            await interaction.response.send_message("❌ 변경 실패.", ephemeral=True)
+            await interaction.response.send_message("❌ 변경 실패.", ephemeral=False)
 
 class PromptManagerView(discord.ui.View):
     def __init__(self, cog: "PersonaCog", ctx: commands.Context):
@@ -227,7 +227,7 @@ class PromptManagerView(discord.ui.View):
                 content_bytes = await attachment.read()
                 content_str = content_bytes.decode('utf-8')
             except UnicodeDecodeError:
-                await interaction.followup.send("❌ 파일 인코딩 오류: UTF-8 형식이 아닙니다.", ephemeral=True)
+                await interaction.followup.send("❌ 파일 인코딩 오류: UTF-8 형식이 아닙니다. [변환](https://localizely.com/text-encoding-converter/) 후 업로드해주세요.", ephemeral=True)
                 return
             except Exception as e:
                 logger.error(f"File read error: {e}")
@@ -237,7 +237,7 @@ class PromptManagerView(discord.ui.View):
             name = attachment.filename.rsplit('.', 1)[0]
             idx = self.cog.prompt_service.add_prompt(name, content_str)
 
-            await interaction.followup.send(f"✅ 새 페르소나 **'{name}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=True)
+            await interaction.followup.send(f"✅ 새 페르소나 **'{name}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=False)
             await self.refresh_view(interaction)
 
             # Optional: Delete the user's upload message to keep channel clean?
@@ -251,7 +251,7 @@ class PromptManagerView(discord.ui.View):
             p = self.cog.prompt_service.get_prompt(self.selected_index)
             if p:
                 self.cog.session_manager.set_channel_prompt(self.ctx.channel.id, p['content'])
-                await interaction.response.send_message(f"✅ **{p['name']}** 페르소나가 이 채널에 적용되었습니다! (세션 초기화)", ephemeral=True)
+                await interaction.response.send_message(f"✅ **{p['name']}** 페르소나가 이 채널에 적용되었습니다! (세션 초기화)", ephemeral=False)
                 await self.refresh_view(interaction)
             else:
                 await interaction.response.send_message("❌ 페르소나를 찾을 수 없습니다.", ephemeral=True)
@@ -271,7 +271,7 @@ class PromptManagerView(discord.ui.View):
             if p:
                 if self.cog.prompt_service.delete_prompt(self.selected_index):
                     self.selected_index = None
-                    await interaction.response.send_message(f"🗑️ **{p['name']}** 삭제 완료.", ephemeral=True)
+                    await interaction.response.send_message(f"🗑️ **{p['name']}** 삭제 완료.", ephemeral=False)
                     await self.refresh_view(interaction)
                 else:
                     await interaction.response.send_message("❌ 삭제 실패.", ephemeral=True)
