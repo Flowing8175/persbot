@@ -100,6 +100,8 @@ class ModelSelectorCog(commands.Cog):
             ctx_alias = self.session_manager.session_contexts[session_key].model_alias
             if ctx_alias:
                 current_alias = ctx_alias
+        elif ctx.channel.id in self.session_manager.channel_model_preferences:
+            current_alias = self.session_manager.channel_model_preferences[ctx.channel.id]
 
         # Pass ctx.message as original_message
         view = ModelSelectorView(self.session_manager, current_alias, original_message=ctx.message)

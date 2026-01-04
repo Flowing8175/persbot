@@ -63,6 +63,7 @@ class SessionManager:
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
         self.channel_prompts: Dict[int, str] = {} # channel_id -> prompt_content override
+        self.channel_model_preferences: Dict[int, str] = {} # channel_id -> model_alias override
 
     def _evict_if_needed(self) -> None:
         """Ensure the session cache does not grow without bounds."""
@@ -112,17 +113,16 @@ class SessionManager:
         """Set the model alias for the current session associated with the channel."""
         session_key = f"channel:{channel_id}"
 
+        # Store preference permanently for this runtime (handles cases where session doesn't exist yet)
+        self.channel_model_preferences[channel_id] = model_alias
+        logger.info(f"Updated channel {channel_id} model preference to {model_alias}")
+
         # We only update the context. This forces get_or_create to detect a mismatch
         # with the active session (if any) and trigger a recreation/model switch
         # on the next interaction.
         if session_key in self.session_contexts:
             self.session_contexts[session_key].model_alias = model_alias
             logger.info(f"Updated session context {session_key} preference to {model_alias}")
-        else:
-            # We can't easily creating context without user details here,
-            # but usually context exists if user interacted.
-            # If not, the preference is lost until next interaction creates context.
-            pass
 
     async def get_or_create(
         self,
@@ -143,6 +143,8 @@ class SessionManager:
              ctx_alias = self.session_contexts[session_key].model_alias
              if ctx_alias:
                  target_model_alias = ctx_alias
+        elif channel_id in self.channel_model_preferences:
+             target_model_alias = self.channel_model_preferences[channel_id]
 
         existing_session = self.sessions.get(session_key)
 

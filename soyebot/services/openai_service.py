@@ -62,6 +62,7 @@ class ResponseChatSession:
         if self._system_instruction:
             payload.append(
                 {
+                    "type": "message",
                     "role": "system",
                     "content": [
                         {
@@ -76,6 +77,7 @@ class ResponseChatSession:
             content_type = "output_text" if entry.role == "assistant" else "input_text"
             payload.append(
                 {
+                    "type": "message",
                     "role": entry.role,
                     "content": [
                         {
@@ -123,6 +125,7 @@ class ResponseChatSession:
 
         # Append user message to payload
         current_payload.append({
+            "type": "message",
             "role": "user",
             "content": content_list
         })
