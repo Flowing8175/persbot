@@ -148,11 +148,16 @@ class LLMService:
         api_model_name = self.model_usage_service.get_api_model_name(model_alias)
 
         if isinstance(backend, GeminiService):
-            return backend._get_or_create_model(api_model_name, system_instruction)
+            model = backend._get_or_create_model(api_model_name, system_instruction)
+            return model.start_chat(system_instruction)
         elif isinstance(backend, OpenAIService):
-            return backend._get_or_create_assistant(api_model_name, system_instruction)
+            model = backend._get_or_create_assistant(api_model_name, system_instruction)
+            return model.start_chat(system_instruction)
 
-        return backend.create_assistant_model(system_instruction)
+        model = backend.create_assistant_model(system_instruction)
+        if hasattr(model, 'start_chat'):
+            return model.start_chat(system_instruction)
+        return model
 
     def create_assistant_model(self, system_instruction: str, use_cache: bool = True):
         # Legacy method delegating to default backend
