@@ -287,11 +287,11 @@ class _ChatCompletionModel:
         self._service_tier = service_tier
         self._text_extractor = text_extractor
 
-    def start_chat(self):
+    def start_chat(self, system_instruction: str = None):
         return ChatCompletionSession(
             self._client,
             self._model_name,
-            self._system_instruction,
+            system_instruction or self._system_instruction,
             self._temperature,
             self._top_p,
             self._max_messages,
@@ -323,11 +323,11 @@ class _ResponseModel:
         self._service_tier = service_tier
         self._text_extractor = text_extractor
 
-    def start_chat(self):
+    def start_chat(self, system_instruction: str = None):
         return ResponseChatSession(
             self._client,
             self._model_name,
-            self._system_instruction,
+            system_instruction or self._system_instruction,
             self._temperature,
             self._top_p,
             self._max_messages,
