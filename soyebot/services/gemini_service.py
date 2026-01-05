@@ -402,6 +402,7 @@ class GeminiService(BaseLLMService):
             )
             count_result = self.client.models.count_tokens(
                 model=model_name,
+                contents=[],
                 config=count_config
             )
             token_count = count_result.total_tokens
