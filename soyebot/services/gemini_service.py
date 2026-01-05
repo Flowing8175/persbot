@@ -393,9 +393,16 @@ class GeminiService(BaseLLMService):
 
         # 1. Check token count
         try:
+            # We must count tokens including tools and system instruction to be accurate.
+            # Passing 'contents' counts user content tokens.
+            # Passing 'config' with system_instruction counts system tokens.
+            count_config = genai_types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                tools=tools
+            )
             count_result = self.client.models.count_tokens(
                 model=model_name,
-                contents=system_instruction
+                config=count_config
             )
             token_count = count_result.total_tokens
         except Exception as e:
@@ -404,8 +411,8 @@ class GeminiService(BaseLLMService):
 
         min_tokens = getattr(self.config, 'gemini_cache_min_tokens', 32768)
         if token_count < min_tokens:
-            logger.debug(
-                "System instruction tokens (%d) < min_tokens (%d). Using standard context.",
+            logger.info(
+                "Gemini Context Caching skipped: Token count (%d) < min_tokens (%d). Using standard context.",
                 token_count, min_tokens
             )
             return None, None
