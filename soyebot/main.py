@@ -100,6 +100,13 @@ async def main(config):
 
         logger.info("Cogs 로드 완료.")
 
+        # Sync Command Tree
+        try:
+            synced = await bot.tree.sync()
+            logger.info(f"Command Tree Synced: {len(synced)} commands.")
+        except Exception as e:
+            logger.error(f"Failed to sync command tree: {e}")
+
     @bot.event
     async def on_close():
         """Cleanup on bot close."""

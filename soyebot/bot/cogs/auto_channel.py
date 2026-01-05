@@ -2,6 +2,8 @@
 
 import logging
 import time
+import json
+from pathlib import Path
 from typing import Optional
 
 import asyncio
@@ -39,6 +41,84 @@ class AutoChannelCog(commands.Cog):
         # Track active processing tasks (LLM generation) to allow debouncing/merging
         self.processing_tasks: dict[int, asyncio.Task] = {}
         self.active_batches: dict[int, list[discord.Message]] = {}
+
+        # Load dynamic channels
+        self.json_file_path = Path("data/auto_channels.json")
+        # Initialize dynamic set and preserve env-based config
+        self.dynamic_channel_ids: set[int] = set()
+        self.env_channel_ids: set[int] = set(self.config.auto_reply_channel_ids)
+
+        self._load_dynamic_channels()
+
+    def _load_dynamic_channels(self):
+        """Loads auto-channels from JSON and updates config."""
+        self.dynamic_channel_ids = set()
+        if self.json_file_path.exists():
+            try:
+                with open(self.json_file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        self.dynamic_channel_ids = set(data)
+            except Exception as e:
+                logger.error(f"Failed to load auto channels from {self.json_file_path}: {e}")
+
+        # Merge environment config with dynamic config
+        combined = self.env_channel_ids | self.dynamic_channel_ids
+        self.config.auto_reply_channel_ids = tuple(combined)
+        logger.info(f"Loaded auto-channels. Env: {len(self.env_channel_ids)}, Dynamic: {len(self.dynamic_channel_ids)}, Total: {len(self.config.auto_reply_channel_ids)}")
+
+    def _save_dynamic_channels(self):
+        """Saves dynamic auto-channels to JSON and updates config."""
+        try:
+            # Create data dir if not exists (though it should exist)
+            self.json_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(self.json_file_path, "w", encoding="utf-8") as f:
+                json.dump(list(self.dynamic_channel_ids), f)
+
+            # Update config immediately
+            combined = self.env_channel_ids | self.dynamic_channel_ids
+            self.config.auto_reply_channel_ids = tuple(combined)
+        except Exception as e:
+            logger.error(f"Failed to save auto channels to {self.json_file_path}: {e}")
+
+    @commands.group(name="자동채널", aliases=["auto"], invoke_without_command=True)
+    @commands.has_permissions(manage_guild=True)
+    async def auto_channel_group(self, ctx: commands.Context):
+        """자동 응답 채널 설정 관리 명령어"""
+        await ctx.send_help(ctx.command)
+
+    @auto_channel_group.command(name="등록", aliases=["register", "add"])
+    @commands.has_permissions(manage_guild=True)
+    async def register_channel(self, ctx: commands.Context):
+        """현재 채널을 자동 응답 채널로 등록합니다."""
+        channel_id = ctx.channel.id
+
+        if channel_id in self.dynamic_channel_ids:
+             await ctx.message.add_reaction("✅")
+             return
+
+        self.dynamic_channel_ids.add(channel_id)
+        self._save_dynamic_channels()
+        await ctx.message.add_reaction("✅")
+
+    @auto_channel_group.command(name="해제", aliases=["unregister", "remove"])
+    @commands.has_permissions(manage_guild=True)
+    async def unregister_channel(self, ctx: commands.Context):
+        """현재 채널을 자동 응답 채널에서 해제합니다."""
+        channel_id = ctx.channel.id
+
+        if channel_id in self.env_channel_ids:
+             await ctx.reply("⚠️ 이 채널은 시스템 설정(환경 변수)으로 등록되어 있어 명령어로 해제할 수 없습니다.", mention_author=False)
+             return
+
+        if channel_id not in self.dynamic_channel_ids:
+             await ctx.reply("⚠️ 이 채널은 자동 응답 채널이 아닙니다.", mention_author=False)
+             return
+
+        self.dynamic_channel_ids.remove(channel_id)
+        self._save_dynamic_channels()
+        await ctx.message.add_reaction("✅")
 
     async def _send_auto_reply(self, message: discord.Message, reply: ChatReply) -> None:
         if not reply.text:

@@ -35,19 +35,28 @@ class FineTuneCog(commands.Cog):
     async def before_finetune_task(self):
         await self.bot.wait_until_ready()
 
-    @commands.command(name="force_finetune_check")
+    @commands.hybrid_command(name="force_finetune_check", description="파인튜닝 점검을 강제로 실행합니다. (봇 소유자 전용)")
     @commands.is_owner()
     async def force_check(self, ctx: commands.Context):
         """Manually trigger the fine-tune check (Owner only)."""
-        await ctx.send("🔄 Fine-tune check triggered.")
+        if ctx.interaction:
+            await ctx.reply("🔄 Fine-tune check triggered.", ephemeral=True)
+        else:
+            await ctx.send("🔄 Fine-tune check triggered.")
         try:
             # We call the service method directly
             # Note: This might overlap with the loop if not careful,
             # but usually okay for manual trigger.
             await self.service.run_pipeline_step(self.bot)
-            await ctx.send("✅ Check completed. See logs for details.")
+            if ctx.interaction:
+                await ctx.reply("✅ Check completed. See logs for details.", ephemeral=True)
+            else:
+                await ctx.send("✅ Check completed. See logs for details.")
         except Exception as e:
-            await ctx.send(f"❌ Error: {e}")
+            if ctx.interaction:
+                await ctx.reply(f"❌ Error: {e}", ephemeral=True)
+            else:
+                await ctx.send(f"❌ Error: {e}")
 
 async def setup(bot: commands.Bot):
     # Retrieve config from bot (assuming it's attached or we load it)

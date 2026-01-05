@@ -300,7 +300,7 @@ class PersonaCog(commands.Cog):
         self.session_manager = session_manager
         self.prompt_service = prompt_service
 
-    @commands.command(name='prompt')
+    @commands.hybrid_command(name='prompt', description="프롬프트(페르소나) 관리 UI를 엽니다.")
     async def prompt_command(self, ctx: commands.Context):
         """프롬프트(페르소나) 관리 UI를 엽니다."""
         view = PromptManagerView(self, ctx)

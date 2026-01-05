@@ -19,16 +19,17 @@ class HelpCog(commands.Cog):
         provider = getattr(config, 'assistant_llm_provider', 'gemini')
         self.ai_provider_label = "OpenAI API" if str(provider).lower() == 'openai' else "Google Gemini API"
 
-    @commands.command(name='도움말', aliases=['help', 'h'])
-    async def show_help(self, ctx: commands.Context, *args):
+    @commands.hybrid_command(name='help', aliases=['도움말', 'h'], description="봇의 전체 기능을 설명하는 도움말을 표시합니다.")
+    @discord.app_commands.describe(subcommand="도움말을 볼 특정 기능 (예: 요약, ai)")
+    async def show_help(self, ctx: commands.Context, subcommand: str = None):
         """봇의 전체 기능을 설명하는 도움말을 표시합니다.
 
         사용법: !도움말 [기능명]
         예: !도움말 요약, !도움말 ai
         """
         try:
-            # Parse subcommand argument
-            subcommand = ' '.join(args).lower().strip() if args else None
+            if subcommand:
+                 subcommand = subcommand.lower().strip()
 
             # Display specific help for requested feature
             if subcommand:
@@ -170,7 +171,7 @@ class HelpCog(commands.Cog):
             )
             await ctx.reply(embed=embed, mention_author=False)
 
-    @commands.command(name='기능', aliases=['features', 'f'])
+    @commands.hybrid_command(name='features', aliases=['기능', 'f'], description="봇의 주요 기능을 간단히 설명합니다.")
     async def show_features(self, ctx: commands.Context):
         """봇의 주요 기능을 간단히 설명합니다.
 
