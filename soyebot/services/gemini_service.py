@@ -394,16 +394,9 @@ class GeminiService(BaseLLMService):
         # 1. Check token count
         try:
             # We must count tokens including tools and system instruction to be accurate.
-            # Passing 'contents' counts user content tokens.
-            # Passing 'config' with system_instruction counts system tokens.
-            count_config = genai_types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                tools=tools
-            )
             count_result = self.client.models.count_tokens(
                 model=model_name,
-                contents=[],
-                config=count_config
+                contents=[system_instruction],
             )
             token_count = count_result.total_tokens
         except Exception as e:
