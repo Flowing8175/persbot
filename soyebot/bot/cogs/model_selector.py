@@ -87,9 +87,9 @@ class ModelSelectorCog(commands.Cog):
         self.bot = bot
         self.session_manager = session_manager
 
-    @commands.command(name='model', aliases=['모델'])
+    @commands.hybrid_command(name='model', aliases=['모델'], description="사용할 AI 모델을 선택합니다.")
     async def model_command(self, ctx: commands.Context):
-        """현재 채널의 LLM 모델을 선택합니다."""
+        """사용할 AI 모델을 선택합니다."""
 
         # Determine current model for this channel
         # We need to peek into session or context

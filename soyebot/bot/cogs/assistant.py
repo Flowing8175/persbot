@@ -4,9 +4,10 @@ import logging
 import time
 import asyncio
 import re
-from typing import Optional
+from typing import Optional, Literal
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
@@ -216,7 +217,7 @@ class AssistantCog(commands.Cog):
                 self.processing_tasks.pop(channel_id, None)
                 self.active_batches.pop(channel_id, None)
 
-    @commands.command(name='help', aliases=['도움말', '명령어', 'h'])
+    @commands.hybrid_command(name='help', aliases=['도움말', '명령어', 'h'], description="봇의 모든 명령어와 사용법을 안내합니다.")
     async def help_command(self, ctx: commands.Context):
         """봇의 모든 명령어와 사용법을 안내합니다."""
         embed = discord.Embed(
@@ -242,8 +243,8 @@ class AssistantCog(commands.Cog):
             name="📝 요약 및 분석",
             value=(
                 "`!요약`: 최근 30분 대화를 요약합니다.\n"
-                "`!요약 <시간>`: 지정 시간(예: `20분`, `1시간`) 동안의 대화를 요약합니다.\n"
-                "`!요약 <ID> 이후`: 특정 메시지 이후의 대화를 요약합니다."
+                "`!요약 [시간]`: 지정 시간(예: `20분`, `1시간`) 동안의 대화를 요약합니다.\n"
+                "`!요약 [ID]`: 특정 메시지 이후의 대화를 요약합니다."
             ),
             inline=False
         )
@@ -271,9 +272,9 @@ class AssistantCog(commands.Cog):
         embed.set_footer(text="SoyeBot | Advanced Agentic Coding Assistant")
         await ctx.reply(embed=embed, mention_author=False)
 
-    @commands.command(name='retry', aliases=['재생성', '다시'])
+    @commands.hybrid_command(name='retry', aliases=['재생성', '다시'], description="마지막 대화를 되돌리고 응답을 다시 생성합니다.")
     async def retry_command(self, ctx: commands.Context):
-        """Re-generate the last assistant response."""
+        """마지막 대화를 되돌리고 응답을 다시 생성합니다."""
         channel_id = ctx.channel.id
         session_key = f"channel:{channel_id}"
 
@@ -345,7 +346,7 @@ class AssistantCog(commands.Cog):
         except (discord.Forbidden, discord.HTTPException):
             pass
 
-    @commands.command(name='abort', aliases=['중단', '멈춰'])
+    @commands.hybrid_command(name='abort', aliases=['중단', '멈춰'], description="진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다.")
     @commands.has_permissions(manage_guild=True)
     async def abort_command(self, ctx: commands.Context):
         """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
@@ -390,9 +391,9 @@ class AssistantCog(commands.Cog):
         else:
             await ctx.message.add_reaction("❓")
 
-    @commands.command(name='초기화', aliases=['reset'])
+    @commands.hybrid_command(name='초기화', aliases=['reset'], description="현재 채널의 대화 세션을 초기화합니다.")
     async def reset_session(self, ctx: commands.Context):
-        """현재 채널의 대화 세션을 수동으로 초기화합니다."""
+        """현재 채널의 대화 세션을 초기화합니다."""
 
         try:
             self.session_manager.reset_session_by_channel(ctx.channel.id)
@@ -401,10 +402,11 @@ class AssistantCog(commands.Cog):
             logger.error("세션 초기화 실패: %s", exc, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
-    @commands.command(name='temp')
+    @commands.hybrid_command(name='temp', description="LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0).")
+    @app_commands.describe(value="설정할 Temperature 값 (0.0~2.0)")
     @commands.has_permissions(manage_guild=True)
     async def set_temperature(self, ctx: commands.Context, value: Optional[float] = None):
-        """Set the temperature parameter for the LLM (0.0 - 2.0)."""
+        """LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0)."""
         if value is None:
             current_temp = getattr(self.config, 'temperature', 1.0)
             await ctx.reply(f"🌡️ 현재 Temperature: {current_temp}", mention_author=False)
@@ -421,10 +423,11 @@ class AssistantCog(commands.Cog):
             logger.error("Temperature 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
-    @commands.command(name='topp')
+    @commands.hybrid_command(name='topp', description="LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0).")
+    @app_commands.describe(value="설정할 Top-P 값 (0.0~1.0)")
     @commands.has_permissions(manage_guild=True)
     async def set_top_p(self, ctx: commands.Context, value: Optional[float] = None):
-        """Set the top_p parameter for the LLM (0.0 - 1.0)."""
+        """LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0)."""
         if value is None:
             current_top_p = getattr(self.config, 'top_p', 1.0)
             await ctx.reply(f"📊 현재 Top-p: {current_top_p}", mention_author=False)
@@ -440,9 +443,10 @@ class AssistantCog(commands.Cog):
         except Exception as e:
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
     
-    @commands.command(name='끊어치기')
+    @commands.hybrid_command(name='끊어치기', description="긴 응답을 나누어 보내는 기능을 켜거나 끕니다.")
+    @app_commands.describe(mode="모드 설정 (on/off)")
     async def toggle_break_cut(self, ctx: commands.Context, mode: Optional[str] = None):
-        """끊어치기 모드를 설정합니다. (!끊어치기 [on|off], 인자 없이 사용 시 토글)"""
+        """긴 응답을 나누어 보내는 기능을 켜거나 끕니다."""
         if mode is None:
             # Toggle
             self.config.break_cut_mode = not self.config.break_cut_mode
@@ -457,18 +461,13 @@ class AssistantCog(commands.Cog):
                 return
 
         status = "ON" if self.config.break_cut_mode else "OFF"
-        
-        # Adjust buffer behavior based on mode? 
-        # Actually user requested "remove wait" globally. 
-        # But we did that in __init__ (delay=0.1).
-        # We only gated handle_typing in on_typing.
-        
         await ctx.reply(f"✂️ 끊어치기 모드가 **{status}** 상태로 변경되었습니다.")
 
-    @commands.command(name='생각', aliases=['think'])
+    @commands.hybrid_command(name='생각', aliases=['think'], description="Gemini Thinking Budget를 설정합니다.")
+    @app_commands.describe(value="숫자(512~32768), 'auto', 또는 'off'")
     @commands.has_permissions(manage_guild=True)
     async def set_thinking_budget(self, ctx: commands.Context, value: Optional[str] = None):
-        """Gemini Thinking Budget를 설정합니다. (!생각 [숫자|auto|off])"""
+        """Gemini Thinking Budget를 설정합니다."""
         if value is None:
             current = getattr(self.config, 'thinking_budget', None)
             if current is None:
