@@ -386,10 +386,16 @@ class AssistantCog(commands.Cog):
                     aborted = True
         
         if aborted:
-            await ctx.message.add_reaction("🛑")
+            if ctx.interaction:
+                await ctx.reply("🛑 중단되었습니다.", ephemeral=False)
+            else:
+                await ctx.message.add_reaction("🛑")
             logger.info("User %s requested abort in channel %s", ctx.author.name, channel_id)
         else:
-            await ctx.message.add_reaction("❓")
+            if ctx.interaction:
+                await ctx.reply("❓ 중단할 작업이 없습니다.", ephemeral=True)
+            else:
+                await ctx.message.add_reaction("❓")
 
     @commands.hybrid_command(name='초기화', aliases=['reset'], description="현재 채널의 대화 세션을 초기화합니다.")
     async def reset_session(self, ctx: commands.Context):
@@ -397,7 +403,10 @@ class AssistantCog(commands.Cog):
 
         try:
             self.session_manager.reset_session_by_channel(ctx.channel.id)
-            await ctx.message.add_reaction("✅")
+            if ctx.interaction:
+                await ctx.reply("✅ 대화 세션이 초기화되었습니다.", ephemeral=False)
+            else:
+                await ctx.message.add_reaction("✅")
         except Exception as exc:
             logger.error("세션 초기화 실패: %s", exc, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
@@ -418,7 +427,10 @@ class AssistantCog(commands.Cog):
 
         try:
             self.llm_service.update_parameters(temperature=value)
-            await ctx.message.add_reaction("✅")
+            if ctx.interaction:
+                await ctx.reply(f"✅ Temperature가 {value}로 설정되었습니다.", ephemeral=False)
+            else:
+                await ctx.message.add_reaction("✅")
         except Exception as e:
             logger.error("Temperature 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
@@ -439,7 +451,10 @@ class AssistantCog(commands.Cog):
 
         try:
             self.llm_service.update_parameters(top_p=value)
-            await ctx.message.add_reaction("✅")
+            if ctx.interaction:
+                await ctx.reply(f"✅ Top-p가 {value}로 설정되었습니다.", ephemeral=False)
+            else:
+                await ctx.message.add_reaction("✅")
         except Exception as e:
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
     
@@ -499,7 +514,10 @@ class AssistantCog(commands.Cog):
 
         try:
             self.llm_service.update_parameters(thinking_budget=target_value)
-            await ctx.message.add_reaction("✅")
+            if ctx.interaction:
+                await ctx.reply(f"✅ Thinking Budget가 {target_value if target_value else 'OFF'}로 설정되었습니다.", ephemeral=False)
+            else:
+                await ctx.message.add_reaction("✅")
 
         except Exception as e:
             logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
