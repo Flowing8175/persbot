@@ -50,10 +50,10 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
             name = name_match.group(1) if name_match else f"Generated ({concept_str[:10]}...)"
             prompt_content = generated_prompt.strip()
 
-            idx = cog.prompt_service.add_prompt(name, prompt_content)
+            idx = await cog.prompt_service.add_prompt(name, prompt_content)
 
             # Record usage after successful creation
-            cog.prompt_service.increment_today_usage(interaction.user.id)
+            await cog.prompt_service.increment_today_usage(interaction.user.id)
 
             await msg.edit(content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})")
             await self.view_ref.refresh_view(interaction)
@@ -80,8 +80,8 @@ class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
 
     async def on_submit(self, interaction: discord.Interaction):
         cog = self.view_ref.cog
-        if cog.prompt_service.rename_prompt(self.index, self.new_name.value):
-            await send_discord_message(interaction, f"✅ **{self.new_name.value}**로 변경되었습니다.", ephemeral=False)
+        if await cog.prompt_service.rename_prompt(self.index, self.new_name.value):
+            await interaction.response.send_message(f"✅ **{self.new_name.value}**로 변경되었습니다.", ephemeral=False)
             await self.view_ref.refresh_view(interaction)
         else:
             await send_discord_message(interaction, "❌ 변경 실패.", ephemeral=False)
@@ -196,8 +196,8 @@ class PromptManagerView(discord.ui.View):
         await self.refresh_view(interaction)
 
     async def on_new(self, interaction: discord.Interaction):
-        if not self.cog.prompt_service.check_today_limit(interaction.user.id):
-            await send_discord_message(interaction, "❌ 오늘 생성 한도(2개)를 모두 사용하셨습니다. 내일 다시 시도해 주세요.", ephemeral=True)
+        if not await self.cog.prompt_service.check_today_limit(interaction.user.id):
+            await interaction.response.send_message("❌ 오늘 생성 한도(2개)를 모두 사용하셨습니다. 내일 다시 시도해 주세요.", ephemeral=True)
             return
         await interaction.response.send_modal(PromptCreateModal(self))
 
@@ -236,7 +236,7 @@ class PromptManagerView(discord.ui.View):
                 return
 
             name = attachment.filename.rsplit('.', 1)[0]
-            idx = self.cog.prompt_service.add_prompt(name, content_str)
+            idx = await self.cog.prompt_service.add_prompt(name, content_str)
 
             await send_discord_message(interaction, f"✅ 새 페르소나 **'{name}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=False)
             await self.refresh_view(interaction)
@@ -270,7 +270,7 @@ class PromptManagerView(discord.ui.View):
         if self.selected_index is not None:
             p = self.cog.prompt_service.get_prompt(self.selected_index)
             if p:
-                if self.cog.prompt_service.delete_prompt(self.selected_index):
+                if await self.cog.prompt_service.delete_prompt(self.selected_index):
                     self.selected_index = None
                     await interaction.response.send_message(f"🗑️ **{p['name']}** 삭제 완료.", ephemeral=False)
                     await self.refresh_view(interaction)

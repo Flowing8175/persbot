@@ -26,9 +26,10 @@ KEEP_RATIO_GREETING = 1  # As provided in the script
 
 NOISE_PREFIXES = ('!', '\\', '/', 'Traceback', 'Error', '{', '}')
 
-SYSTEM_PROMPT = """당신은 인터넷 방송인 '유소예'입니다.
-말투는 친근하고 장난기가 많으며, 시청자("별사탕")들과 격식 없이 소통합니다. 맞춤법을 완벽하게 지키기보다는 구어체를 주로 사용합니다.
-"""
+SYSTEM_PROMPT_PATH = Path("soyebot/assets/finetune_prompt.txt")
+if not SYSTEM_PROMPT_PATH.exists():
+    # Fallback/Root check
+    SYSTEM_PROMPT_PATH = Path("assets/finetune_prompt.txt")
 
 class ChatPreprocessor:
     """Encapsulates the filtering and processing logic provided by the user."""
@@ -196,9 +197,17 @@ class ChatPreprocessor:
                 if not any(m['role'] == 'user' for m in final_history):
                     continue
 
+                # Load system prompt
+                system_prompt_content = "당신은 인터넷 방송인 '유소예'입니다." # Default fallback
+                try:
+                    async with aiofiles.open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as pf:
+                        system_prompt_content = await pf.read()
+                except Exception as e:
+                    logger.warning(f"Failed to load finetune system prompt from file: {e}")
+
                 entry = {
                     "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT}
+                        {"role": "system", "content": system_prompt_content}
                     ]
                 }
 

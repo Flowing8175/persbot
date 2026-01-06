@@ -22,7 +22,12 @@ class ModelSelectorView(discord.ui.View):
 
         # Populate options from ModelUsageService definitions
         options = []
-        for alias, definition in ModelUsageService.MODEL_DEFINITIONS.items():
+
+        # Ensure we have access to the initialized definitions
+        # Assuming the dict is populated since services are initialized in main.py
+        definitions = ModelUsageService.MODEL_DEFINITIONS
+
+        for alias, definition in definitions.items():
             # Add description if needed (e.g., daily limit)
             # Scope updated to '서버' (Guild)
             desc = f"1일 한도: {definition.daily_limit}회 (서버 공통)"
