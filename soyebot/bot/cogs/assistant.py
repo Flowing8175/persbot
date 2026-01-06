@@ -178,6 +178,9 @@ class AssistantCog(BaseChatCog):
     @commands.hybrid_command(name='retry', aliases=['재생성', '다시'], description="마지막 대화를 되돌리고 응답을 다시 생성합니다.")
     async def retry_command(self, ctx: commands.Context):
         """마지막 대화를 되돌리고 응답을 다시 생성합니다."""
+        # Defer immediately to prevent timeout errors
+        await ctx.defer()
+
         channel_id = ctx.channel.id
         session_key = f"channel:{channel_id}"
 
@@ -198,7 +201,8 @@ class AssistantCog(BaseChatCog):
         removed_messages: list[ChatMessage] = self.session_manager.undo_last_exchanges(session_key, 1)
 
         if not removed_messages:
-            await ctx.reply("❌ 되돌릴 대화가 없습니다.", mention_author=False)
+            # Send as followup if deferred
+            await ctx.send("❌ 되돌릴 대화가 없습니다.")
             return
 
         # Identify the user message content and the previous assistant message ID
@@ -240,13 +244,24 @@ class AssistantCog(BaseChatCog):
             if reply and reply.text:
                 # We always send a new reply for retry now, as old ones were deleted
                 await self._send_response(ctx.message, reply)
+
+                # Interaction cleanup for slash commands in break-cut mode
+                # If we used break-cut, we sent messages to the channel but the interaction is still "Thinking...".
+                # We should delete the "Thinking..." message.
+                if self.config.break_cut_mode and ctx.interaction:
+                    try:
+                        await ctx.interaction.delete_original_response()
+                    except (discord.Forbidden, discord.HTTPException):
+                        # If deletion fails, we can leave it or try to edit it to something invisible/deleted.
+                        pass
             else:
                  await ctx.send(GENERIC_ERROR_MESSAGE)
 
-        # Attempt to delete the retry command message itself for cleanliness
+        # Attempt to delete the retry command message itself for cleanliness (mostly for text commands)
         try:
             await ctx.message.delete()
-        except (discord.Forbidden, discord.HTTPException):
+        except (discord.Forbidden, discord.HTTPException, discord.NotFound, AttributeError):
+            # AttributeError might happen if ctx.message is None or Partial in some contexts
             pass
 
     @commands.hybrid_command(name='abort', aliases=['중단', '멈춰'], description="진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다.")
