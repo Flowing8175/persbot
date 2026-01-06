@@ -10,18 +10,18 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
-from bot.session import SessionManager, ResolvedSession
-from bot.buffer import MessageBuffer
-from config import AppConfig
-from services.llm_service import LLMService
-from services.base import ChatMessage
-from services.prompt_service import PromptService
-from utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
+from soyebot.bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
+from soyebot.bot.session import SessionManager, ResolvedSession
+from soyebot.bot.cogs.base import BaseChatCog
+from soyebot.config import AppConfig
+from soyebot.services.llm_service import LLMService
+from soyebot.services.base import ChatMessage
+from soyebot.services.prompt_service import PromptService
+from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
 
-class AssistantCog(commands.Cog):
+class AssistantCog(BaseChatCog):
     """@mention을 통한 AI 어시스턴트 기능을 처리하는 Cog"""
 
     def __init__(
@@ -32,19 +32,8 @@ class AssistantCog(commands.Cog):
         session_manager: SessionManager,
         prompt_service: PromptService,
     ):
-        self.bot = bot
-        self.config = config
-        self.llm_service = llm_service
-        self.session_manager = session_manager
+        super().__init__(bot, config, llm_service, session_manager)
         self.prompt_service = prompt_service
-        self.sending_tasks: dict[int, asyncio.Task] = {}
-        
-        # Track active processing tasks (LLM generation) to allow debouncing/merging
-        self.processing_tasks: dict[int, asyncio.Task] = {}
-        self.active_batches: dict[int, list[discord.Message]] = {}
-        
-        # Use config for default delay (now 0.1)
-        self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
 
     def _should_ignore_message(self, message: discord.Message) -> bool:
         """Return True when the bot should not process the message."""
@@ -59,7 +48,7 @@ class AssistantCog(commands.Cog):
             return True
         return message.mention_everyone
 
-    async def _send_llm_reply(self, message: discord.Message, reply: ChatReply) -> None:
+    async def _send_response(self, message: discord.Message, reply: ChatReply) -> None:
         if not reply.text:
             logger.debug("LLM returned no text response for the mention.")
             return
@@ -72,41 +61,54 @@ class AssistantCog(commands.Cog):
             return
 
         # If Break-Cut Mode is ON, use shared helper
-        channel_id = message.channel.id
-        if channel_id in self.sending_tasks and not self.sending_tasks[channel_id].done():
-            self.sending_tasks[channel_id].cancel()
+        await self._handle_break_cut_sending(message.channel.id, message.channel, reply)
 
-        task = asyncio.create_task(
-            send_split_response(message.channel, reply, self.session_manager)
-        )
-        self.sending_tasks[channel_id] = task
+    async def _handle_error(self, message: discord.Message, error: Exception):
+        await message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
-        def _cleanup(t):
-            if self.sending_tasks.get(channel_id) == t:
-                self.sending_tasks.pop(channel_id, None)
-        
-        task.add_done_callback(_cleanup)
+    async def _prepare_batch_context(self, messages: list[discord.Message]) -> str:
+        # 1. Fetch recent context (10 messages before the primary message)
+        primary_message = messages[0]
+        context_messages = [
+            msg async for msg in primary_message.channel.history(limit=10, before=primary_message)
+        ]
+        context_messages.reverse()  # Chronological order
+
+        context_text = ""
+        if context_messages:
+            context_lines = []
+            for msg in context_messages:
+                c_content = extract_message_content(msg)
+                if c_content:
+                    context_lines.append(f"{msg.author.id}: {c_content}")
+
+            if context_lines:
+                context_text = "=== 이전 대화 문맥 (참고용) ===\n" + "\n".join(context_lines) + "\n=== 현재 메시지 ===\n"
+
+        # 2. Combine current batch contents
+        combined_content = []
+        for msg in messages:
+            content = extract_message_content(msg)
+            if content:
+                if len(messages) > 1 and msg.author.id:
+                        combined_content.append(f"{msg.author.id}: {content}")
+                else:
+                        combined_content.append(content)
+
+        current_text = "\n".join(combined_content)
+
+        if not current_text:
+            return ""
+
+        # Prepend context to the full text
+        return context_text + current_text
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if self._should_ignore_message(message):
             return
 
-        # Interrupt current sending if any (Break-Cut Mode)
-        if self.config.break_cut_mode and message.channel.id in self.sending_tasks:
-            task = self.sending_tasks[message.channel.id]
-            if not task.done():
-                logger.info(f"New message from {message.author} interrupted sending in channel {message.channel.id}")
-                task.cancel()
-
-        # Interrupt current processing (Processing/Debounce Mode)
-        messages_to_prepend = []
-        if message.channel.id in self.processing_tasks:
-            task = self.processing_tasks[message.channel.id]
-            if not task.done():
-                logger.info(f"New message from {message.author} interrupted processing in channel {message.channel.id}. Merging messages.")
-                messages_to_prepend = self.active_batches.get(message.channel.id, [])
-                task.cancel()
+        messages_to_prepend = self._cancel_active_tasks(message.channel.id, message.author.name)
 
         await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
         
@@ -115,107 +117,8 @@ class AssistantCog(commands.Cog):
              if message.channel.id in self.message_buffer.buffers:
                  self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
 
-    @commands.Cog.listener()
-    async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
-        """
-        Listener for typing events.
-        Extends the processing delay if a user is typing in a channel where we have pending messages.
-        """
-        if user.bot:
-            return
-
-        # We need the channel ID. 'channel' can be TextChannel, DMChannel, etc.
-        if hasattr(channel, 'id'):
-            # If Break-Cut Mode is OFF, use the old "Extend Wait" logic.
-            # If ON, we do NOT extend wait (user request: "delete user input wait").
-            if not self.config.break_cut_mode:
-                self.message_buffer.handle_typing(channel.id, self._process_batch)
-
-    async def _process_batch(self, messages: list[discord.Message]):
-        if not messages:
-            return
-
-        # Use the first message for context/reply target, but could be improved
-        primary_message = messages[0]
-        channel_id = primary_message.channel.id
-        
-        # Register this task as the active processing task for the channel
-        self.active_batches[channel_id] = messages
-        self.processing_tasks[channel_id] = asyncio.current_task()
-
-        try:
-            # 1. Fetch recent context (10 messages before the primary message)
-            context_messages = [
-                msg async for msg in primary_message.channel.history(limit=10, before=primary_message)
-            ]
-            context_messages.reverse()  # Chronological order
-
-            context_text = ""
-            if context_messages:
-                context_lines = []
-                for msg in context_messages:
-                    c_content = extract_message_content(msg)
-                    if c_content:
-                        context_lines.append(f"{msg.author.id}: {c_content}")
-
-                if context_lines:
-                    context_text = "=== 이전 대화 문맥 (참고용) ===\n" + "\n".join(context_lines) + "\n=== 현재 메시지 ===\n"
-
-            # 2. Combine current batch contents
-            combined_content = []
-            for msg in messages:
-                content = extract_message_content(msg)
-                if content:
-                    if len(messages) > 1 and msg.author.id:
-                         combined_content.append(f"{msg.author.id}: {content}")
-                    else:
-                         combined_content.append(content)
-
-            current_text = "\n".join(combined_content)
-
-            if not current_text:
-                return
-
-            # Prepend context to the full text
-            full_text = context_text + current_text
-
-            logger.info("Processing batch of %d messages from %s: %s", len(messages), primary_message.author.name, full_text[:100])
-
-            async with primary_message.channel.typing():
-                resolution = await resolve_session_for_message(
-                    primary_message,
-                    full_text,
-                    session_manager=self.session_manager,
-                )
-
-                if not resolution:
-                    return
-
-                reply = await create_chat_reply(
-                    primary_message,
-                    resolution=resolution,
-                    llm_service=self.llm_service,
-                    session_manager=self.session_manager,
-                )
-
-                if reply:
-                    # We reply to the last message in the batch so the user sees it at the bottom
-                    last_message = messages[-1]
-                    await self._send_llm_reply(last_message, reply)
-
-        except asyncio.CancelledError:
-            logger.info("Batch processing cancelled for channel %s.", primary_message.channel.name)
-            raise
-
-        except Exception as e:
-            logger.error("메시지 처리 중 예상치 못한 오류 발생: %s", e, exc_info=True)
-            await primary_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-        
-        finally:
-            # Cleanup only if we are the current task
-            if self.processing_tasks.get(channel_id) == asyncio.current_task():
-                self.processing_tasks.pop(channel_id, None)
-                self.active_batches.pop(channel_id, None)
+    # on_typing is inherited, but we might want to ensure it works for us.
+    # BaseChatCog has it, checking break_cut_mode. That matches AssistantCog's logic.
 
     @commands.hybrid_command(name='help', aliases=['도움말', '명령어', 'h'], description="봇의 모든 명령어와 사용법을 안내합니다.")
     async def help_command(self, ctx: commands.Context):
@@ -336,7 +239,7 @@ class AssistantCog(commands.Cog):
 
             if reply and reply.text:
                 # We always send a new reply for retry now, as old ones were deleted
-                await self._send_llm_reply(ctx.message, reply)
+                await self._send_response(ctx.message, reply)
             else:
                  await ctx.send(GENERIC_ERROR_MESSAGE)
 

@@ -2,8 +2,11 @@ import json
 import os
 import logging
 import datetime
+import os
 from typing import List, Dict, Optional
+import asyncio
 
+import aiofiles
 from soyebot.prompts import BOT_PERSONA_PROMPT, SUMMARY_SYSTEM_INSTRUCTION
 
 logger = logging.getLogger(__name__)
@@ -14,10 +17,18 @@ class PromptService:
         self.usage_path = usage_path
         self.prompts: List[Dict[str, str]] = []
         self.usage_data: Dict[str, Dict[str, int]] = {} # { "date": { "user_id": count } }
-        self._load()
-        self._load_usage()
+        # NOTE: Sync load is unavoidable in __init__ if we want immediate availability.
+        # However, we can use async init pattern or just accept sync read at startup.
+        # Given the task requirement, we will implement async methods for runtime ops.
+        # For startup, we'll keep a sync fallback or use asyncio.run (bad practice inside loop)
+        # or we accept that __init__ does sync I/O once.
+        # But wait, the previous code did sync I/O in __init__.
+        # We'll defer loading to an async setup or use sync I/O only for init.
+        # Let's provide async methods for saving/updating.
+        self._load_sync()
+        self._load_usage_sync()
 
-    def _load(self):
+    def _load_sync(self):
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
@@ -31,16 +42,22 @@ class PromptService:
             self.prompts = [
                 {"name": "기본값", "content": BOT_PERSONA_PROMPT}
             ]
-            self._save()
+            # We can't await here in init, so we just set it.
+            # We will save later or do sync save.
+            try:
+                 with open(self.storage_path, "w", encoding="utf-8") as f:
+                    json.dump(self.prompts, f, ensure_ascii=False, indent=4)
+            except Exception as e:
+                logger.error(f"Failed to save default prompts: {e}")
 
-    def _save(self):
+    async def _save(self):
         try:
-            with open(self.storage_path, "w", encoding="utf-8") as f:
-                json.dump(self.prompts, f, ensure_ascii=False, indent=4)
+            async with aiofiles.open(self.storage_path, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(self.prompts, ensure_ascii=False, indent=4))
         except Exception as e:
             logger.error(f"Failed to save prompts: {e}")
 
-    def _load_usage(self):
+    def _load_usage_sync(self):
         if os.path.exists(self.usage_path):
             try:
                 with open(self.usage_path, "r", encoding="utf-8") as f:
@@ -51,39 +68,29 @@ class PromptService:
         else:
             self.usage_data = {}
 
-    def _save_usage(self):
+    async def _save_usage(self):
         try:
-            with open(self.usage_path, "w", encoding="utf-8") as f:
-                json.dump(self.usage_data, f, ensure_ascii=False, indent=4)
+            async with aiofiles.open(self.usage_path, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(self.usage_data, ensure_ascii=False, indent=4))
         except Exception as e:
             logger.error(f"Failed to save prompt usage: {e}")
 
     def _get_today_key(self) -> str:
         return datetime.datetime.now().strftime("%Y-%m-%d")
 
-    def check_today_limit(self, user_id: int, limit: int = 2) -> bool:
+    async def check_today_limit(self, user_id: int, limit: int = 2) -> bool:
         """Check if the user has reached their daily limit."""
         today = self._get_today_key()
 
-        # Reset/Initialize daily data if needed (cleans up old data implicitly by accessing new key)
-        # To avoid infinite growth, we could clear keys != today, but let's keep it simple for now.
-        # Actually, for privacy/size, let's keep only the last few days or just today?
-        # Let's just create today's entry if missing.
         if today not in self.usage_data:
-            self.usage_data = {today: {}} # Simple reset strategy: Keep only today?
-            # Or if we want to keep history, just add. But to prevent bloat, let's clear old data occasionally.
-            # For simplicity in this request: Reset to today-only if today is missing (lazy reset)
-            # This effectively clears history whenever the bot runs on a new day and someone creates a prompt.
-            # Wait, if we reload, we might lose history? No, we loaded from file.
-            # Let's just perform a cleanup of keys that are not today.
             self.usage_data = {k: v for k, v in self.usage_data.items() if k == today}
             self.usage_data.setdefault(today, {})
-            self._save_usage()
+            await self._save_usage()
 
         user_count = self.usage_data[today].get(str(user_id), 0)
         return user_count < limit
 
-    def increment_today_usage(self, user_id: int):
+    async def increment_today_usage(self, user_id: int):
         """Increment the usage count for the user."""
         today = self._get_today_key()
         if today not in self.usage_data:
@@ -91,11 +98,11 @@ class PromptService:
 
         user_str = str(user_id)
         self.usage_data[today][user_str] = self.usage_data[today].get(user_str, 0) + 1
-        self._save_usage()
+        await self._save_usage()
 
-    def add_prompt(self, name: str, content: str) -> int:
+    async def add_prompt(self, name: str, content: str) -> int:
         self.prompts.append({"name": name, "content": content})
-        self._save()
+        await self._save()
         return len(self.prompts) - 1
 
     def list_prompts(self) -> List[Dict[str, str]]:
@@ -116,16 +123,16 @@ class PromptService:
         """Returns the system instruction for the summarizer."""
         return SUMMARY_SYSTEM_INSTRUCTION
 
-    def rename_prompt(self, index: int, new_name: str) -> bool:
+    async def rename_prompt(self, index: int, new_name: str) -> bool:
         if 0 <= index < len(self.prompts):
             self.prompts[index]["name"] = new_name
-            self._save()
+            await self._save()
             return True
         return False
 
-    def delete_prompt(self, index: int) -> bool:
+    async def delete_prompt(self, index: int) -> bool:
         if 0 <= index < len(self.prompts):
             self.prompts.pop(index)
-            self._save()
+            await self._save()
             return True
         return False

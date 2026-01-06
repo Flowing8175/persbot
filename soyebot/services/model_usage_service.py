@@ -23,68 +23,43 @@ class ModelUsageService:
     """Service to track and enforce daily usage limits for LLM models."""
 
     # Define the available models and their constraints
-    MODEL_DEFINITIONS: Dict[str, ModelDefinition] = {
-        "최신 똑똑이": ModelDefinition(
-            display_name="Gemini 3 flash",
-            api_model_name="gemini-3-flash-preview",
-            daily_limit=20,
-            scope="guild",
-            provider="gemini",
-            fallback_alias="Gemini 2.5 flash"
-        ),
-        "가성비 똑똑이": ModelDefinition(
-            display_name="Gemini 2.5 flash",
-            api_model_name="gemini-2.5-flash",
-            daily_limit=50,
-            scope="guild",
-            provider="gemini",
-            fallback_alias="Gemini 2.0 flash"
-        ),
-        "좀 띨빵한 똑똑이": ModelDefinition(
-            display_name="Gemini 2.5 flash lite",
-            api_model_name="gemini-2.5-flash-lite",
-            daily_limit=100,
-            scope="guild",
-            provider="gemini",
-            fallback_alias=None
-        ),
-        "의외로 괜찮은 구형 똑똑이": ModelDefinition(
-            display_name="Gemini 2.0 flash lite",
-            api_model_name="gemini-2.0-flash-lite",
-            daily_limit=100,
-            scope="guild",
-            provider="gemini",
-            fallback_alias="Gemini 2.5 flash lite"
-        ),
-        "비싼데 바보인 애": ModelDefinition(
-            display_name="GPT-4.1 mini",
-            api_model_name="gpt-4.1-mini",
-            daily_limit=15,
-            scope="guild",
-            provider="openai",
-            fallback_alias="GPT-4.1 nano"
-        ),
-        "똥멍청이": ModelDefinition(
-            display_name="GPT-4.1 nano",
-            api_model_name="gpt-4.1-nano",
-            daily_limit=30,
-            scope="guild",
-            provider="openai",
-            fallback_alias=None
-        ),
-    }
+    MODEL_DEFINITIONS: Dict[str, ModelDefinition] = {}
 
     # Helper maps
-    ALIAS_TO_API: Dict[str, str] = {k: v.api_model_name for k, v in MODEL_DEFINITIONS.items()}
+    ALIAS_TO_API: Dict[str, str] = {}
     DEFAULT_MODEL_ALIAS = "Gemini 2.5 flash lite"
 
-    def __init__(self, data_file: str = "data/model_usage.json"):
+    def __init__(self, data_file: str = "data/model_usage.json", models_file: str = "data/models.json"):
         self.data_file = data_file
+        self.models_file = models_file
         self.usage_data: Dict[str, Any] = {}
+        self._load_models()
         self._load_usage()
+
+    def _load_models(self):
+        """Load model definitions from file."""
+        if os.path.exists(self.models_file):
+            try:
+                with open(self.models_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    for alias, details in data.items():
+                        self.MODEL_DEFINITIONS[alias] = ModelDefinition(
+                            display_name=details['display_name'],
+                            api_model_name=details['api_model_name'],
+                            daily_limit=details['daily_limit'],
+                            scope=details['scope'],
+                            provider=details['provider'],
+                            fallback_alias=details.get('fallback_alias')
+                        )
+                    # Update helper maps
+                    self.ALIAS_TO_API.update({k: v.api_model_name for k, v in self.MODEL_DEFINITIONS.items()})
+            except Exception as e:
+                logger.error(f"Failed to load model definitions: {e}")
+                # Fallback or empty? If critical, we might want to raise, but let's log.
 
     def _load_usage(self):
         """Load usage data from file."""
+        # Using sync load for initialization
         if os.path.exists(self.data_file):
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:

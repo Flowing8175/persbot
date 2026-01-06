@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 
+import aiofiles
 import discord
 import openai
 from dotenv import set_key
@@ -81,7 +82,7 @@ class ChatPreprocessor:
 
         return True
 
-    def process(self, input_file: str, output_file: str) -> bool:
+    async def process(self, input_file: str, output_file: str) -> bool:
         """
         Reads raw messages from input_file, applies filtering/merging,
         and writes training data to output_file.
@@ -89,13 +90,16 @@ class ChatPreprocessor:
         """
         raw_data = []
         try:
-            with open(input_file, 'r', encoding='utf-8') as f:
-                first_char = f.read(1)
-                f.seek(0)
-                if first_char == '[':
-                    raw_data = json.load(f)
+            async with aiofiles.open(input_file, 'r', encoding='utf-8') as f:
+                content = await f.read()
+                # Simple heuristic: check first non-whitespace char
+                stripped_content = content.lstrip()
+                if stripped_content.startswith('['):
+                     raw_data = json.loads(content)
                 else:
-                    for line in f:
+                    # Line-delimited JSON
+                    lines = content.splitlines()
+                    for line in lines:
                         if line.strip():
                             raw_data.append(json.loads(line))
         except Exception as e:
@@ -171,7 +175,7 @@ class ChatPreprocessor:
 
         # 4. JSONL Generation
         sample_count = 0
-        with open(output_file, 'w', encoding='utf-8') as f:
+        async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
             for session in sessions:
                 # Last message must be Assistant
                 while session and session[-1]['role'] != 'assistant':
@@ -205,7 +209,7 @@ class ChatPreprocessor:
                     }
                     entry["messages"].append(message_dict)
 
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                await f.write(json.dumps(entry, ensure_ascii=False) + "\n")
                 sample_count += 1
 
         logger.info(f"Generated {sample_count} samples in {output_file}")
@@ -220,7 +224,7 @@ class FineTuneService:
         self.initial_start_date = datetime.fromisoformat("2025-11-22T20:55:00.083000+00:00")
         self._ensure_state_file()
 
-    def _ensure_state_file(self):
+    async def _ensure_state_file(self):
         """Ensures the state file exists with default values."""
         if not self.state_file_path.exists():
             default_state = {
@@ -229,26 +233,27 @@ class FineTuneService:
                 "current_job_status": None,
                 "last_check_date": datetime.now(timezone.utc).isoformat()
             }
-            self._save_state(default_state)
+            await self._save_state(default_state)
 
-    def _load_state(self) -> Dict[str, Any]:
+    async def _load_state(self) -> Dict[str, Any]:
         try:
-            with open(self.state_file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            async with aiofiles.open(self.state_file_path, "r", encoding="utf-8") as f:
+                content = await f.read()
+                return json.loads(content)
         except Exception as e:
             logger.error(f"Failed to load fine-tune state: {e}")
             return {}
 
-    def _save_state(self, state: Dict[str, Any]):
+    async def _save_state(self, state: Dict[str, Any]):
         try:
-            with open(self.state_file_path, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
+            async with aiofiles.open(self.state_file_path, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(state, ensure_ascii=False, indent=2))
         except Exception as e:
             logger.error(f"Failed to save fine-tune state: {e}")
 
-    def check_due(self) -> bool:
+    async def check_due(self) -> bool:
         """Checks if a month has passed since the last processed date."""
-        state = self._load_state()
+        state = await self._load_state()
         last_date_str = state.get("last_processed_date")
         if not last_date_str:
             return False
@@ -318,9 +323,9 @@ class FineTuneService:
             return None
 
         file_path = f"raw_messages_{int(end_date.timestamp())}.jsonl"
-        with open(file_path, "w", encoding="utf-8") as f:
+        async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
             for item in raw_data:
-                f.write(json.dumps(item, ensure_ascii=False) + "\n")
+                await f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
         logger.info(f"Saved {len(raw_data)} raw messages to {file_path}")
         return file_path
@@ -330,7 +335,9 @@ class FineTuneService:
         Main entry point for the recurring task.
         Checks status, scrapes if needed, processes, and submits job.
         """
-        state = self._load_state()
+        # Ensure state file initialized
+        await self._ensure_state_file()
+        state = await self._load_state()
 
         # 1. Check if job is already running
         if state.get("current_job_id"):
@@ -338,7 +345,7 @@ class FineTuneService:
             return
 
         # 2. Check if due for new scrape
-        if not self.check_due():
+        if not await self.check_due():
             return
 
         logger.info("Fine-tuning monthly period reached. Starting pipeline.")
@@ -364,13 +371,13 @@ class FineTuneService:
         # 4. Process
         train_file = f"train_sft_{int(end_date.timestamp())}.jsonl"
         preprocessor = ChatPreprocessor(self.config.finetune_target_user_id)
-        success = preprocessor.process(raw_file, train_file)
+        success = await preprocessor.process(raw_file, train_file)
 
         if not success:
             logger.info("Preprocessing produced no samples. Skipping fine-tuning but advancing date.")
             # Advance date to avoid endless loop
             state["last_processed_date"] = end_date.isoformat()
-            self._save_state(state)
+            await self._save_state(state)
             return
 
         # 5. Start Job
@@ -381,7 +388,7 @@ class FineTuneService:
             # If we update now, and job fails, we skip this month's data?
             # Better to store "pending_scrape_end_date" and update last_processed_date on success.
             state["pending_scrape_end_date"] = end_date.isoformat()
-            self._save_state(state)
+            await self._save_state(state)
 
     async def start_finetuning(self, file_path: str) -> Optional[str]:
         """Uploads file and starts job."""
@@ -412,10 +419,10 @@ class FineTuneService:
             job_id = job.id
             logger.info(f"Job started. ID: {job_id}")
 
-            state = self._load_state()
+            state = await self._load_state()
             state["current_job_id"] = job_id
             state["current_job_status"] = "running"
-            self._save_state(state)
+            await self._save_state(state)
 
             return job_id
 
@@ -425,7 +432,7 @@ class FineTuneService:
 
     async def check_job_status(self) -> str:
         """Checks the status of the current job."""
-        state = self._load_state()
+        state = await self._load_state()
         job_id = state.get("current_job_id")
         if not job_id:
             return "no_job"
@@ -453,7 +460,7 @@ class FineTuneService:
 
                 state["current_job_id"] = None
                 state["current_job_status"] = None
-                self._save_state(state)
+                await self._save_state(state)
                 return "succeeded"
 
             elif status in ["failed", "cancelled"]:
@@ -463,7 +470,7 @@ class FineTuneService:
                 # Do NOT update last_processed_date, so we might retry?
                 # Or should we just move on? Usually retry is better but might fail again.
                 # Let's leave it; next run will try to scrape again from same date.
-                self._save_state(state)
+                await self._save_state(state)
                 return status
 
             return status

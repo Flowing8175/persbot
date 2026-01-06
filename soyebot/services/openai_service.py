@@ -18,8 +18,8 @@ from soyebot.utils import get_mime_type
 logger = logging.getLogger(__name__)
 
 
-class ResponseChatSession:
-    """Response API-backed chat session with a bounded context window."""
+class BaseOpenAISession:
+    """Base class for OpenAI chat sessions."""
 
     def __init__(
         self,
@@ -56,6 +56,20 @@ class ResponseChatSession:
         if not content:
             return
         self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
+
+    def _create_user_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None) -> ChatMessage:
+        return ChatMessage(
+            role="user",
+            content=user_message,
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=message_ids or [],
+            images=images or []
+        )
+
+
+class ResponseChatSession(BaseOpenAISession):
+    """Response API-backed chat session with a bounded context window."""
 
     def _build_input_payload(self) -> list:
         payload = []
@@ -90,15 +104,7 @@ class ResponseChatSession:
         return payload
 
     def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None):
-        # Create user message object but don't append yet
-        user_msg = ChatMessage(
-            role="user",
-            content=user_message,
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids or [],
-            images=images or []
-        )
+        user_msg = self._create_user_message(user_message, author_id, author_name, message_ids, images)
 
         # We need to temporarily simulate the history having the user message
         # for the input payload construction, without mutating the permanent history state.
@@ -112,16 +118,8 @@ class ResponseChatSession:
                 "text": user_message
             })
 
-        # Note: 'client.responses' (Realtime API via REST) support for images is experimental/undocumented here.
-        # We try to use 'input_image' if possible, or skip if not supported.
-        # Standard Chat Completions uses 'image_url'.
-        # Assuming 'responses' endpoint follows similar pattern or we accept that it might fail if we pass unsupported types.
-        # For now, we omit images in ResponseChatSession as specific schema is unknown/unstable,
-        # or we rely on the user to use ChatCompletionSession (fine-tuned) or we switch logic.
-        # However, to avoid breaking 'ResponseChatSession', we log a warning if images are present.
         if images:
             logger.warning("Images provided to ResponseChatSession (OpenAI Responses API), but image support is not fully implemented for this endpoint. Ignoring images.")
-            # If we wanted to support it, we'd need to know the schema (e.g. 'type': 'input_image'?)
 
         # Append user message to payload
         current_payload.append({
@@ -139,61 +137,16 @@ class ResponseChatSession:
         )
 
         message_content = self._text_extractor(response)
-
         model_msg = ChatMessage(role="assistant", content=message_content)
 
         return user_msg, model_msg, response
 
 
-class ChatCompletionSession:
+class ChatCompletionSession(BaseOpenAISession):
     """Chat Completion API-backed chat session for fine-tuned models."""
 
-    def __init__(
-        self,
-        client: OpenAI,
-        model_name: str,
-        system_instruction: str,
-        temperature: float,
-        top_p: float,
-        max_messages: int,
-        service_tier: str,
-        text_extractor,
-    ):
-        self._client = client
-        self._model_name = model_name
-        self._system_instruction = system_instruction
-        self._temperature = temperature
-        self._top_p = top_p
-        self._max_messages = max_messages
-        self._service_tier = service_tier
-        self._text_extractor = text_extractor
-        self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
-
-    @property
-    def history(self):
-        return list(self._history)
-
-    @history.setter
-    def history(self, new_history: list[ChatMessage]):
-        """Setter to allow replacing the history."""
-        self._history.clear()
-        self._history.extend(new_history)
-
-    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, author_name: Optional[str] = None, message_ids: list[str] = None) -> None:
-        if not content:
-            return
-        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
-
     def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None):
-        # Create user message object
-        user_msg = ChatMessage(
-            role="user",
-            content=user_message,
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids or [],
-            images=images or []
-        )
+        user_msg = self._create_user_message(user_message, author_id, author_name, message_ids, images)
 
         # Build messages list for chat completions API
         messages = []

@@ -12,7 +12,7 @@ import discord
 from PIL import Image
 
 from soyebot.config import AppConfig
-from soyebot.utils import GENERIC_ERROR_MESSAGE
+from soyebot.utils import GENERIC_ERROR_MESSAGE, ERROR_API_TIMEOUT, ERROR_RATE_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -91,51 +91,57 @@ class BaseLLMService(ABC):
         """Check if the exception is a fatal error that requires immediate intervention."""
         return False
 
+    def _process_image_sync(self, image_data: bytes, filename: str) -> bytes:
+        """Process image synchronously with Pillow (CPU-bound)."""
+        target_pixels = 1_000_000  # 1 Megapixel
+        try:
+            with Image.open(io.BytesIO(image_data)) as img:
+                # Check current dimensions
+                width, height = img.size
+                pixels = width * height
+
+                if pixels > target_pixels:
+                    # Calculate scaling factor
+                    ratio = (target_pixels / pixels) ** 0.5
+                    new_width = int(width * ratio)
+                    new_height = int(height * ratio)
+
+                    logger.info(f"Downscaling image {filename} from {width}x{height} to {new_width}x{new_height}")
+
+                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                # Convert to JPEG (compatible and efficient)
+                output_buffer = io.BytesIO()
+                # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+
+                img.save(output_buffer, format='JPEG', quality=85)
+                return output_buffer.getvalue()
+        except Exception as img_err:
+            logger.error(f"Failed to process image {filename}: {img_err}")
+            # Fallback to original if processing fails
+            return image_data
+
     async def _extract_images_from_message(self, message: discord.Message) -> List[bytes]:
         """Extract image bytes from message attachments, downscaling to ~1MP."""
         images = []
         if not message.attachments:
             return images
 
-        target_pixels = 1_000_000 # 1 Megapixel
-
         for attachment in message.attachments:
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 try:
                     image_data = await attachment.read()
 
-                    # Process image with Pillow
-                    try:
-                        with Image.open(io.BytesIO(image_data)) as img:
-                            # Check current dimensions
-                            width, height = img.size
-                            pixels = width * height
-
-                            if pixels > target_pixels:
-                                # Calculate scaling factor
-                                ratio = (target_pixels / pixels) ** 0.5
-                                new_width = int(width * ratio)
-                                new_height = int(height * ratio)
-
-                                logger.info(f"Downscaling image {attachment.filename} from {width}x{height} to {new_width}x{new_height}")
-
-                                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-                            # Convert to JPEG (compatible and efficient)
-                            output_buffer = io.BytesIO()
-                            # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
-                            if img.mode in ('RGBA', 'P'):
-                                img = img.convert('RGB')
-
-                            img.save(output_buffer, format='JPEG', quality=85)
-                            images.append(output_buffer.getvalue())
-                    except Exception as img_err:
-                        logger.error(f"Failed to process image {attachment.filename}: {img_err}")
-                        # Fallback to original if processing fails (unless strictly required otherwise)
-                        images.append(image_data)
+                    # Run CPU-bound image processing in a separate thread
+                    processed_data = await asyncio.to_thread(
+                        self._process_image_sync, image_data, attachment.filename
+                    )
+                    images.append(processed_data)
 
                 except Exception as e:
-                    logger.error(f"Failed to read attachment {attachment.filename}: {e}")
+                    logger.error(f"Failed to read/process attachment {attachment.filename}: {e}")
 
         return images
 
@@ -190,9 +196,10 @@ class BaseLLMService(ABC):
         return_full_response: bool = False,
         discord_message: Optional[discord.Message] = None,
         timeout: Optional[float] = None,
+        fallback_call: Optional[Callable[[], Union[Any, Awaitable[Any]]]] = None,
     ) -> Optional[Any]:
         """
-        Execute the API call with retries, logging, and countdown notifications.
+        Execute the API call with retries, logging, countdown notifications, and fallback logic.
         """
         last_error: Optional[Exception] = None
         current_timeout = timeout if timeout is not None else self.config.api_request_timeout
@@ -213,6 +220,9 @@ class BaseLLMService(ABC):
             except asyncio.TimeoutError:
                 last_error = asyncio.TimeoutError()
                 logger.warning("%s API 타임아웃 (%s/%s)", self.__class__.__name__, attempt, self.config.api_max_retries)
+
+                # Check for fallback on timeout? Usually timeout is temp, but maybe.
+                # For now just retry.
                 if attempt < self.config.api_max_retries:
                     logger.info("API 타임아웃, 재시도 중...")
                     continue
@@ -230,6 +240,24 @@ class BaseLLMService(ABC):
                 )
 
                 if self._is_rate_limit_error(e):
+                    # Check if we should fallback
+                    if fallback_call:
+                        logger.info("Rate limit hit. Attempting fallback model...")
+                        try:
+                            # Execute fallback once without retry loop for simplicity, or we could recurse
+                            # Assuming fallback is "lighter" and less likely to fail or different quota
+                            response = await asyncio.wait_for(
+                                self._execute_model_call(fallback_call),
+                                timeout=current_timeout
+                            )
+                            self._log_raw_response(response, attempt)
+                            if return_full_response:
+                                return response
+                            return self._extract_text_from_response(response)
+                        except Exception as fb_e:
+                            logger.error(f"Fallback model failed: {fb_e}")
+                            # Continue to normal wait logic if fallback fails
+
                     delay = self._extract_retry_delay(e) or self.config.api_rate_limit_retry_after
                     await self._wait_with_countdown(delay, discord_message)
                     continue
@@ -249,8 +277,10 @@ class BaseLLMService(ABC):
                 logger.info("에러 발생, %.1f초 후 재시도", backoff)
                 await asyncio.sleep(backoff)
 
+        msg_content = GENERIC_ERROR_MESSAGE
         if isinstance(last_error, asyncio.TimeoutError):
              logger.error("❌ 에러: API 요청 시간 초과")
+             msg_content = ERROR_API_TIMEOUT
         else:
             logger.error(
                 "❌ 에러: 최대 재시도 횟수(%s)를 초과했습니다. (%s)",
@@ -260,7 +290,7 @@ class BaseLLMService(ABC):
 
         if discord_message:
             try:
-                await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+                await discord_message.reply(msg_content, mention_author=False)
             except discord.HTTPException:
                 pass
 

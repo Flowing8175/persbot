@@ -8,6 +8,13 @@ import discord
 
 GENERIC_ERROR_MESSAGE = "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요."
 
+# Error Constants
+ERROR_API_TIMEOUT = "❌ API 요청 시간이 초과되었습니다."
+ERROR_API_QUOTA_EXCEEDED = "❌ API 사용량이 초과되었습니다."
+ERROR_RATE_LIMIT = "⏳ 뇌 과부하! 잠시만 기다려주세요."
+ERROR_PERMISSION_DENIED = "❌ 권한이 없습니다."
+ERROR_INVALID_ARGUMENT = "❌ 잘못된 인자입니다."
+
 logger = logging.getLogger(__name__)
 
 def smart_split(text: str, max_length: int = 2000) -> list[str]:
