@@ -75,11 +75,6 @@ class AppConfig:
     service_tier: str = 'flex'
     openai_finetuned_model: Optional[str] = None
 
-    # Fine-tuning configuration
-    finetune_target_user_id: Optional[int] = None
-    finetune_source_channel_ids: Tuple[int, ...] = ()
-    finetune_min_examples: int = 10
-
     # Gemini/LLM model tuning
     # Temperature controls creativity (0.0 = deterministic, higher = more creative)
     temperature: float = 1.0
@@ -168,31 +163,6 @@ def load_config() -> AppConfig:
     gemini_model_name = _first_nonempty_env('GEMINI_MODEL_NAME') or DEFAULT_GEMINI_ASSISTANT_MODEL
     openai_model_name = _first_nonempty_env('OPENAI_MODEL_NAME') or DEFAULT_OPENAI_ASSISTANT_MODEL
     openai_finetuned_model = _first_nonempty_env('OPENAI_FINETUNED_MODEL')
-
-    # Fine-tuning settings
-    try:
-        finetune_target_user_id = int(os.environ.get('FINETUNE_TARGET_USER_ID', 0)) or None
-    except ValueError:
-        finetune_target_user_id = None
-
-    finetune_source_channel_str = os.environ.get('FINETUNE_SOURCE_CHANNEL_IDS', '')
-    finetune_source_channel_ids: Tuple[int, ...] = ()
-    if finetune_source_channel_str.strip():
-        valid_ft_ids = []
-        for cid in finetune_source_channel_str.split(','):
-            stripped = cid.strip()
-            if not stripped:
-                continue
-            try:
-                valid_ft_ids.append(int(stripped))
-            except ValueError:
-                pass
-        finetune_source_channel_ids = tuple(valid_ft_ids)
-
-    try:
-        finetune_min_examples = int(os.environ.get('FINETUNE_MIN_EXAMPLES', 10))
-    except ValueError:
-        finetune_min_examples = 10
 
     assistant_model_name = _resolve_model_name(assistant_llm_provider, role='assistant')
 
@@ -298,9 +268,6 @@ def load_config() -> AppConfig:
         log_level=_resolve_log_level(os.environ.get("LOG_LEVEL", "INFO")),
         service_tier=service_tier,
         openai_finetuned_model=openai_finetuned_model,
-        finetune_target_user_id=finetune_target_user_id,
-        finetune_source_channel_ids=finetune_source_channel_ids,
-        finetune_min_examples=finetune_min_examples,
         message_buffer_delay=message_buffer_delay,
         temperature=temperature,
         top_p=top_p,

@@ -16,7 +16,6 @@ from bot.session import SessionManager
 from bot.cogs.summarizer import SummarizerCog
 from bot.cogs.assistant import AssistantCog
 from bot.cogs.persona import PersonaCog
-from bot.cogs.finetune import FineTuneCog
 from bot.cogs.model_selector import ModelSelectorCog
 from services.prompt_service import PromptService
 
@@ -92,11 +91,6 @@ async def main(config):
         await bot.add_cog(ModelSelectorCog(bot, session_manager))
         if auto_channel_cog_cls:
             await bot.add_cog(auto_channel_cog_cls(bot, config, llm_service, session_manager))
-
-        # Initialize FineTuneCog if enabled (e.g. if config has necessary keys)
-        if config.finetune_target_user_id:
-             await bot.add_cog(FineTuneCog(bot, config))
-             logger.info("FineTuneCog loaded.")
 
         logger.info("Cogs 로드 완료.")
 
