@@ -491,10 +491,11 @@ class GeminiService(BaseLLMService):
             logger.info("Refreshed summary model after cache invalidation.")
 
         # Use _gemini_retry to handle cache errors
-        return await self._gemini_retry(
+        response = await self._gemini_retry(
             lambda: self.summary_model.generate_content(prompt),
             on_cache_error=_refresh_summary_model
         )
+        return self._extract_text_from_response(response) if response else None
 
     async def generate_chat_response(
         self,
