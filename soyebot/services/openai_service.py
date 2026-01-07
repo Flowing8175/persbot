@@ -43,31 +43,44 @@ class BaseOpenAISession:
         self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
 
     @property
-    def history(self):
+    def history(self) -> list[ChatMessage]:
+        """Get list of chat messages in history."""
         return list(self._history)
 
     @history.setter
-    def history(self, new_history: list[ChatMessage]):
-        """Setter to allow replacing the history."""
+    def history(self, new_history: list[ChatMessage]) -> None:
+        """Replace the history with a new list."""
         self._history.clear()
         self._history.extend(new_history)
 
-    @property
-    def history(self):
-        return list(self._history)
-
-    @history.setter
-    def history(self, new_history: list[ChatMessage]):
-        """Setter to allow replacing the history."""
-        self._history.clear()
-        self._history.extend(new_history)
-
-    def _append_history(self, role: str, content: str, author_id: Optional[int] = None, author_name: Optional[str] = None, message_ids: list[str] = None) -> None:
+    def _append_history(
+        self,
+        role: str,
+        content: str,
+        author_id: Optional[int] = None,
+        author_name: Optional[str] = None,
+        message_ids: list[str] = None
+    ) -> None:
+        """Append a message to history if content is not empty."""
         if not content:
             return
-        self._history.append(ChatMessage(role=role, content=content, author_id=author_id, author_name=author_name, message_ids=message_ids or []))
+        self._history.append(ChatMessage(
+            role=role,
+            content=content,
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=message_ids or []
+        ))
 
-    def _create_user_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None) -> ChatMessage:
+    def _create_user_message(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[list[str]] = None,
+        images: list[bytes] = None
+    ) -> ChatMessage:
+        """Create a ChatMessage for user input."""
         return ChatMessage(
             role="user",
             content=user_message,
@@ -76,6 +89,15 @@ class BaseOpenAISession:
             message_ids=message_ids or [],
             images=images or []
         )
+
+    def _encode_image_to_url(self, img_bytes: bytes) -> dict:
+        """Convert image bytes to OpenAI image_url format."""
+        b64_str = base64.b64encode(img_bytes).decode('utf-8')
+        mime_type = get_mime_type(img_bytes)
+        return {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime_type};base64,{b64_str}"}
+        }
 
 
 class ResponseChatSession(BaseOpenAISession):
@@ -155,59 +177,20 @@ class ResponseChatSession(BaseOpenAISession):
 class ChatCompletionSession(BaseOpenAISession):
     """Chat Completion API-backed chat session for fine-tuned models."""
 
-    def send_message(self, user_message: str, author_id: int, author_name: Optional[str] = None, message_ids: Optional[list[str]] = None, images: list[bytes] = None):
+    def send_message(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[list[str]] = None,
+        images: list[bytes] = None
+    ):
         user_msg = self._create_user_message(user_message, author_id, author_name, message_ids, images)
 
-        # Build messages list for chat completions API
-        messages = []
-        if self._system_instruction:
-            messages.append({"role": "system", "content": self._system_instruction})
-
-        # Convert existing history to dicts
-        api_history = []
-        for msg in self._history:
-            # Reconstruct content with images if present
-            if msg.images:
-                content_blocks = []
-                if msg.content:
-                    content_blocks.append({"type": "text", "text": msg.content})
-
-                for img_bytes in msg.images:
-                     b64_str = base64.b64encode(img_bytes).decode('utf-8')
-                     mime_type = get_mime_type(img_bytes)
-                     content_blocks.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{b64_str}"
-                        }
-                    })
-                api_history.append({"role": msg.role, "content": content_blocks})
-            else:
-                api_history.append({"role": msg.role, "content": msg.content})
-
-        messages.extend(api_history)
-
-        # Add current message to API payload
-        if images:
-            content_list = []
-            if user_message:
-                content_list.append({"type": "text", "text": user_message})
-
-            for img_bytes in images:
-                # Convert bytes to base64
-                b64_str = base64.b64encode(img_bytes).decode('utf-8')
-                # Determine mime type
-                mime_type = get_mime_type(img_bytes)
-
-                content_list.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{mime_type};base64,{b64_str}"
-                    }
-                })
-            messages.append({"role": "user", "content": content_list})
-        else:
-            messages.append({"role": "user", "content": user_message})
+        # Build messages list
+        messages = self._build_system_message()
+        messages.extend(self._convert_history_to_api_format())
+        messages.append(self._build_user_content(user_message, images))
 
         response = self._client.chat.completions.create(
             model=self._model_name,
@@ -217,17 +200,49 @@ class ChatCompletionSession(BaseOpenAISession):
             service_tier=self._service_tier,
         )
 
-        # Extract text using the provided text extractor (but first try extracting from choice)
-        message_content = ""
-        if response.choices and response.choices[0].message.content:
-             message_content = response.choices[0].message.content.strip()
-        else:
-             # Fallback to the service's text extractor if standard structure is missing
-             message_content = self._text_extractor(response)
-
+        message_content = self._extract_response_content(response)
         model_msg = ChatMessage(role="assistant", content=message_content)
 
         return user_msg, model_msg, response
+
+    def _build_system_message(self) -> list[dict]:
+        """Build system message list."""
+        if self._system_instruction:
+            return [{"role": "system", "content": self._system_instruction}]
+        return []
+
+    def _convert_history_to_api_format(self) -> list[dict]:
+        """Convert chat history to OpenAI API format."""
+        api_history = []
+        for msg in self._history:
+            if msg.images:
+                content_blocks = []
+                if msg.content:
+                    content_blocks.append({"type": "text", "text": msg.content})
+                for img_bytes in msg.images:
+                    content_blocks.append(self._encode_image_to_url(img_bytes))
+                api_history.append({"role": msg.role, "content": content_blocks})
+            else:
+                api_history.append({"role": msg.role, "content": msg.content})
+        return api_history
+
+    def _build_user_content(self, user_message: str, images: Optional[list[bytes]]) -> dict:
+        """Build user message content for API."""
+        if images:
+            content_list = []
+            if user_message:
+                content_list.append({"type": "text", "text": user_message})
+            for img_bytes in images:
+                content_list.append(self._encode_image_to_url(img_bytes))
+            return {"role": "user", "content": content_list}
+        return {"role": "user", "content": user_message}
+
+    def _extract_response_content(self, response) -> str:
+        """Extract text content from response."""
+        if response.choices and response.choices[0].message.content:
+            return response.choices[0].message.content.strip()
+        return self._text_extractor(response)
+
 
 
 class _ChatCompletionModel:

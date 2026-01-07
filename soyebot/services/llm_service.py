@@ -190,99 +190,88 @@ class LLMService:
         discord_message,
         use_summarizer_backend: bool = False,
     ):
-        # 0. Check usage limit
+        # Extract message metadata
         model_alias = getattr(chat_session, 'model_alias', self.model_usage_service.DEFAULT_MODEL_ALIAS)
+        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(discord_message)
 
-        # Determine user_id, channel_id, and guild_id
-        user_id = 0
-        channel_id = 0
-        guild_id = 0
-        primary_author = None
-
-        if isinstance(discord_message, list):
-             if discord_message:
-                primary_author = discord_message[0].author
-                user_id = primary_author.id
-                channel_id = discord_message[0].channel.id
-                if discord_message[0].guild:
-                    guild_id = discord_message[0].guild.id
-                else:
-                    guild_id = user_id
-        else:
-             primary_author = discord_message.author
-             user_id = primary_author.id
-             channel_id = discord_message.channel.id
-             if discord_message.guild:
-                 guild_id = discord_message.guild.id
-             else:
-                 guild_id = user_id
-
+        # Check and update usage
         is_allowed, final_alias, notification = await self.model_usage_service.check_and_increment_usage(
             guild_id, model_alias
         )
-
-        # Update session if model changed due to fallback
         if final_alias != model_alias:
-             chat_session.model_alias = final_alias
+            chat_session.model_alias = final_alias
 
         if not is_allowed:
-             return (notification or "❌ 사용 한도를 초과했습니다.", None)
+            return (notification or "❌ 사용 한도를 초과했습니다.", None)
 
-        # Resolve API model name
+        # Get backend and model name
         api_model_name = self.model_usage_service.get_api_model_name(final_alias)
-
-        # Get appropriate backend
-        active_backend = self.get_backend_for_model(final_alias)
+        active_backend = self.summarizer_backend if use_summarizer_backend else self.get_backend_for_model(final_alias)
+        
         if not active_backend:
-             return ("❌ 선택한 모델을 사용할 수 없습니다 (Provider 설정 오류).", None)
+            return ("❌ 선택한 모델을 사용할 수 없습니다 (Provider 설정 오류).", None)
 
-        if use_summarizer_backend:
-            # Summarizer overrides
-            active_backend = self.summarizer_backend
-
-        # 1. Rate Limiting Check for Images
-        image_count = 0
-
-        if isinstance(discord_message, list):
-             for msg in discord_message:
-                 image_count += len([a for a in msg.attachments if a.content_type and a.content_type.startswith('image/')])
-        else:
-             image_count = len([a for a in discord_message.attachments if a.content_type and a.content_type.startswith('image/')])
-
+        # Check image usage limits
+        image_count = self._count_images_in_message(discord_message)
         if image_count > 0 and primary_author:
-            # Check permissions (Member only has guild_permissions)
-            is_admin = False
-            if isinstance(primary_author, discord.Member):
-                 is_admin = primary_author.guild_permissions.manage_guild
+            limit_error = self._check_image_usage_limit(primary_author, image_count)
+            if limit_error:
+                return limit_error
 
-            if not is_admin:
-                if not self.image_usage_service.check_can_upload(primary_author.id, image_count, limit=3):
-                    return ("❌ 이미지는 하루에 최대 3개 업로드하실 수 있습니다.", None)
-
-        # 2. Proceed with generation
-        # We pass `model_name` argument to generate_chat_response to ensure dynamic switching inside session works
+        # Generate response
         response = await active_backend.generate_chat_response(
-            chat_session,
-            user_message,
-            discord_message,
-            model_name=api_model_name
+            chat_session, user_message, discord_message, model_name=api_model_name
         )
 
-        # 3. If successful and images were sent, record usage
+        # Record image usage after successful generation
         if response is not None and image_count > 0 and primary_author:
-             is_admin = False
-             if isinstance(primary_author, discord.Member):
-                 is_admin = primary_author.guild_permissions.manage_guild
+            await self._record_image_usage_if_needed(primary_author, image_count)
 
-             if not is_admin:
-                 await self.image_usage_service.record_upload(primary_author.id, image_count)
+        return self._prepare_response_with_notification(response, notification)
 
-        # Prepend notification if exists
+    def _extract_message_metadata(self, discord_message) -> tuple:
+        """Extract user_id, channel_id, guild_id, and primary_author from message(s)."""
+        if isinstance(discord_message, list) and discord_message:
+            primary = discord_message[0]
+        else:
+            primary = discord_message
+
+        primary_author = primary.author
+        user_id = primary_author.id
+        channel_id = primary.channel.id
+        guild_id = primary.guild.id if primary.guild else user_id
+
+        return user_id, channel_id, guild_id, primary_author
+
+    def _count_images_in_message(self, discord_message) -> int:
+        """Count image attachments in message(s)."""
+        def count_in_msg(msg):
+            return len([a for a in msg.attachments if a.content_type and a.content_type.startswith('image/')])
+
+        if isinstance(discord_message, list):
+            return sum(count_in_msg(msg) for msg in discord_message)
+        return count_in_msg(discord_message)
+
+    def _check_image_usage_limit(self, author, image_count: int) -> Optional[tuple]:
+        """Check if user can upload images. Returns error tuple or None if allowed."""
+        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        if is_admin:
+            return None
+        if not self.image_usage_service.check_can_upload(author.id, image_count, limit=3):
+            return ("❌ 이미지는 하루에 최대 3개 업로드하실 수 있습니다.", None)
+        return None
+
+    async def _record_image_usage_if_needed(self, author, image_count: int) -> None:
+        """Record image usage for non-admin users."""
+        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        if not is_admin:
+            await self.image_usage_service.record_upload(author.id, image_count)
+
+    def _prepare_response_with_notification(self, response, notification: Optional[str]):
+        """Prepend notification to response if exists."""
         if response and notification:
-             text, obj = response
-             new_text = f"📢 {notification}\n\n{text}"
-             return (new_text, obj)
-
+            text, obj = response
+            return (f"📢 {notification}\n\n{text}", obj)
         return response
 
     def get_user_role_name(self) -> str:

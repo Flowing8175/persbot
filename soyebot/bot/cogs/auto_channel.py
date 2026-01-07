@@ -177,133 +177,129 @@ class AutoChannelCog(BaseChatCog):
     @commands.command(name="@", aliases=["undo"])
     async def undo_command(self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"):
         """Deletes the last N user/assistant message pairs from the chat history."""
-        # This command should only work in auto-reply channels
         if ctx.channel.id not in self.config.auto_reply_channel_ids:
             return
 
-        # Argument validation
-        try:
-            num_to_undo = int(num_to_undo_str)
-            if num_to_undo < 1:
-                await ctx.message.add_reaction("❌")
-                return
-        except ValueError:
+        # Validate argument
+        num_to_undo = self._validate_undo_arg(num_to_undo_str)
+        if num_to_undo is None:
             await ctx.message.add_reaction("❌")
             return
 
         channel_id = ctx.channel.id
-        undo_performed_on_pending = False
+        session_key = f"channel:{channel_id}"
 
-        # 1. Check and Undo active Processing Task (Thinking)
-        # If the bot is currently thinking, we cancel it and delete the triggering user message.
+        # Cancel pending tasks
+        undo_performed_on_pending, num_to_undo = await self._cancel_pending_tasks(
+            ctx, channel_id, num_to_undo
+        )
+
+        # Check if we're done
+        if num_to_undo <= 0:
+            await self._try_delete_message(ctx.message)
+            return
+
+        # Check permission for historical undo
+        if not self._check_undo_permission(ctx, session_key):
+            if not undo_performed_on_pending:
+                await ctx.message.add_reaction("❌")
+            else:
+                await self._try_delete_message(ctx.message)
+            return
+
+        # Execute undo
+        num_to_actually_undo = min(num_to_undo, 10)
+        removed_messages = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
+
+        if removed_messages or undo_performed_on_pending:
+            await self._try_delete_message(ctx.message)
+            await self._delete_removed_messages(ctx.channel, removed_messages)
+        else:
+            await ctx.message.add_reaction("❌")
+
+    def _validate_undo_arg(self, num_to_undo_str: str) -> Optional[int]:
+        """Validate undo count argument. Returns None if invalid."""
+        try:
+            num = int(num_to_undo_str)
+            return num if num >= 1 else None
+        except ValueError:
+            return None
+
+    async def _cancel_pending_tasks(self, ctx, channel_id: int, num_to_undo: int) -> tuple:
+        """Cancel pending tasks and return (was_cancelled, remaining_undo_count)."""
+        undo_performed = False
+
+        # Cancel processing task
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.info("Undo command interrupted active processing in channel #%s", ctx.channel.name)
+                logger.info("Undo interrupted active processing in #%s", ctx.channel.name)
                 task.cancel()
                 
-                # Delete the pending messages that were being processed
-                pending_messages = self.active_batches.get(channel_id, [])
-                for msg in pending_messages:
+                # Delete pending messages
+                for msg in self.active_batches.get(channel_id, []):
                     try:
                         await msg.delete()
                     except (discord.NotFound, discord.Forbidden):
                         pass
                 
-                # We consider this as 1 "undo" action (the current pending turn)
-                undo_performed_on_pending = True
+                undo_performed = True
                 num_to_undo -= 1
-        
-        # 2. Check and Undo active Sending Task (Break-Cut Mode)
-        # If the bot is currently sending a split response, we cancel it.
-        # We generally don't decrement num_to_undo here because the partial response 
-        # is likely already in history (or parts of it), so we rely on the standard
-        # undo logic below to clean up the partial exchange.
+
+        # Cancel sending task
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
-                logger.info("Undo command interrupted active sending in channel #%s", ctx.channel.name)
+                logger.info("Undo interrupted active sending in #%s", ctx.channel.name)
                 task.cancel()
-                # We do NOT return or decrement here, as we want to proceed to delete 
-                # whatever partial messages made it to the history.
 
-        # If we only wanted to undo 1 item and we already undid the pending one, we are done
-        # (unless the user wanted to undo more).
-        if num_to_undo <= 0:
-            try:
-                await ctx.message.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
-            return
+        return undo_performed, num_to_undo
 
-        # Permission check for historical undo
-        session_key = f"channel:{channel_id}"
+    def _check_undo_permission(self, ctx, session_key: str) -> bool:
+        """Check if user has permission for historical undo."""
         session = self.session_manager.sessions.get(session_key)
         user_message_count = 0
+        
         if session and hasattr(session.chat, 'history'):
             user_role = self.llm_service.get_user_role_name()
-            for msg in session.chat.history:
-                if msg.role == user_role and msg.author_id == ctx.author.id:
-                    user_message_count += 1
+            user_message_count = sum(
+                1 for msg in session.chat.history
+                if msg.role == user_role and msg.author_id == ctx.author.id
+            )
 
         is_admin = isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.manage_guild
-        has_permission = is_admin or user_message_count >= 5
+        return is_admin or user_message_count >= 5
 
-        if not has_permission:
-            # If we successfully cancelled a pending task, we still consider the command "successful" enough to not show X
-            # but we won't undo history.
-            if not undo_performed_on_pending:
-                await ctx.message.add_reaction("❌")
-                logger.warning(
-                    "User %s (admin=%s, messages=%d) tried to use undo command without permission in #%s.",
-                    ctx.author.name, is_admin, user_message_count, ctx.channel.name
-                )
-            else:
-                 try:
-                    await ctx.message.delete()
-                 except: 
-                    pass
-            return
+    async def _delete_removed_messages(self, channel, removed_messages: list) -> None:
+        """Delete Discord messages from removed history entries."""
+        assistant_role = self.llm_service.get_assistant_role_name()
 
-        # Execute undo, respecting the max limit
-        num_to_actually_undo = min(num_to_undo, 10)
-        removed_messages = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
+        for msg in removed_messages:
+            if not hasattr(msg, 'message_ids') or not msg.message_ids:
+                continue
+            for mid in msg.message_ids:
+                await self._try_delete_channel_message(channel, mid, msg.role)
 
-        if removed_messages or undo_performed_on_pending:
-            try:
-                await ctx.message.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+    async def _try_delete_channel_message(self, channel, message_id: str, role: str) -> None:
+        """Try to delete a message by ID, logging any errors."""
+        try:
+            msg = await channel.fetch_message(int(message_id))
+            await msg.delete()
+        except asyncio.CancelledError:
+            pass
+        except discord.NotFound:
+            logger.debug("Message %s not found for deletion", message_id)
+        except discord.Forbidden:
+            logger.warning("No permission to delete message %s", message_id)
+        except Exception as e:
+            logger.warning("Error deleting message %s: %s", message_id, e)
 
-            assistant_role = self.llm_service.get_assistant_role_name()
-            user_role = self.llm_service.get_user_role_name()
-
-            for msg in removed_messages:
-                if hasattr(msg, 'message_ids') and msg.message_ids:
-                    for mid in msg.message_ids:
-                        if msg.role == assistant_role:
-                            try:
-                                message_to_delete = await ctx.channel.fetch_message(int(mid))
-                                await message_to_delete.delete()
-                            except asyncio.CancelledError:
-                                pass
-                            except (discord.NotFound, discord.Forbidden):
-                                pass
-                            except Exception as e:
-                                logger.warning(f"Error deleting message {mid} during undo: {e}")
-
-                        elif msg.role == user_role:
-                            try:
-                                message_to_delete = await ctx.channel.fetch_message(int(mid))
-                                await message_to_delete.delete()
-                            except discord.NotFound:
-                                logger.warning("Could not find user message %s to delete in #%s.", mid, ctx.channel.name)
-                            except discord.Forbidden:
-                                logger.warning("Could not delete user message %s in #%s, probably missing permissions.", mid, ctx.channel.name)
-                            except Exception as e:
-                                logger.warning("Error deleting user message %s: %s", mid, e)
-        else:
-            await ctx.message.add_reaction("❌")
+    async def _try_delete_message(self, message) -> None:
+        """Try to delete a message, ignoring errors."""
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+            pass
 
 
 

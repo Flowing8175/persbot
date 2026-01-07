@@ -178,62 +178,58 @@ class AssistantCog(BaseChatCog):
     @commands.hybrid_command(name='retry', aliases=['재생성', '다시'], description="마지막 대화를 되돌리고 응답을 다시 생성합니다.")
     async def retry_command(self, ctx: commands.Context):
         """마지막 대화를 되돌리고 응답을 다시 생성합니다."""
-        # Defer immediately to prevent timeout errors
         await ctx.defer()
 
         channel_id = ctx.channel.id
         session_key = f"channel:{channel_id}"
 
-        # 1. Cancel any active tasks first
-        if channel_id in self.processing_tasks:
-            task = self.processing_tasks[channel_id]
-            if not task.done():
-                logger.info("Retry command interrupted active processing in channel #%s", ctx.channel.name)
-                task.cancel()
-        
-        if channel_id in self.sending_tasks:
-            task = self.sending_tasks[channel_id]
-            if not task.done():
-                logger.info("Retry command interrupted active sending in channel #%s", ctx.channel.name)
-                task.cancel()
+        # Cancel any active tasks
+        self._cancel_channel_tasks(channel_id, ctx.channel.name, "Retry command")
 
-        # 2. Undo the last exchange (assistant + user message)
-        removed_messages: list[ChatMessage] = self.session_manager.undo_last_exchanges(session_key, 1)
-
+        # Undo the last exchange
+        removed_messages = self.session_manager.undo_last_exchanges(session_key, 1)
         if not removed_messages:
-            # Send as followup if deferred
             await ctx.send("❌ 되돌릴 대화가 없습니다.")
             return
 
-        # Identify the user message content and the previous assistant message ID
-        user_role = self.llm_service.get_user_role_name()
-        assistant_role = self.llm_service.get_assistant_role_name()
-
-        user_content = ""
-        # Process removed messages to find content and IDs
-        # Removed messages are chronological. Expect [User, Assistant] usually.
-        for msg in removed_messages:
-            if msg.role == user_role:
-                user_content = msg.content
-            elif msg.role == assistant_role:
-                if hasattr(msg, 'message_ids') and msg.message_ids:
-                    # Collect all message IDs for deletion
-                    for mid in msg.message_ids:
-                        try:
-                            old_msg = await ctx.channel.fetch_message(int(mid))
-                            await old_msg.delete()
-                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                            pass
-
+        # Process removed messages
+        user_content = await self._process_removed_messages(ctx, removed_messages)
         if not user_content:
             await ctx.send("❌ 재시도할 사용자 메시지를 찾을 수 없습니다.")
             return
 
-        # Re-generate response
+        # Regenerate response
+        await self._regenerate_response(ctx, session_key, user_content)
+
+    async def _process_removed_messages(self, ctx: commands.Context, removed_messages: list) -> str:
+        """Process removed messages: delete assistant messages and return user content."""
+        user_role = self.llm_service.get_user_role_name()
+        assistant_role = self.llm_service.get_assistant_role_name()
+        user_content = ""
+
+        for msg in removed_messages:
+            if msg.role == user_role:
+                user_content = msg.content
+            elif msg.role == assistant_role:
+                await self._delete_assistant_messages(ctx.channel, msg)
+
+        return user_content
+
+    async def _delete_assistant_messages(self, channel, msg) -> None:
+        """Delete assistant messages from Discord."""
+        if not hasattr(msg, 'message_ids') or not msg.message_ids:
+            return
+        for mid in msg.message_ids:
+            try:
+                old_msg = await channel.fetch_message(int(mid))
+                await old_msg.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+
+    async def _regenerate_response(self, ctx: commands.Context, session_key: str, user_content: str) -> None:
+        """Regenerate LLM response and send it."""
         async with ctx.channel.typing():
             resolution = ResolvedSession(session_key, user_content)
-
-            # Create a reply using the original context author (ctx.author) which is acceptable for retry
             reply = await create_chat_reply(
                 ctx.message,
                 resolution=resolution,
@@ -242,78 +238,93 @@ class AssistantCog(BaseChatCog):
             )
 
             if reply and reply.text:
-                # We always send a new reply for retry now, as old ones were deleted
                 await self._send_response(ctx.message, reply)
-
-                # Interaction cleanup for slash commands in break-cut mode
-                # If we used break-cut, we sent messages to the channel but the interaction is still "Thinking...".
-                # We should delete the "Thinking..." message.
+                # Clean up deferred interaction in break-cut mode
                 if self.config.break_cut_mode and ctx.interaction:
                     try:
                         await ctx.interaction.delete_original_response()
                     except (discord.Forbidden, discord.HTTPException):
-                        # If deletion fails, we can leave it or try to edit it to something invisible/deleted.
                         pass
             else:
-                 await ctx.send(GENERIC_ERROR_MESSAGE)
+                await ctx.send(GENERIC_ERROR_MESSAGE)
 
-        # Attempt to delete the retry command message itself for cleanliness (mostly for text commands)
+        # Clean up command message
         try:
             await ctx.message.delete()
         except (discord.Forbidden, discord.HTTPException, discord.NotFound, AttributeError):
-            # AttributeError might happen if ctx.message is None or Partial in some contexts
             pass
+
+    def _cancel_channel_tasks(self, channel_id: int, channel_name: str = "", reason: str = "") -> bool:
+        """Cancel active processing and sending tasks for a channel. Returns True if any cancelled."""
+        cancelled = False
+        
+        if channel_id in self.processing_tasks:
+            task = self.processing_tasks[channel_id]
+            if not task.done():
+                logger.info("%s interrupted active processing in channel #%s", reason, channel_name)
+                task.cancel()
+                cancelled = True
+
+        if channel_id in self.sending_tasks:
+            task = self.sending_tasks[channel_id]
+            if not task.done():
+                logger.info("%s interrupted active sending in channel #%s", reason, channel_name)
+                task.cancel()
+                cancelled = True
+
+        return cancelled
+
+    def _cancel_auto_channel_tasks(self, channel_id: int) -> bool:
+        """Cancel tasks in AutoChannelCog for a channel. Returns True if any cancelled."""
+        cancelled = False
+        auto_cog = self.bot.get_cog("AutoChannelCog")
+        if not auto_cog:
+            return False
+
+        if channel_id in auto_cog.sending_tasks:
+            task = auto_cog.sending_tasks[channel_id]
+            if not task.done():
+                task.cancel()
+                cancelled = True
+
+        if hasattr(auto_cog, 'processing_tasks') and channel_id in auto_cog.processing_tasks:
+            task = auto_cog.processing_tasks[channel_id]
+            if not task.done():
+                task.cancel()
+                cancelled = True
+
+        return cancelled
 
     @commands.hybrid_command(name='abort', aliases=['중단', '멈춰'], description="진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다.")
     @commands.has_permissions(manage_guild=True)
     async def abort_command(self, ctx: commands.Context):
         """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
         channel_id = ctx.channel.id
-        aborted = False
-
-        # 1. Interrupt tasks in AssistantCog
-        # Cancel sending
-        if channel_id in self.sending_tasks:
-            task = self.sending_tasks[channel_id]
-            if not task.done():
-                task.cancel()
-                aborted = True
-
-        # Cancel processing
-        if channel_id in self.processing_tasks:
-            task = self.processing_tasks[channel_id]
-            if not task.done():
-                task.cancel()
-                aborted = True
-
-        # 2. Try to interrupt tasks in AutoChannelCog
-        auto_cog = self.bot.get_cog("AutoChannelCog")
-        if auto_cog:
-            # Cancel sending tasks
-            if channel_id in auto_cog.sending_tasks:
-                task = auto_cog.sending_tasks[channel_id]
-                if not task.done():
-                    task.cancel()
-                    aborted = True
-            
-            # Cancel processing tasks
-            if hasattr(auto_cog, 'processing_tasks') and channel_id in auto_cog.processing_tasks:
-                task = auto_cog.processing_tasks[channel_id]
-                if not task.done():
-                    task.cancel()
-                    aborted = True
         
+        # Cancel tasks in both cogs
+        aborted = self._cancel_channel_tasks(channel_id, ctx.channel.name, "Abort command")
+        aborted = self._cancel_auto_channel_tasks(channel_id) or aborted
+
+        # Send appropriate response
         if aborted:
-            if ctx.interaction:
-                await ctx.reply("🛑 중단되었습니다.", ephemeral=False)
-            else:
-                await ctx.message.add_reaction("🛑")
+            await self._send_abort_success(ctx)
             logger.info("User %s requested abort in channel %s", ctx.author.name, channel_id)
         else:
-            if ctx.interaction:
-                await ctx.reply("❓ 중단할 작업이 없습니다.", ephemeral=True)
-            else:
-                await ctx.message.add_reaction("❓")
+            await self._send_abort_no_tasks(ctx)
+
+    async def _send_abort_success(self, ctx: commands.Context) -> None:
+        """Send success response for abort command."""
+        if ctx.interaction:
+            await ctx.reply("🛑 중단되었습니다.", ephemeral=False)
+        else:
+            await ctx.message.add_reaction("🛑")
+
+    async def _send_abort_no_tasks(self, ctx: commands.Context) -> None:
+        """Send no-tasks response for abort command."""
+        if ctx.interaction:
+            await ctx.reply("❓ 중단할 작업이 없습니다.", ephemeral=True)
+        else:
+            await ctx.message.add_reaction("❓")
 
     @commands.hybrid_command(name='초기화', aliases=['reset'], description="현재 채널의 대화 세션을 초기화합니다.")
     async def reset_session(self, ctx: commands.Context):

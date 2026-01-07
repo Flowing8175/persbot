@@ -117,6 +117,64 @@ def _first_nonempty_env(*names: str) -> Optional[str]:
     return None
 
 
+def _parse_float_env(name: str, default: float) -> float:
+    """Parse float from environment variable with fallback."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning("%s 설정이 숫자가 아닙니다. 기본값 %s을 사용합니다.", name, default)
+        return default
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    """Parse int from environment variable with fallback."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning("%s 설정이 숫자가 아닙니다. 기본값 %s을 사용합니다.", name, default)
+        return default
+
+
+def _parse_thinking_budget() -> Optional[int]:
+    """Parse THINKING_BUDGET with special 'off' handling."""
+    raw = os.environ.get('THINKING_BUDGET', 'off').strip().lower()
+    if raw == 'off':
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("THINKING_BUDGET 설정이 올바르지 않습니다. 기본값 'off'를 사용합니다.")
+        return None
+
+
+def _parse_auto_channel_ids() -> Tuple[int, ...]:
+    """Parse comma-separated channel IDs from environment."""
+    raw = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '').strip()
+    if not raw:
+        return ()
+    
+    valid_ids, invalid_entries = [], []
+    for cid in raw.split(','):
+        stripped = cid.strip()
+        if not stripped:
+            continue
+        try:
+            valid_ids.append(int(stripped))
+        except ValueError:
+            invalid_entries.append(stripped)
+    
+    if invalid_entries:
+        logger.warning("AUTO_REPLY_CHANNEL_IDS에 잘못된 값이 있어 무시됨: %s", invalid_entries)
+    
+    return tuple(valid_ids)
+
+
 def _resolve_model_name(provider: str, *, role: str) -> str:
     """Return the model name for the given provider/role using clear priority.
 
@@ -188,63 +246,13 @@ def load_config() -> AppConfig:
         logger.error("에러: OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 
-
-    auto_channel_env = os.environ.get('AUTO_REPLY_CHANNEL_IDS', '')
-    auto_reply_channel_ids: Tuple[int, ...] = ()
-    if auto_channel_env.strip():
-        valid_ids = []
-        invalid_entries = []
-        for cid in auto_channel_env.split(','):
-            stripped = cid.strip()
-            if not stripped:
-                continue
-
-            try:
-                valid_ids.append(int(stripped))
-            except ValueError:
-                invalid_entries.append(stripped)
-
-        if invalid_entries:
-            logger.warning(
-                "AUTO_REPLY_CHANNEL_IDS 환경 변수에 잘못된 값이 있어 무시되었습니다: %s",
-                invalid_entries,
-            )
-
-        auto_reply_channel_ids = tuple(valid_ids)
-
-    try:
-        message_buffer_delay = float(os.environ.get('MESSAGE_BUFFER_DELAY', 2.5))
-    except ValueError:
-        logger.warning("MESSAGE_BUFFER_DELAY 설정이 숫자가 아닙니다. 기본값 2.5초를 사용합니다.")
-        message_buffer_delay = 2.5
-
-    try:
-        temperature = float(os.environ.get('TEMPERATURE', 1.0))
-    except ValueError:
-        logger.warning("TEMPERATURE 설정이 숫자가 아닙니다. 기본값 1.0을 사용합니다.")
-        temperature = 1.0
-
-    try:
-        top_p = float(os.environ.get('TOP_P', 1.0))
-    except ValueError:
-        logger.warning("TOP_P 설정이 숫자가 아닙니다. 기본값 1.0을 사용합니다.")
-        top_p = 1.0
-
-    try:
-        thinking_budget_val = os.environ.get('THINKING_BUDGET', 'off').strip().lower()
-        if thinking_budget_val == 'off':
-            thinking_budget = None
-        else:
-            thinking_budget = int(thinking_budget_val)
-    except ValueError:
-        logger.warning("THINKING_BUDGET 설정이 올바르지 않습니다 (숫자 또는 'off'). 기본값 'off'를 사용합니다.")
-        thinking_budget = None
-
-    try:
-        max_history = int(os.environ.get('MAX_HISTORY', 50))
-    except ValueError:
-        logger.warning("MAX_HISTORY 설정이 숫자가 아닙니다. 기본값 50을 사용합니다.")
-        max_history = 50
+    # Parse simple environment values using helpers
+    auto_reply_channel_ids = _parse_auto_channel_ids()
+    message_buffer_delay = _parse_float_env('MESSAGE_BUFFER_DELAY', 2.5)
+    temperature = _parse_float_env('TEMPERATURE', 1.0)
+    top_p = _parse_float_env('TOP_P', 1.0)
+    thinking_budget = _parse_thinking_budget()
+    max_history = _parse_int_env('MAX_HISTORY', 50)
 
     logger.info(
         "LLM_PROVIDER(assistant)=%s, LLM_PROVIDER(summarizer)=%s, assistant_model=%s, summarizer_model=%s",
@@ -271,8 +279,8 @@ def load_config() -> AppConfig:
         message_buffer_delay=message_buffer_delay,
         temperature=temperature,
         top_p=top_p,
-        gemini_cache_min_tokens=int(os.environ.get('GEMINI_CACHE_MIN_TOKENS', 32768)),
-        gemini_cache_ttl_minutes=int(os.environ.get('GEMINI_CACHE_TTL_MINUTES', 60)),
+        gemini_cache_min_tokens=_parse_int_env('GEMINI_CACHE_MIN_TOKENS', 32768),
+        gemini_cache_ttl_minutes=_parse_int_env('GEMINI_CACHE_TTL_MINUTES', 60),
         thinking_budget=thinking_budget,
         max_history=max_history,
     )

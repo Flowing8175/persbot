@@ -134,45 +134,81 @@ class SessionManager:
         message_ts: Optional[datetime] = None,
         message_id: Optional[str] = None,
     ) -> Tuple[object, str]:
-        """Retrieve a cached chat or start a new one without evicting prior sessions."""
+        """Retrieve a cached chat or start a new one."""
         user_id = str(user_id)
-
-        # Determine the target model alias first
-        target_model_alias = ModelUsageService.DEFAULT_MODEL_ALIAS
-        if session_key in self.session_contexts:
-             ctx_alias = self.session_contexts[session_key].model_alias
-             if ctx_alias:
-                 target_model_alias = ctx_alias
-        elif channel_id in self.channel_model_preferences:
-             target_model_alias = self.channel_model_preferences[channel_id]
+        target_model_alias = self._resolve_target_model_alias(session_key, channel_id)
 
         existing_session = self.sessions.get(session_key)
-
         if existing_session:
-            # Check for model compatibility
-            if existing_session.model_alias != target_model_alias:
-                logger.info(f"Session {session_key} model alias changed from {existing_session.model_alias} to {target_model_alias}. Resetting session.")
-                # Discard existing session (force recreate)
-                del self.sessions[session_key]
-                existing_session = None
-            else:
-                existing_session.last_activity_at = datetime.now(timezone.utc)
-                existing_session.last_message_id = message_id
-                self.sessions.move_to_end(session_key)
-                self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts)
+            if self._check_session_model_compatibility(existing_session, session_key, target_model_alias):
+                # Compatible - update and return existing session
+                self._update_existing_session(existing_session, session_key, channel_id, 
+                                               user_id, username, message_content, message_ts, message_id)
                 return existing_session.chat, session_key
+            # Incompatible - will create new below
+            del self.sessions[session_key]
 
-        logger.info(f"Creating new session {session_key} for user {user_id} with model {target_model_alias}")
+        return await self._create_new_session(
+            session_key, channel_id, user_id, username,
+            message_content, message_ts, message_id, target_model_alias
+        )
+
+    def _resolve_target_model_alias(self, session_key: str, channel_id: int) -> str:
+        """Determine the target model alias for a session."""
+        if session_key in self.session_contexts:
+            ctx_alias = self.session_contexts[session_key].model_alias
+            if ctx_alias:
+                return ctx_alias
+        if channel_id in self.channel_model_preferences:
+            return self.channel_model_preferences[channel_id]
+        return ModelUsageService.DEFAULT_MODEL_ALIAS
+
+    def _check_session_model_compatibility(
+        self, 
+        session: ChatSession, 
+        session_key: str, 
+        target_alias: str
+    ) -> bool:
+        """Check if existing session is compatible with target model. Returns False if needs reset."""
+        if session.model_alias != target_alias:
+            logger.info(f"Session {session_key} model alias changed from {session.model_alias} to {target_alias}. Resetting session.")
+            return False
+        return True
+
+    def _update_existing_session(
+        self,
+        session: ChatSession,
+        session_key: str,
+        channel_id: int,
+        user_id: str,
+        username: str,
+        message_content: str,
+        message_ts: Optional[datetime],
+        message_id: Optional[str]
+    ) -> None:
+        """Update existing session with new activity."""
+        session.last_activity_at = datetime.now(timezone.utc)
+        session.last_message_id = message_id
+        self.sessions.move_to_end(session_key)
+        self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts)
+
+    async def _create_new_session(
+        self,
+        session_key: str,
+        channel_id: int,
+        user_id: str,
+        username: str,
+        message_content: str,
+        message_ts: Optional[datetime],
+        message_id: Optional[str],
+        model_alias: str
+    ) -> Tuple[object, str]:
+        """Create a new chat session."""
+        logger.info(f"Creating new session {session_key} for user {user_id} with model {model_alias}")
 
         system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
-
-        # Use the specific creation method for the alias
-        chat = self.llm_service.create_chat_session_for_alias(target_model_alias, system_prompt)
-
-        # Attach the alias to the backend object so LLMService can retrieve it
-        # This fixes the issue where LLMService receives the raw chat object
-        # and cannot determine the alias.
-        chat.model_alias = target_model_alias
+        chat = self.llm_service.create_chat_session_for_alias(model_alias, system_prompt)
+        chat.model_alias = model_alias
 
         self.sessions[session_key] = ChatSession(
             chat=chat,
@@ -180,13 +216,15 @@ class SessionManager:
             session_id=session_key,
             last_activity_at=datetime.now(timezone.utc),
             last_message_id=message_id,
-            model_alias=target_model_alias,
+            model_alias=model_alias,
         )
 
-        self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts, model_alias=target_model_alias)
+        self._record_session_context(session_key, channel_id, user_id, username, 
+                                     message_content, message_ts, model_alias=model_alias)
         self._evict_if_needed()
 
         return chat, session_key
+
 
     def set_channel_prompt(self, channel_id: int, prompt_content: Optional[str]) -> None:
         """Set a custom system prompt for a specific channel."""
@@ -253,54 +291,59 @@ class SessionManager:
             return []
 
         try:
+            history = session.chat.history
             assistant_role = self.llm_service.get_assistant_role_name()
             user_role = self.llm_service.get_user_role_name()
 
-            # Find indices of the last N assistant messages
-            assistant_indices = [
-                i for i, msg in enumerate(session.chat.history) if msg.role == assistant_role
-            ]
-            if not assistant_indices:
-                return []
-
-            indices_to_remove = set()
-            num_to_undo = min(num_to_undo, len(assistant_indices))
-
-            # We want the last `num_to_undo` exchanges
-            assistant_messages_to_remove = assistant_indices[-num_to_undo:]
-
-            for assistant_index in assistant_messages_to_remove:
-                indices_to_remove.add(assistant_index)
-                # Mark preceding user messages for removal
-                user_message_index = assistant_index - 1
-                while user_message_index >= 0 and session.chat.history[user_message_index].role == user_role:
-                    indices_to_remove.add(user_message_index)
-                    user_message_index -= 1
-
+            indices_to_remove = self._find_exchange_indices_to_remove(
+                history, assistant_role, user_role, num_to_undo
+            )
             if not indices_to_remove:
                 return []
 
-            # Separate the history into kept and removed messages
-            new_history = []
-            removed_messages = []
-            for i, msg in enumerate(session.chat.history):
-                if i in indices_to_remove:
-                    removed_messages.append(msg)
-                else:
-                    new_history.append(msg)
-
+            new_history, removed = self._split_history_by_indices(history, indices_to_remove)
             session.chat.history = new_history
 
-            logger.info(
-                "Undid last %d exchanges from session %s. New history length: %d",
-                num_to_undo,
-                session_key,
-                len(new_history)
-            )
-            return removed_messages
+            logger.info("Undid last %d exchanges from session %s. New history length: %d",
+                        num_to_undo, session_key, len(new_history))
+            return removed
 
         except Exception as e:
-            logger.error(
-                "Error undoing exchanges in session %s: %s", session_key, e, exc_info=True
-            )
+            logger.error("Error undoing exchanges in session %s: %s", session_key, e, exc_info=True)
             return []
+
+    def _find_exchange_indices_to_remove(
+        self,
+        history: list,
+        assistant_role: str,
+        user_role: str,
+        num_to_undo: int
+    ) -> set:
+        """Find indices of messages to remove for undo operation."""
+        assistant_indices = [i for i, msg in enumerate(history) if msg.role == assistant_role]
+        if not assistant_indices:
+            return set()
+
+        indices_to_remove = set()
+        num_to_undo = min(num_to_undo, len(assistant_indices))
+        
+        for assistant_idx in assistant_indices[-num_to_undo:]:
+            indices_to_remove.add(assistant_idx)
+            # Include preceding user messages
+            user_idx = assistant_idx - 1
+            while user_idx >= 0 and history[user_idx].role == user_role:
+                indices_to_remove.add(user_idx)
+                user_idx -= 1
+        
+        return indices_to_remove
+
+    def _split_history_by_indices(self, history: list, indices_to_remove: set) -> tuple:
+        """Split history into kept and removed messages."""
+        new_history = []
+        removed = []
+        for i, msg in enumerate(history):
+            if i in indices_to_remove:
+                removed.append(msg)
+            else:
+                new_history.append(msg)
+        return new_history, removed

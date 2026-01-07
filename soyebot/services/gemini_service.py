@@ -22,6 +22,19 @@ from soyebot.utils import GENERIC_ERROR_MESSAGE, get_mime_type
 
 logger = logging.getLogger(__name__)
 
+# Configuration Constants
+DEFAULT_TEMPERATURE = 1.0
+DEFAULT_TOP_P = 1.0
+DEFAULT_CACHE_MIN_TOKENS = 32768
+DEFAULT_CACHE_TTL_MINUTES = 60
+DEFAULT_MAX_HISTORY = 50
+CACHE_REFRESH_BUFFER_MIN_MINUTES = 1
+CACHE_REFRESH_BUFFER_MAX_MINUTES = 5
+
+# Display Constants
+REQUEST_PREVIEW_LENGTH = 200
+RESPONSE_TEXT_PREVIEW_LENGTH = 200
+HISTORY_DISPLAY_LIMIT = 5
 
 
 
@@ -186,89 +199,98 @@ class GeminiService(BaseLLMService):
         key = hash((model_name, system_instruction, use_cache))
         now = datetime.datetime.now(datetime.timezone.utc)
 
-        # Check existing cache validity
-        if key in self._model_cache:
-            model, expires_at = self._model_cache[key]
-            if expires_at and now >= expires_at:
-                logger.info("Cached model expired (TTL reached). Refreshing...")
-                del self._model_cache[key]
-            else:
-                return model
+        # Check for valid cached model
+        cached = self._check_model_cache_validity(key, now)
+        if cached:
+            return cached
 
-        # Enable Google Search Grounding for the assistant model
-        # Only if it's NOT a lite model (lite models don't support tools usually or we want to save costs)
-        # But user didn't specify. Standard logic was: if assistant_model, add tools.
-        # Now model_name varies.
-        # Let's add tools if it's NOT a Lite model to be safe/consistent?
-        # Or just enable for all if supported?
-        # "Gemini 2.5 Flash Lite" snippet says "Streamlined... simple tasks".
-        # "Gemini 3 Pro" snippet says "Search grounding: Supported".
-        # Let's keep logic simple: enable search if it's THE assistant model (default) OR if we want to force it?
-        # Actually, `generate_chat_response` calls `_get_or_create_model` with `model_name`.
-        # If `model_name` passed in != `self._assistant_model_name`, we treat it as dynamic.
-        # Let's enable tools only for the default assistant model to avoid errors on small models if they don't support it,
-        # unless we know they do.
-        # Safe bet: disable tools for dynamic models unless configured otherwise.
+        # Configure tools and caching
+        tools = self._get_search_tools(model_name)
+        cache_name, cache_expiration = self._resolve_gemini_cache(
+            model_name, system_instruction, tools, use_cache
+        )
 
-        tools = None
-        if model_name == self._assistant_model_name:
-            grounding_tool = genai_types.Tool(
-                google_search=genai_types.GoogleSearch()
-            )
-            tools = [grounding_tool]
+        # Build and create model
+        config = self._build_generation_config(cache_name, system_instruction, tools)
+        model = _CachedModel(self.client, model_name, config)
+        self._model_cache[key] = (model, cache_expiration)
+        
+        return model
 
-        # Check logic for caching (token count check)
-        # If valid for caching, this returns the cache name (resource ID)
-        cache_name = None
-        cache_expiration = None
-        if use_cache:
-            cache_name, cache_expiration = self._get_gemini_cache(model_name, system_instruction, tools=tools)
+    def _check_model_cache_validity(
+        self, 
+        cache_key: int, 
+        now: datetime.datetime
+    ) -> Optional[_CachedModel]:
+        """Check if cached model exists and is still valid."""
+        if cache_key not in self._model_cache:
+            return None
+            
+        model, expires_at = self._model_cache[cache_key]
+        if expires_at and now >= expires_at:
+            logger.info("Cached model expired (TTL reached). Refreshing...")
+            del self._model_cache[cache_key]
+            return None
+            
+        return model
 
-        # Log cache status at creation for clarity
-        if use_cache:
-            if cache_name:
-                logger.info("Gemini Model initialized with CachedContent: %s", cache_name)
-            else:
-                logger.debug("Gemini Model will use standard context (no cache).")
+    def _get_search_tools(self, model_name: str) -> Optional[list]:
+        """Get Google Search tools for assistant model only."""
+        if model_name != self._assistant_model_name:
+            return None
+        return [genai_types.Tool(google_search=genai_types.GoogleSearch())]
 
+    def _resolve_gemini_cache(
+        self,
+        model_name: str,
+        system_instruction: str,
+        tools: Optional[list],
+        use_cache: bool
+    ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
+        """Resolve Gemini cache and log status."""
+        if not use_cache:
+            return None, None
+
+        cache_name, cache_expiration = self._get_gemini_cache(
+            model_name, system_instruction, tools=tools
+        )
+
+        # Log cache status
+        if cache_name:
+            logger.info("Gemini Model initialized with CachedContent: %s", cache_name)
+        else:
+            logger.debug("Gemini Model will use standard context (no cache).")
+
+        return cache_name, cache_expiration
+
+    def _build_generation_config(
+        self,
+        cache_name: Optional[str],
+        system_instruction: str,
+        tools: Optional[list]
+    ) -> genai_types.GenerateContentConfig:
+        """Build GenerateContentConfig with appropriate settings."""
         config_kwargs = {
-            "temperature": getattr(self.config, 'temperature', 1.0),
-            "top_p": getattr(self.config, 'top_p', 1.0),
+            "temperature": getattr(self.config, 'temperature', DEFAULT_TEMPERATURE),
+            "top_p": getattr(self.config, 'top_p', DEFAULT_TOP_P),
         }
 
         if cache_name:
-            # Use the cached content
             config_kwargs["cached_content"] = cache_name
-            logger.debug("Using cached content: %s", cache_name)
-            # When using CachedContent, tools must be part of the cache configuration,
-            # NOT passed in GenerateContentConfig.
         else:
-            # Standard mode: pass system_instruction directly
             config_kwargs["system_instruction"] = system_instruction
             if tools:
                 config_kwargs["tools"] = tools
 
-        if getattr(self.config, 'thinking_budget', None):
-            thinking_budget_val = self.config.thinking_budget
-            # If set to -1 (auto), we don't pass thinking_budget,
-            # effectively letting the model decide (standard behavior for dynamic budget if supported),
-            # OR we pass it if the API supports -1 explicitly.
-            # Based on docs: "To use dynamic budget through the API, set thinking_budget to -1."
-            # However, type checking might complain if not handled carefully,
-            # but usually it's an int.
-            # If -1 causes issues, we might need to omit it.
-            # Let's assume -1 is valid as per docs.
-
+        # Add thinking config if enabled
+        thinking_budget = getattr(self.config, 'thinking_budget', None)
+        if thinking_budget is not None:
             config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
                 include_thoughts=True,
-                thinking_budget=thinking_budget_val
+                thinking_budget=thinking_budget
             )
 
-        config = genai_types.GenerateContentConfig(**config_kwargs)
-        model = _CachedModel(self.client, model_name, config)
-
-        self._model_cache[key] = (model, cache_expiration)
-        return model
+        return genai_types.GenerateContentConfig(**config_kwargs)
 
     def create_assistant_model(self, system_instruction: str, use_cache: bool = True) -> _CachedModel:
         """Create or retrieve a cached assistant model with custom system instruction."""
@@ -317,12 +339,12 @@ class GeminiService(BaseLLMService):
             return
 
         try:
-            logger.debug(f"[RAW API REQUEST] User message preview: {user_message[:200]!r}")
+            logger.debug(f"[RAW API REQUEST] User message preview: {user_message[:REQUEST_PREVIEW_LENGTH]!r}")
 
             if chat_session and hasattr(chat_session, 'history'):
                 history = chat_session.history
                 formatted_history = []
-                for msg in history[-5:]:
+                for msg in history[-HISTORY_DISPLAY_LIMIT:]:
                     role = msg.role
                     texts = [part.get('text', '') for part in msg.parts]
                     content = ' '.join(texts)
@@ -369,7 +391,7 @@ class GeminiService(BaseLLMService):
                         for part in candidate.content.parts:
                             text = getattr(part, 'text', '')
                             if text:
-                                texts.append(text[:200].replace('\n', ' '))
+                                texts.append(text[:RESPONSE_TEXT_PREVIEW_LENGTH].replace('\n', ' '))
                         if texts:
                             logger.debug(f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}")
         except Exception as e:
@@ -403,7 +425,7 @@ class GeminiService(BaseLLMService):
             logger.warning("Failed to count tokens for caching check: %s. Using standard context.", e)
             return None, None
 
-        min_tokens = getattr(self.config, 'gemini_cache_min_tokens', 32768)
+        min_tokens = getattr(self.config, 'gemini_cache_min_tokens', DEFAULT_CACHE_MIN_TOKENS)
         if token_count < min_tokens:
             logger.info(
                 "Gemini Context Caching skipped: Token count (%d) < min_tokens (%d). Using standard context.",
@@ -415,12 +437,15 @@ class GeminiService(BaseLLMService):
 
         # 2. Config setup
         cache_display_name = self._get_cache_key(model_name, system_instruction, tools)
-        ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', 60)
+        ttl_minutes = getattr(self.config, 'gemini_cache_ttl_minutes', DEFAULT_CACHE_TTL_MINUTES)
         ttl_seconds = ttl_minutes * 60
         
         now = datetime.datetime.now(datetime.timezone.utc)
-        # local_expiration: trigger refresh halfway through TTL window or with a 5-minute buffer
-        refresh_buffer_minutes = min(5, max(1, ttl_minutes // 2))
+        # local_expiration: trigger refresh halfway through TTL window or with a buffer
+        refresh_buffer_minutes = min(
+            CACHE_REFRESH_BUFFER_MAX_MINUTES, 
+            max(CACHE_REFRESH_BUFFER_MIN_MINUTES, ttl_minutes // 2)
+        )
         local_expiration = now + datetime.timedelta(minutes=ttl_minutes - refresh_buffer_minutes)
 
         # 3. Search for existing cache
@@ -575,8 +600,8 @@ class GeminiService(BaseLLMService):
             chat_session.history.append(user_msg)
             chat_session.history.append(model_msg)
 
-            # Enforce max history limit (Default: 50 messages)
-            max_history = getattr(self.config, 'max_history', 50)
+            # Enforce max history limit
+            max_history = getattr(self.config, 'max_history', DEFAULT_MAX_HISTORY)
             if len(chat_session.history) > max_history:
                 chat_session.history = chat_session.history[-max_history:]
 
@@ -625,11 +650,8 @@ class GeminiService(BaseLLMService):
         on_cache_error: Callable[[], Awaitable[None]],
         discord_message: Optional[discord.Message] = None,
     ) -> Optional[Any]:
-        """Custom retry logic for Gemini to handle 403 Cache Errors."""
+        """Custom retry logic for Gemini to handle various error types."""
         last_error = None
-
-        # We assume model_call is a lambda that uses the CURRENT state of objects.
-        # If on_cache_error updates those objects, the next call to model_call will use them.
 
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
@@ -638,49 +660,87 @@ class GeminiService(BaseLLMService):
                     timeout=self.config.api_request_timeout,
                 )
                 self._log_raw_response(response, attempt)
-
-                # GeminiService methods usually expect the raw response object here,
-                # or text depending on what model_call returns.
-                # Here model_call returns the response object (generate_content or send_message result).
                 return response
 
             except Exception as e:
                 last_error = e
-
-                if self._is_cache_error(e):
-                    logger.warning("Gemini 403 Cache Error (Attempt %s). Refreshing session...", attempt)
-                    try:
-                        await on_cache_error()
-                        # After refreshing, we immediately retry in the NEXT loop iteration.
-                        # We do NOT decrement attempt, so this consumes a retry slot.
-                        # This avoids infinite loops.
-                        continue
-                    except Exception as refresh_err:
-                        logger.error("Failed to refresh session during cache error handling: %s", refresh_err)
-                        # If refresh fails, we probably can't recover.
-                        break
-
-                if self._is_rate_limit_error(e):
-                    logger.warning("Gemini Rate Limit (Attempt %s). Waiting...", attempt)
-                    delay = self._extract_retry_delay(e) or self.config.api_rate_limit_retry_after
-                    await self._wait_with_countdown(delay, discord_message)
-                    continue
-
-                logger.error("Gemini API Error (Attempt %s): %s", attempt, e)
-
-                if attempt >= self.config.api_max_retries:
+                should_continue = await self._handle_retry_error(
+                    e, attempt, on_cache_error, discord_message
+                )
+                if not should_continue:
                     break
 
-                backoff = min(
-                    self.config.api_retry_backoff_base ** attempt,
-                    self.config.api_retry_backoff_max,
-                )
-                await asyncio.sleep(backoff)
+        await self._notify_final_error(last_error, discord_message)
+        return None
 
-        if isinstance(last_error, asyncio.TimeoutError):
-             logger.error("❌ Gemini API Timeout")
+    async def _handle_retry_error(
+        self,
+        error: Exception,
+        attempt: int,
+        on_cache_error: Callable[[], Awaitable[None]],
+        discord_message: Optional[discord.Message]
+    ) -> bool:
+        """Handle retry error and return True if should continue retrying."""
+        # Handle cache errors
+        if self._is_cache_error(error):
+            return await self._handle_cache_error_retry(attempt, on_cache_error)
+
+        # Handle rate limit errors
+        if self._is_rate_limit_error(error):
+            await self._handle_rate_limit_retry(error, attempt, discord_message)
+            return True
+
+        # Handle generic errors
+        logger.error("Gemini API Error (Attempt %s): %s", attempt, error)
+        
+        if attempt >= self.config.api_max_retries:
+            return False
+
+        await asyncio.sleep(self._calculate_backoff(attempt))
+        return True
+
+    async def _handle_cache_error_retry(
+        self,
+        attempt: int,
+        on_cache_error: Callable[[], Awaitable[None]]
+    ) -> bool:
+        """Handle cache error by refreshing session. Returns True if should continue."""
+        logger.warning("Gemini 403 Cache Error (Attempt %s). Refreshing session...", attempt)
+        try:
+            await on_cache_error()
+            return True
+        except Exception as refresh_err:
+            logger.error("Failed to refresh session during cache error handling: %s", refresh_err)
+            return False
+
+    async def _handle_rate_limit_retry(
+        self,
+        error: Exception,
+        attempt: int,
+        discord_message: Optional[discord.Message]
+    ) -> None:
+        """Handle rate limit error with countdown wait."""
+        logger.warning("Gemini Rate Limit (Attempt %s). Waiting...", attempt)
+        delay = self._extract_retry_delay(error) or self.config.api_rate_limit_retry_after
+        await self._wait_with_countdown(delay, discord_message)
+
+    def _calculate_backoff(self, attempt: int) -> float:
+        """Calculate exponential backoff delay."""
+        return min(
+            self.config.api_retry_backoff_base ** attempt,
+            self.config.api_retry_backoff_max,
+        )
+
+    async def _notify_final_error(
+        self,
+        error: Optional[Exception],
+        discord_message: Optional[discord.Message]
+    ) -> None:
+        """Log final error and notify user via Discord."""
+        if isinstance(error, asyncio.TimeoutError):
+            logger.error("❌ Gemini API Timeout")
         else:
-            logger.error("❌ Gemini API Failed after retries: %s", last_error)
+            logger.error("❌ Gemini API Failed after retries: %s", error)
 
         if discord_message:
             try:
@@ -688,4 +748,3 @@ class GeminiService(BaseLLMService):
             except discord.HTTPException:
                 pass
 
-        return None
