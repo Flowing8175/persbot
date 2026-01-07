@@ -13,7 +13,7 @@ from soyebot.bot.session import SessionManager
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
 from soyebot.bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
-from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content
+from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class BaseChatCog(commands.Cog):
 
     async def _handle_error(self, message: discord.Message, error: Exception):
         """Handle errors during processing. Can be overridden."""
-        await message.channel.send(GENERIC_ERROR_MESSAGE)
+        await send_discord_message(message.channel, GENERIC_ERROR_MESSAGE)
 
     async def _handle_break_cut_sending(self, channel_id: int, channel, reply: ChatReply):
         """Helper for sending split responses."""

@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from soyebot.bot.session import SessionManager
 from soyebot.services.model_usage_service import ModelUsageService
+from soyebot.utils import send_discord_message
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +71,12 @@ class ModelSelect(discord.ui.Select):
         # Logic change: Reply to the original !model command message, then delete the embed
         if view.original_message:
             try:
-                await view.original_message.reply(confirmation_text, mention_author=False)
+                await send_discord_message(view.original_message, confirmation_text, mention_author=False)
             except (discord.NotFound, discord.HTTPException):
                 # Fallback if original deleted: reply to interaction (as followup since deferred)
-                await interaction.followup.send(confirmation_text)
+                await send_discord_message(interaction, confirmation_text)
         else:
-             await interaction.followup.send(confirmation_text)
+             await send_discord_message(interaction, confirmation_text)
 
         # Delete the interaction message (the embed with dropdown)
         try:
@@ -110,7 +111,7 @@ class ModelSelectorCog(commands.Cog):
 
         # Pass ctx.message as original_message
         view = ModelSelectorView(self.session_manager, current_alias, original_message=ctx.message)
-        await ctx.reply(
+        await send_discord_message(ctx, 
             f"현재 모델: **{current_alias}**\n변경할 모델을 선택해 주세요.",
             view=view,
             mention_author=False

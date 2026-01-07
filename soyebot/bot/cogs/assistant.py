@@ -17,7 +17,7 @@ from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
 from soyebot.services.base import ChatMessage
 from soyebot.services.prompt_service import PromptService
-from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content
+from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
 
 logger = logging.getLogger(__name__)
 

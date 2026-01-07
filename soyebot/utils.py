@@ -17,7 +17,7 @@ ERROR_INVALID_ARGUMENT = "❌ 잘못된 인자입니다."
 
 logger = logging.getLogger(__name__)
 
-def smart_split(text: str, max_length: int = 2000) -> list[str]:
+def smart_split(text: str, max_length: int = 1900) -> list[str]:
     """
     Intelligently split text into chunks of at most max_length.
     Prefers splitting at double newlines, then single newlines, then spaces.

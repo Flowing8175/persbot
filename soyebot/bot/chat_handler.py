@@ -142,7 +142,7 @@ async def send_split_response(
                 continue
             
             # If a line is too long, smart_split it
-            if len(line) > 2000:
+            if len(line) > 1900:
                 final_lines.extend(smart_split(line))
             else:
                 final_lines.append(line)
