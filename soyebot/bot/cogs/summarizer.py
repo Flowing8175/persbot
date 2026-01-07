@@ -54,16 +54,16 @@ class SummarizerCog(commands.Cog):
 
     @commands.hybrid_command(name="요약", description="채널의 대화 내용을 요약합니다.")
     @app_commands.describe(
-        arg1="시간 (예: '20분') 또는 메시지 ID",
-        arg2="방향 ('이후' 또는 '이전', ID 사용 시)",
-        arg3="범위 시간 (예: '30분', ID/방향 사용 시)"
+        대상="시간 (예: '20분') 또는 메시지 ID",
+        방향="방향 ('이후' 또는 '이전', ID 사용 시)",
+        범위="범위 시간 (예: '30분', ID/방향 사용 시)"
     )
     async def summarize(
         self,
         ctx: commands.Context,
-        arg1: Optional[str] = None,
-        arg2: Optional[Literal["이후", "이전"]] = None,
-        arg3: Optional[str] = None
+        대상: Optional[str] = None,
+        방향: Optional[Literal["이후", "이전"]] = None,
+        범위: Optional[str] = None
     ):
         """
         채널의 대화 내용을 요약합니다.
@@ -76,9 +76,9 @@ class SummarizerCog(commands.Cog):
         """
         # Collect non-None arguments into a tuple to mimic existing logic
         args = []
-        if arg1: args.append(arg1)
-        if arg2: args.append(arg2)
-        if arg3: args.append(arg3)
+        if 대상: args.append(대상)
+        if 방향: args.append(방향)
+        if 범위: args.append(범위)
 
         # Defer immediately to prevent timeout errors
         await ctx.defer()
@@ -105,16 +105,16 @@ class SummarizerCog(commands.Cog):
 
         elif len(args) == 2:
             # !요약 <메시지ID> <이후|이전>
-            arg1, arg2 = args[0], args[1]
-            if not self._is_message_id(arg1):
+            대상, 방향 = args[0], args[1]
+            if not self._is_message_id(대상):
                 await ctx.send(f"❌ 첫 번째 인자는 메시지 ID여야 해요.")
                 return
-            if arg2 not in ["이후", "이전"]:
+            if 방향 not in ["이후", "이전"]:
                 await ctx.send(f"❌ 두 번째 인자는 '이후' 또는 '이전'이어야 합니다.")
                 return
             try:
-                message_id = int(arg1)
-                if arg2 == "이후":
+                message_id = int(대상)
+                if 방향 == "이후":
                     # 메시지 ID 이후부터 최대 길이까지
                     await self.summarize_by_id(ctx, message_id)
                 else:
@@ -124,16 +124,16 @@ class SummarizerCog(commands.Cog):
                 await ctx.send(f"❌ 올바른 메시지 ID를 입력해주세요.")
         elif len(args) >= 3:
             # !요약 <메시지ID> <이후|이전> <시간>
-            arg1, arg2, arg3 = args[0], args[1], args[2]
-            if not self._is_message_id(arg1):
+            대상, 방향, 범위 = args[0], args[1], args[2]
+            if not self._is_message_id(대상):
                 await ctx.send(f"❌ 첫 번째 인자는 메시지 ID여야 해요.")
                 return
-            if arg2 not in ["이후", "이전"]:
+            if 방향 not in ["이후", "이전"]:
                 await ctx.send(f"❌ 두 번째 인자는 '이후' 또는 '이전'이어야 합니다.")
                 return
             try:
-                message_id = int(arg1)
-                await self.summarize_by_range(ctx, message_id, arg2, arg3)
+                message_id = int(대상)
+                await self.summarize_by_range(ctx, message_id, 방향, 범위)
             except ValueError:
                 await ctx.send(f"❌ 올바른 형식을 사용해주세요. 예: `!요약 123456 이후 30분`")
         else:
