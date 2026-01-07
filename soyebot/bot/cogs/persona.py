@@ -306,7 +306,7 @@ class PersonaCog(commands.Cog):
         """프롬프트(페르소나) 관리 UI를 엽니다."""
         view = PromptManagerView(self, ctx)
         embed = view.build_embed()
-        sent_messages = await send_discord_message(ctx, embed=embed, view=view, mention_author=False)
+        sent_messages = await send_discord_message(ctx, "", embed=embed, view=view, mention_author=False)
         if sent_messages:
             view.message = sent_messages[0]
 

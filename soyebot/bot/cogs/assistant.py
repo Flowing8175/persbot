@@ -173,7 +173,7 @@ class AssistantCog(BaseChatCog):
         )
 
         embed.set_footer(text="SoyeBot | Advanced Agentic Coding Assistant")
-        await send_discord_message(ctx, embed=embed)
+        await send_discord_message(ctx, "", embed=embed)
 
     @commands.hybrid_command(name='retry', aliases=['재생성', '다시'], description="마지막 대화를 되돌리고 응답을 다시 생성합니다.")
     async def retry_command(self, ctx: commands.Context):
