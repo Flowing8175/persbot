@@ -62,34 +62,49 @@ async def send_discord_message(target, content: str, **kwargs) -> list[discord.M
     Unified method to send Discord messages with automatic splitting.
     target: discord.abc.Messageable, discord.Message, discord.Interaction, or commands.Context
     """
-    if not content:
+    # If no content and no other sendable items, return empty list
+    if not content and not any(k in kwargs for k in ('embed', 'embeds', 'file', 'files', 'view')):
         return []
 
-    chunks = smart_split(content)
+    chunks = smart_split(content) if content else [""]
     sent_messages = []
 
     # Filter kwargs for specific send methods
     is_reply = isinstance(target, discord.Message)
     mention_author = kwargs.pop("mention_author", False)
     
+    last_index = len(chunks) - 1
+    
     for i, chunk in enumerate(chunks):
+        # Create a copy of kwargs for the current chunk
+        current_kwargs = kwargs.copy()
+        
+        # 1. References/Reply context apply only to the FIRST chunk
+        if i > 0:
+            current_kwargs.pop('reference', None)
+
+        # 2. Visuals/Actions (Embeds, Views, Files) apply only to the LAST chunk for better UX
+        if i < last_index:
+            for key in ['embed', 'embeds', 'view', 'file', 'files', 'delete_after']:
+                current_kwargs.pop(key, None)
+
         try:
             if isinstance(target, discord.Interaction):
                 if i == 0:
                     if target.response.is_done():
-                        msg = await target.followup.send(chunk, **kwargs)
+                        msg = await target.followup.send(chunk, **current_kwargs)
                     else:
-                        await target.response.send_message(chunk, **kwargs)
+                        await target.response.send_message(chunk, **current_kwargs)
                         msg = await target.original_response()
                 else:
-                    msg = await target.followup.send(chunk, **kwargs)
+                    msg = await target.followup.send(chunk, **current_kwargs)
             elif isinstance(target, discord.Message):
                 if i == 0:
-                    msg = await target.reply(chunk, mention_author=mention_author, **kwargs)
+                    msg = await target.reply(chunk, mention_author=mention_author, **current_kwargs)
                 else:
-                    msg = await target.channel.send(chunk, **kwargs)
+                    msg = await target.channel.send(chunk, **current_kwargs)
             elif hasattr(target, "send"): # Context or Messageable
-                msg = await target.send(chunk, **kwargs)
+                msg = await target.send(chunk, **current_kwargs)
             else:
                 logger.error(f"Unsupported target type for send_discord_message: {type(target)}")
                 break
