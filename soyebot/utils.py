@@ -10,6 +10,92 @@ GENERIC_ERROR_MESSAGE = "❌ 봇 내부에서 예상치 못한 오류가 발생�
 
 logger = logging.getLogger(__name__)
 
+def smart_split(text: str, max_length: int = 2000) -> list[str]:
+    """
+    Intelligently split text into chunks of at most max_length.
+    Prefers splitting at double newlines, then single newlines, then spaces.
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    while text:
+        if len(text) <= max_length:
+            chunks.append(text)
+            break
+
+        # Try to find a good split point
+        split_at = -1
+        # 1. Double newline
+        split_at = text.rfind("\n\n", 0, max_length)
+        if split_at != -1:
+            split_at += 2 # Include the newlines in the current chunk or just split after them?
+            # Actually, splitting AFTER the newlines is cleaner.
+        else:
+            # 2. Single newline
+            split_at = text.rfind("\n", 0, max_length)
+            if split_at != -1:
+                split_at += 1
+            else:
+                # 3. Space
+                split_at = text.rfind(" ", 0, max_length)
+                if split_at != -1:
+                    split_at += 1
+                else:
+                    # 4. Hard cut
+                    split_at = max_length
+
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip()
+
+    return chunks
+
+async def send_discord_message(target, content: str, **kwargs) -> list[discord.Message]:
+    """
+    Unified method to send Discord messages with automatic splitting.
+    target: discord.abc.Messageable, discord.Message, discord.Interaction, or commands.Context
+    """
+    if not content:
+        return []
+
+    chunks = smart_split(content)
+    sent_messages = []
+
+    # Filter kwargs for specific send methods
+    is_reply = isinstance(target, discord.Message)
+    mention_author = kwargs.pop("mention_author", False)
+    
+    for i, chunk in enumerate(chunks):
+        try:
+            if isinstance(target, discord.Interaction):
+                if i == 0:
+                    if target.response.is_done():
+                        msg = await target.followup.send(chunk, **kwargs)
+                    else:
+                        await target.response.send_message(chunk, **kwargs)
+                        msg = await target.original_response()
+                else:
+                    msg = await target.followup.send(chunk, **kwargs)
+            elif isinstance(target, discord.Message):
+                if i == 0:
+                    msg = await target.reply(chunk, mention_author=mention_author, **kwargs)
+                else:
+                    msg = await target.channel.send(chunk, **kwargs)
+            elif hasattr(target, "send"): # Context or Messageable
+                msg = await target.send(chunk, **kwargs)
+            else:
+                logger.error(f"Unsupported target type for send_discord_message: {type(target)}")
+                break
+            
+            if msg:
+                sent_messages.append(msg)
+        except Exception as e:
+            logger.error(f"Error sending message chunk {i}: {e}")
+            break
+
+    return sent_messages
+
+
 _TIME_TOKEN_PATTERN = re.compile(r"(\d+)\s*(시간|분)")
 
 

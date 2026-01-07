@@ -17,7 +17,7 @@ from config import AppConfig
 from services.llm_service import LLMService
 from services.base import ChatMessage
 from services.prompt_service import PromptService
-from utils import GENERIC_ERROR_MESSAGE, extract_message_content
+from utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +64,11 @@ class AssistantCog(commands.Cog):
             logger.debug("LLM returned no text response for the mention.")
             return
 
-        # If Break-Cut Mode is OFF, send normally
+        # If Break-Cut Mode is OFF, send normally (with automatic splitting)
         if not self.config.break_cut_mode:
-            reply_message = await message.reply(reply.text, mention_author=False)
-            if reply_message:
-                self.session_manager.link_message_to_session(str(reply_message.id), reply.session_key)
+            sent_messages = await send_discord_message(message, reply.text, mention_author=False)
+            for sent_message in sent_messages:
+                self.session_manager.link_message_to_session(str(sent_message.id), reply.session_key)
             return
 
         # If Break-Cut Mode is ON, use shared helper
@@ -270,7 +270,7 @@ class AssistantCog(commands.Cog):
         )
 
         embed.set_footer(text="SoyeBot | Advanced Agentic Coding Assistant")
-        await ctx.reply(embed=embed, mention_author=False)
+        await send_discord_message(ctx, embed=embed)
 
     @commands.hybrid_command(name='retry', aliases=['재생성', '다시'], description="마지막 대화를 되돌리고 응답을 다시 생성합니다.")
     async def retry_command(self, ctx: commands.Context):

@@ -11,6 +11,7 @@ import asyncio
 import logging
 from soyebot.bot.session import SessionManager, ResolvedSession
 from soyebot.services.llm_service import LLMService
+from soyebot.utils import smart_split
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +132,22 @@ async def send_split_response(
     Handles cancellation by undoing the last exchange in session history.
     """
     try:
-        lines = reply.text.split('\n')
-        for line in lines:
+        # First, split by existing newlines to preserve the "line by line" feel
+        initial_lines = reply.text.split('\n')
+        final_lines = []
+        
+        for line in initial_lines:
+            if not line.strip():
+                final_lines.append("")
+                continue
+            
+            # If a line is too long, smart_split it
+            if len(line) > 2000:
+                final_lines.extend(smart_split(line))
+            else:
+                final_lines.append(line)
+
+        for line in final_lines:
             if not line.strip():
                 continue
 

@@ -16,7 +16,7 @@ from soyebot.bot.session import SessionManager
 from soyebot.bot.buffer import MessageBuffer
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
-from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content
+from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +125,11 @@ class AutoChannelCog(commands.Cog):
             logger.debug("LLM returned no text response for the auto-reply message.")
             return
 
-        # If Break-Cut Mode is OFF, send normally
+        # If Break-Cut Mode is OFF, send normally (with automatic splitting)
         if not self.config.break_cut_mode:
-            sent_message = await message.channel.send(reply.text)
-            if sent_message:
-                self.session_manager.link_message_to_session(str(sent_message.id), reply.session_key)
+            sent_messages = await send_discord_message(message.channel, reply.text)
+            for sent_msg in sent_messages:
+                self.session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
             return
 
         # If Break-Cut Mode is ON, use shared helper

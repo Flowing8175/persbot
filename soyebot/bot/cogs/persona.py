@@ -12,6 +12,7 @@ from config import AppConfig
 from services.llm_service import LLMService
 from services.prompt_service import PromptService
 from bot.session import SessionManager
+from utils import send_discord_message
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +81,10 @@ class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
     async def on_submit(self, interaction: discord.Interaction):
         cog = self.view_ref.cog
         if cog.prompt_service.rename_prompt(self.index, self.new_name.value):
-            await interaction.response.send_message(f"✅ **{self.new_name.value}**로 변경되었습니다.", ephemeral=False)
+            await send_discord_message(interaction, f"✅ **{self.new_name.value}**로 변경되었습니다.", ephemeral=False)
             await self.view_ref.refresh_view(interaction)
         else:
-            await interaction.response.send_message("❌ 변경 실패.", ephemeral=False)
+            await send_discord_message(interaction, "❌ 변경 실패.", ephemeral=False)
 
 class PromptManagerView(discord.ui.View):
     def __init__(self, cog: "PersonaCog", ctx: commands.Context):
@@ -196,16 +197,16 @@ class PromptManagerView(discord.ui.View):
 
     async def on_new(self, interaction: discord.Interaction):
         if not self.cog.prompt_service.check_today_limit(interaction.user.id):
-            await interaction.response.send_message("❌ 오늘 생성 한도(2개)를 모두 사용하셨습니다. 내일 다시 시도해 주세요.", ephemeral=True)
+            await send_discord_message(interaction, "❌ 오늘 생성 한도(2개)를 모두 사용하셨습니다. 내일 다시 시도해 주세요.", ephemeral=True)
             return
         await interaction.response.send_modal(PromptCreateModal(self))
 
     async def on_file_add(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
+            await send_discord_message(interaction, "❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
             return
 
-        await interaction.response.send_message("📂 프롬프트로 사용할 `.txt` 파일을 이 채널에 업로드해 주세요. (60초 대기)", ephemeral=True)
+        await send_discord_message(interaction, "📂 프롬프트로 사용할 `.txt` 파일을 이 채널에 업로드해 주세요. (60초 대기)", ephemeral=True)
 
         def check(m):
             return (
@@ -219,7 +220,7 @@ class PromptManagerView(discord.ui.View):
 
             attachment = msg.attachments[0]
             if not attachment.filename.lower().endswith('.txt'):
-                await interaction.followup.send("❌ `.txt` 파일만 지원합니다.", ephemeral=True)
+                await send_discord_message(interaction, "❌ `.txt` 파일만 지원합니다.", ephemeral=True)
                 return
 
             # Read content
@@ -227,24 +228,24 @@ class PromptManagerView(discord.ui.View):
                 content_bytes = await attachment.read()
                 content_str = content_bytes.decode('utf-8')
             except UnicodeDecodeError:
-                await interaction.followup.send("❌ 파일 인코딩 오류: UTF-8 형식이 아닙니다. [변환](https://localizely.com/text-encoding-converter/) 후 업로드해주세요.", ephemeral=True)
+                await send_discord_message(interaction, "❌ 파일 인코딩 오류: UTF-8 형식이 아닙니다. [변환](https://localizely.com/text-encoding-converter/) 후 업로드해주세요.", ephemeral=True)
                 return
             except Exception as e:
                 logger.error(f"File read error: {e}")
-                await interaction.followup.send(f"❌ 파일 읽기 오류: {e}", ephemeral=True)
+                await send_discord_message(interaction, f"❌ 파일 읽기 오류: {e}", ephemeral=True)
                 return
 
             name = attachment.filename.rsplit('.', 1)[0]
             idx = self.cog.prompt_service.add_prompt(name, content_str)
 
-            await interaction.followup.send(f"✅ 새 페르소나 **'{name}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=False)
+            await send_discord_message(interaction, f"✅ 새 페르소나 **'{name}'**이(가) 추가되었습니다! (인덱스: {idx})", ephemeral=False)
             await self.refresh_view(interaction)
 
             # Optional: Delete the user's upload message to keep channel clean?
             # await msg.delete() # Might be annoying if user wants to keep it. Leaving it.
 
         except asyncio.TimeoutError:
-            await interaction.followup.send("⏳ 시간 초과: 파일 업로드가 취소되었습니다.", ephemeral=True)
+            await send_discord_message(interaction, "⏳ 시간 초과: 파일 업로드가 취소되었습니다.", ephemeral=True)
 
     async def on_apply(self, interaction: discord.Interaction):
         if self.selected_index is not None:
@@ -264,7 +265,7 @@ class PromptManagerView(discord.ui.View):
 
     async def on_delete(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
+            await send_discord_message(interaction, "❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
             return
         if self.selected_index is not None:
             p = self.cog.prompt_service.get_prompt(self.selected_index)
@@ -305,8 +306,9 @@ class PersonaCog(commands.Cog):
         """프롬프트(페르소나) 관리 UI를 엽니다."""
         view = PromptManagerView(self, ctx)
         embed = view.build_embed()
-        msg = await ctx.reply(embed=embed, view=view, mention_author=False)
-        view.message = msg
+        sent_messages = await send_discord_message(ctx, embed=embed, view=view, mention_author=False)
+        if sent_messages:
+            view.message = sent_messages[0]
 
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
         """Cog 내 명령어 에러 핸들러"""
