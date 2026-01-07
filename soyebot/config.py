@@ -95,6 +95,7 @@ class AppConfig:
     session_inactive_minutes: int = 30
     message_buffer_delay: float = 0.1
     break_cut_mode: bool = True
+    no_check_permission: bool = False
 
 def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
@@ -283,4 +284,5 @@ def load_config() -> AppConfig:
         gemini_cache_ttl_minutes=_parse_int_env('GEMINI_CACHE_TTL_MINUTES', 60),
         thinking_budget=thinking_budget,
         max_history=max_history,
+        no_check_permission=os.environ.get('NO_CHECK_PERMISSION', '').lower() in ('true', '1', 'yes'),
     )

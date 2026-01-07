@@ -296,9 +296,14 @@ class AssistantCog(BaseChatCog):
         return cancelled
 
     @commands.hybrid_command(name='abort', aliases=['중단', '멈춰'], description="진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다.")
-    @commands.has_permissions(manage_guild=True)
     async def abort_command(self, ctx: commands.Context):
         """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.config.no_check_permission:
+            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
+                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+                return
+        
         channel_id = ctx.channel.id
         
         # Cancel tasks in both cogs
@@ -342,9 +347,14 @@ class AssistantCog(BaseChatCog):
 
     @commands.hybrid_command(name='temp', description="LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0).")
     @app_commands.describe(value="설정할 Temperature 값 (0.0~2.0)")
-    @commands.has_permissions(manage_guild=True)
     async def set_temperature(self, ctx: commands.Context, value: Optional[float] = None):
         """LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0)."""
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.config.no_check_permission:
+            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
+                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+                return
+        
         if value is None:
             current_temp = getattr(self.config, 'temperature', 1.0)
             await ctx.reply(f"🌡️ 현재 Temperature: {current_temp}", mention_author=False)
@@ -366,9 +376,14 @@ class AssistantCog(BaseChatCog):
 
     @commands.hybrid_command(name='topp', description="LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0).")
     @app_commands.describe(value="설정할 Top-P 값 (0.0~1.0)")
-    @commands.has_permissions(manage_guild=True)
     async def set_top_p(self, ctx: commands.Context, value: Optional[float] = None):
         """LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0)."""
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.config.no_check_permission:
+            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
+                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+                return
+        
         if value is None:
             current_top_p = getattr(self.config, 'top_p', 1.0)
             await ctx.reply(f"📊 현재 Top-p: {current_top_p}", mention_author=False)
@@ -409,9 +424,14 @@ class AssistantCog(BaseChatCog):
 
     @commands.hybrid_command(name='생각', aliases=['think'], description="Gemini Thinking Budget를 설정합니다.")
     @app_commands.describe(value="숫자(512~32768), 'auto', 또는 'off'")
-    @commands.has_permissions(manage_guild=True)
     async def set_thinking_budget(self, ctx: commands.Context, value: Optional[str] = None):
         """Gemini Thinking Budget를 설정합니다."""
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.config.no_check_permission:
+            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
+                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+                return
+        
         if value is None:
             current = getattr(self.config, 'thinking_budget', None)
             if current is None:

@@ -202,9 +202,11 @@ class PromptManagerView(discord.ui.View):
         await interaction.response.send_modal(PromptCreateModal(self))
 
     async def on_file_add(self, interaction: discord.Interaction):
-        if not interaction.user.guild_permissions.manage_guild:
-            await send_discord_message(interaction, "❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
-            return
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.cog.config.no_check_permission:
+            if not interaction.user.guild_permissions.manage_guild:
+                await send_discord_message(interaction, "❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
+                return
 
         await send_discord_message(interaction, "📂 프롬프트로 사용할 `.txt` 파일을 이 채널에 업로드해 주세요. (60초 대기)", ephemeral=True)
 
@@ -264,9 +266,11 @@ class PromptManagerView(discord.ui.View):
                  await interaction.response.send_modal(PromptRenameModal(self, self.selected_index, p['name']))
 
     async def on_delete(self, interaction: discord.Interaction):
-        if not interaction.user.guild_permissions.manage_guild:
-            await send_discord_message(interaction, "❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
-            return
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.cog.config.no_check_permission:
+            if not interaction.user.guild_permissions.manage_guild:
+                await send_discord_message(interaction, "❌ 이 기능을 사용할 권한(서버 관리)이 없습니다.", ephemeral=True)
+                return
         if self.selected_index is not None:
             p = self.cog.prompt_service.get_prompt(self.selected_index)
             if p:

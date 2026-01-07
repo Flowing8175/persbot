@@ -255,6 +255,9 @@ class LLMService:
     def _check_image_usage_limit(self, author, image_count: int) -> Optional[tuple]:
         """Check if user can upload images. Returns error tuple or None if allowed."""
         is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        # Bypass permission check if NO_CHECK_PERMISSION is set
+        if self.config.no_check_permission:
+            is_admin = True
         if is_admin:
             return None
         if not self.image_usage_service.check_can_upload(author.id, image_count, limit=3):
@@ -264,6 +267,9 @@ class LLMService:
     async def _record_image_usage_if_needed(self, author, image_count: int) -> None:
         """Record image usage for non-admin users."""
         is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        # Bypass permission check if NO_CHECK_PERMISSION is set
+        if self.config.no_check_permission:
+            is_admin = True
         if not is_admin:
             await self.image_usage_service.record_upload(author.id, image_count)
 

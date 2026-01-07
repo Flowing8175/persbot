@@ -76,13 +76,16 @@ class AutoChannelCog(BaseChatCog):
             logger.error(f"Failed to save auto channels to {self.json_file_path}: {e}")
 
     @commands.group(name="자동채널", aliases=["auto"], invoke_without_command=True)
-    @commands.has_permissions(manage_guild=True)
     async def auto_channel_group(self, ctx: commands.Context):
         """자동 응답 채널 설정 관리 명령어"""
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.config.no_check_permission:
+            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
+                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+                return
         await ctx.send_help(ctx.command)
 
     @auto_channel_group.command(name="등록", aliases=["register", "add"])
-    @commands.has_permissions(manage_guild=True)
     async def register_channel(self, ctx: commands.Context):
         """현재 채널을 자동 응답 채널로 등록합니다."""
         channel_id = ctx.channel.id
@@ -96,7 +99,6 @@ class AutoChannelCog(BaseChatCog):
         await ctx.message.add_reaction("✅")
 
     @auto_channel_group.command(name="해제", aliases=["unregister", "remove"])
-    @commands.has_permissions(manage_guild=True)
     async def unregister_channel(self, ctx: commands.Context):
         """현재 채널을 자동 응답 채널에서 해제합니다."""
         channel_id = ctx.channel.id
@@ -268,6 +270,9 @@ class AutoChannelCog(BaseChatCog):
             )
 
         is_admin = isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.manage_guild
+        # Bypass permission check if NO_CHECK_PERMISSION is set
+        if self.config.no_check_permission:
+            is_admin = True
         return is_admin or user_message_count >= 5
 
     async def _delete_removed_messages(self, channel, removed_messages: list) -> None:
