@@ -68,7 +68,7 @@ class AppConfig:
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     zai_api_key: Optional[str] = None
-    zai_base_url: str = "https://api.z.ai/v1"
+    zai_base_url: str = "https://api.z.ai/api/paas/v4/"
     assistant_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
     summarizer_model_name: str = DEFAULT_GEMINI_SUMMARY_MODEL
     max_messages_per_fetch: int = 300
@@ -242,7 +242,7 @@ def load_config() -> AppConfig:
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     zai_api_key = os.environ.get("ZAI_API_KEY")
-    zai_base_url = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/v1")
+    zai_base_url = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/paas/v4/")
     service_tier = os.environ.get("SERVICE_TIER", "flex")
 
     # Provider별 설정 (어시스턴트/요약 분리)
