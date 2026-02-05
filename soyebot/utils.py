@@ -100,7 +100,15 @@ async def send_discord_message(target, content: str, **kwargs) -> list[discord.M
                     msg = await target.followup.send(chunk, **current_kwargs)
             elif isinstance(target, discord.Message):
                 if i == 0:
-                    msg = await target.reply(chunk, mention_author=mention_author, **current_kwargs)
+                    try:
+                        msg = await target.reply(chunk, mention_author=mention_author, **current_kwargs)
+                    except (discord.NotFound, discord.HTTPException) as reply_error:
+                        # Message was deleted or can't be replied to, fall back to channel send
+                        if "Unknown message" in str(reply_error):
+                            logger.debug(f"Original message not found, sending to channel instead")
+                            msg = await target.channel.send(chunk, **current_kwargs)
+                        else:
+                            raise
                 else:
                     msg = await target.channel.send(chunk, **current_kwargs)
             elif hasattr(target, "send"): # Context or Messageable
@@ -108,7 +116,7 @@ async def send_discord_message(target, content: str, **kwargs) -> list[discord.M
             else:
                 logger.error(f"Unsupported target type for send_discord_message: {type(target)}")
                 break
-            
+
             if msg:
                 sent_messages.append(msg)
         except Exception as e:

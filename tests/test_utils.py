@@ -287,6 +287,43 @@ class TestSendDiscordMessage:
         second_call_kwargs = target.send.call_args_list[1][1]
         assert "reference" not in second_call_kwargs
 
+    async def test_message_target_reply_fallback_on_unknown_message(self):
+        """Test fallback to channel.send when reply fails with 'Unknown message'."""
+        target = MagicMock(spec=discord.Message)
+        mock_channel_msg = MagicMock()
+        mock_channel_msg.id = 789
+
+        # Simulate discord.NotFound with "Unknown message" error
+        target.reply = AsyncMock(
+            side_effect=discord.NotFound(
+                MagicMock(status=400), "Unknown message"
+            )
+        )
+        target.channel.send = AsyncMock(return_value=mock_channel_msg)
+
+        result = await send_discord_message(target, "Reply text")
+        assert len(result) == 1
+        assert result[0].id == 789
+        # Should have tried reply first, then fallen back to channel.send
+        target.reply.assert_called_once()
+        target.channel.send.assert_called_once_with("Reply text")
+
+    async def test_message_target_non_unknown_error_logs_and_stops(self):
+        """Test that non-'Unknown message' errors are logged and stop processing."""
+        target = MagicMock(spec=discord.Message)
+
+        # Simulate a different NotFound error (not "Unknown message")
+        # The function logs the error and returns empty list, it doesn't propagate
+        target.reply = AsyncMock(
+            side_effect=discord.NotFound(
+                MagicMock(status=404), "Some other error"
+            )
+        )
+
+        result = await send_discord_message(target, "Reply text")
+        # Error is logged and processing stops, returning empty list
+        assert len(result) == 0
+
 
 # =============================================================================
 # Tests for extract_message_content()
