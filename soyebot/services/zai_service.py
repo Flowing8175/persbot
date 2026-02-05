@@ -140,6 +140,28 @@ class ZAIChatSession:
 
         return messages
 
+    def generate_content(self, prompt: str):
+        """Generate content for a single prompt without history (for meta-prompt generation)."""
+        messages = []
+
+        # Add system instruction
+        if self._system_instruction:
+            messages.append({"role": "system", "content": self._system_instruction})
+
+        # Add user prompt
+        messages.append({"role": "user", "content": prompt})
+
+        # Call API
+        response = self._client.chat.completions.create(
+            model=self._model_name,
+            messages=messages,
+            temperature=self._temperature,
+            top_p=self._top_p,
+        )
+
+        # Extract and return response content
+        return self._text_extractor(response)
+
     def send_message(
         self,
         user_message: str,
