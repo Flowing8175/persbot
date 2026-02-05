@@ -185,7 +185,7 @@ class ZAIService(BaseLLMService):
         super().__init__(config)
         # Initialize OpenAI client with Z.AI base URL
         self.client = OpenAI(
-            api_key=config.zhipu_api_key,
+            api_key=config.zai_api_key,
             base_url=config.zai_base_url,
         )
         self._assistant_cache: dict[int, ZAIChatSession] = {}
