@@ -54,6 +54,8 @@ DEFAULT_GEMINI_ASSISTANT_MODEL = "gemini-2.5-flash-lite"
 DEFAULT_GEMINI_SUMMARY_MODEL = "gemini-2.5-pro"
 DEFAULT_OPENAI_ASSISTANT_MODEL = "gpt-5-mini"
 DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-5-mini"
+DEFAULT_ZAI_ASSISTANT_MODEL = "zai-coding-plan"
+DEFAULT_ZAI_SUMMARY_MODEL = "zai-coding-plan"
 
 
 @dataclass
@@ -65,6 +67,8 @@ class AppConfig:
     summarizer_llm_provider: str = "gemini"
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    zai_api_key: Optional[str] = None
+    zai_base_url: str = "https://api.z.ai/v1"
     assistant_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
     summarizer_model_name: str = DEFAULT_GEMINI_SUMMARY_MODEL
     max_messages_per_fetch: int = 300
@@ -109,9 +113,9 @@ def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
 
 
 def _validate_provider(provider: str) -> str:
-    if provider not in {"gemini", "openai"}:
+    if provider not in {"gemini", "openai", "zai"}:
         logger.error(
-            "에러: LLM 공급자는 'gemini' 또는 'openai'여야 합니다. (입력값: %s)",
+            "에러: LLM 공급자는 'gemini', 'openai' 또는 'zai'여야 합니다. (입력값: %s)",
             provider,
         )
         sys.exit(1)
@@ -193,7 +197,7 @@ def _parse_auto_channel_ids() -> Tuple[int, ...]:
 
 
 def _resolve_model_name(provider: str, *, role: str) -> str:
-    """Return the model name for the given provider/role using clear priority.
+    """Return model name for given provider/role using clear priority.
 
     Priority order:
     1. Role-specific override (e.g., OPENAI_ASSISTANT_MODEL_NAME)
@@ -209,6 +213,16 @@ def _resolve_model_name(provider: str, *, role: str) -> str:
         return (
             _first_nonempty_env("OPENAI_SUMMARY_MODEL_NAME")
             or DEFAULT_OPENAI_SUMMARY_MODEL
+        )
+
+    if provider == "zai":
+        if role == "assistant":
+            return (
+                _first_nonempty_env("ZAI_ASSISTANT_MODEL_NAME")
+                or DEFAULT_ZAI_ASSISTANT_MODEL
+            )
+        return (
+            _first_nonempty_env("ZAI_SUMMARY_MODEL_NAME") or DEFAULT_ZAI_SUMMARY_MODEL
         )
 
     # Gemini
@@ -227,6 +241,8 @@ def load_config() -> AppConfig:
     discord_token = os.environ.get("DISCORD_TOKEN")
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
+    zai_api_key = os.environ.get("ZAI_API_KEY")
+    zai_base_url = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/v1")
     service_tier = os.environ.get("SERVICE_TIER", "flex")
 
     # Provider별 설정 (어시스턴트/요약 분리)
@@ -276,6 +292,12 @@ def load_config() -> AppConfig:
         logger.error("에러: OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 
+    uses_zai = "zai" in {assistant_llm_provider, summarizer_llm_provider}
+
+    if uses_zai and not zai_api_key:
+        logger.error("에러: ZAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+        sys.exit(1)
+
     # Parse simple environment values using helpers
     auto_reply_channel_ids = _parse_auto_channel_ids()
     message_buffer_delay = _parse_float_env("MESSAGE_BUFFER_DELAY", 2.5)
@@ -298,6 +320,8 @@ def load_config() -> AppConfig:
         summarizer_llm_provider=summarizer_llm_provider,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
+        zai_api_key=zai_api_key,
+        zai_base_url=zai_base_url,
         assistant_model_name=assistant_model_name,
         summarizer_model_name=summarizer_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,

@@ -7,6 +7,7 @@ from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService
 from soyebot.services.gemini_service import GeminiService
 from soyebot.services.openai_service import OpenAIService
+from soyebot.services.zai_service import ZAIService
 from soyebot.services.prompt_service import PromptService
 from soyebot.services.usage_service import ImageUsageService
 from soyebot.services.model_usage_service import ModelUsageService
@@ -28,13 +29,17 @@ class LLMService:
         # Cache for lazy-loaded auxiliary backends (e.g. OpenAI when Gemini is default)
         self._aux_backends = {}
 
-        assistant_provider = (config.assistant_llm_provider or 'gemini').lower()
-        summarizer_provider = (config.summarizer_llm_provider or assistant_provider).lower()
+        assistant_provider = (config.assistant_llm_provider or "gemini").lower()
+        summarizer_provider = (
+            config.summarizer_llm_provider or assistant_provider
+        ).lower()
 
         self.assistant_backend = self._create_backend(
             assistant_provider,
             assistant_model_name=config.assistant_model_name,
-            summary_model_name=config.summarizer_model_name if assistant_provider == summarizer_provider else None,
+            summary_model_name=config.summarizer_model_name
+            if assistant_provider == summarizer_provider
+            else None,
         )
 
         if assistant_provider == summarizer_provider:
@@ -46,10 +51,18 @@ class LLMService:
                 summary_model_name=config.summarizer_model_name,
             )
 
-        provider_label = 'OpenAI' if assistant_provider == 'openai' else 'Gemini'
+        provider_label = (
+            "OpenAI"
+            if assistant_provider == "openai"
+            else "Z.AI"
+            if assistant_provider == "zai"
+            else "Gemini"
+        )
         self.provider_label = provider_label
         logger.info(
-            "LLM provider 설정: assistant=%s, summarizer=%s", assistant_provider, summarizer_provider
+            "LLM provider 설정: assistant=%s, summarizer=%s",
+            assistant_provider,
+            summarizer_provider,
         )
 
     def _create_backend(
@@ -59,18 +72,31 @@ class LLMService:
         assistant_model_name: str,
         summary_model_name: Optional[str] = None,
     ):
-        if provider == 'openai':
+        if provider == "openai":
             return OpenAIService(
                 self.config,
                 assistant_model_name=assistant_model_name,
                 summary_model_name=summary_model_name,
-                prompt_service=self.prompt_service
+                prompt_service=self.prompt_service,
+            )
+        if provider == "zai":
+            return ZAIService(
+                self.config,
+                assistant_model_name=assistant_model_name,
+                summary_model_name=summary_model_name,
+                prompt_service=self.prompt_service,
             )
         return GeminiService(
             self.config,
             assistant_model_name=assistant_model_name,
             summary_model_name=summary_model_name,
-            prompt_service=self.prompt_service
+            prompt_service=self.prompt_service,
+        )
+        return GeminiService(
+            self.config,
+            assistant_model_name=assistant_model_name,
+            summary_model_name=summary_model_name,
+            prompt_service=self.prompt_service,
         )
 
     def get_backend_for_model(self, model_alias: str) -> Optional[BaseLLMService]:
@@ -80,10 +106,16 @@ class LLMService:
         """
         # Resolve target provider
         target_def = self.model_usage_service.MODEL_DEFINITIONS.get(model_alias)
-        target_provider = target_def.provider if target_def else 'gemini'
+        target_provider = target_def.provider if target_def else "gemini"
 
         # Check current assistant backend
-        current_provider = 'openai' if isinstance(self.assistant_backend, OpenAIService) else 'gemini'
+        current_provider = (
+            "openai"
+            if isinstance(self.assistant_backend, OpenAIService)
+            else "zai"
+            if isinstance(self.assistant_backend, ZAIService)
+            else "gemini"
+        )
 
         if target_provider == current_provider:
             return self.assistant_backend
@@ -96,20 +128,40 @@ class LLMService:
         # We initialize with the specific model requested, though services should handle dynamic models
         api_model_name = self.model_usage_service.get_api_model_name(model_alias)
 
-        if target_provider == 'openai':
+        if target_provider == "openai":
             if not self.config.openai_api_key:
                 logger.warning("OpenAI API key missing, cannot switch to OpenAI model.")
                 return None
-            service = OpenAIService(self.config, assistant_model_name=api_model_name, prompt_service=self.prompt_service)
-            self._aux_backends['openai'] = service
+            service = OpenAIService(
+                self.config,
+                assistant_model_name=api_model_name,
+                prompt_service=self.prompt_service,
+            )
+            self._aux_backends["openai"] = service
             return service
 
-        elif target_provider == 'gemini':
+        elif target_provider == "gemini":
             if not self.config.gemini_api_key:
                 logger.warning("Gemini API key missing, cannot switch to Gemini model.")
                 return None
-            service = GeminiService(self.config, assistant_model_name=api_model_name, prompt_service=self.prompt_service)
-            self._aux_backends['gemini'] = service
+            service = GeminiService(
+                self.config,
+                assistant_model_name=api_model_name,
+                prompt_service=self.prompt_service,
+            )
+            self._aux_backends["gemini"] = service
+            return service
+
+        elif target_provider == "zai":
+            if not self.config.zai_api_key:
+                logger.warning("Z.AI API key missing, cannot switch to Z.AI model.")
+                return None
+            service = ZAIService(
+                self.config,
+                assistant_model_name=api_model_name,
+                prompt_service=self.prompt_service,
+            )
+            self._aux_backends["zai"] = service
             return service
 
         return None
@@ -119,7 +171,9 @@ class LLMService:
         backend = self.get_backend_for_model(model_alias)
         if not backend:
             # Fallback to default if backend unavailable
-            logger.warning(f"Backend unavailable for alias {model_alias}. Falling back to default assistant backend.")
+            logger.warning(
+                f"Backend unavailable for alias {model_alias}. Falling back to default assistant backend."
+            )
             backend = self.assistant_backend
 
         # We need to make sure the backend uses the correct model name for session creation
@@ -155,13 +209,15 @@ class LLMService:
             return model.start_chat(system_instruction)
 
         model = backend.create_assistant_model(system_instruction)
-        if hasattr(model, 'start_chat'):
+        if hasattr(model, "start_chat"):
             return model.start_chat(system_instruction)
         return model
 
     def create_assistant_model(self, system_instruction: str, use_cache: bool = True):
         # Legacy method delegating to default backend
-        return self.assistant_backend.create_assistant_model(system_instruction, use_cache=use_cache)
+        return self.assistant_backend.create_assistant_model(
+            system_instruction, use_cache=use_cache
+        )
 
     async def summarize_text(self, text: str):
         return await self.summarizer_backend.summarize_text(text)
@@ -171,16 +227,18 @@ class LLMService:
         # Use a powerful model for this task (usually the summarizer or assistant model)
         # We'll create a temporary model instance with the META_PROMPT
         # Disable caching for the meta prompt generation itself
-        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
-        
-        if hasattr(self.summarizer_backend, 'assistant_model'):
-             # Create meta model
-             result = await self.summarizer_backend.execute_with_retry(
-                 lambda: meta_model.generate_content(concept),
-                 "프롬프트 생성",
-                 timeout=60.0
-             )
-             return result
+        meta_model = self.summarizer_backend.create_assistant_model(
+            META_PROMPT, use_cache=False
+        )
+
+        if hasattr(self.summarizer_backend, "assistant_model"):
+            # Create meta model
+            result = await self.summarizer_backend.execute_with_retry(
+                lambda: meta_model.generate_content(concept),
+                "프롬프트 생성",
+                timeout=60.0,
+            )
+            return result
         return None
 
     async def generate_chat_response(
@@ -191,11 +249,19 @@ class LLMService:
         use_summarizer_backend: bool = False,
     ):
         # Extract message metadata
-        model_alias = getattr(chat_session, 'model_alias', self.model_usage_service.DEFAULT_MODEL_ALIAS)
-        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(discord_message)
+        model_alias = getattr(
+            chat_session, "model_alias", self.model_usage_service.DEFAULT_MODEL_ALIAS
+        )
+        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(
+            discord_message
+        )
 
         # Check and update usage
-        is_allowed, final_alias, notification = await self.model_usage_service.check_and_increment_usage(
+        (
+            is_allowed,
+            final_alias,
+            notification,
+        ) = await self.model_usage_service.check_and_increment_usage(
             guild_id, model_alias
         )
         if final_alias != model_alias:
@@ -206,8 +272,12 @@ class LLMService:
 
         # Get backend and model name
         api_model_name = self.model_usage_service.get_api_model_name(final_alias)
-        active_backend = self.summarizer_backend if use_summarizer_backend else self.get_backend_for_model(final_alias)
-        
+        active_backend = (
+            self.summarizer_backend
+            if use_summarizer_backend
+            else self.get_backend_for_model(final_alias)
+        )
+
         if not active_backend:
             return ("❌ 선택한 모델을 사용할 수 없습니다 (Provider 설정 오류).", None)
 
@@ -245,8 +315,15 @@ class LLMService:
 
     def _count_images_in_message(self, discord_message) -> int:
         """Count image attachments in message(s)."""
+
         def count_in_msg(msg):
-            return len([a for a in msg.attachments if a.content_type and a.content_type.startswith('image/')])
+            return len(
+                [
+                    a
+                    for a in msg.attachments
+                    if a.content_type and a.content_type.startswith("image/")
+                ]
+            )
 
         if isinstance(discord_message, list):
             return sum(count_in_msg(msg) for msg in discord_message)
@@ -254,26 +331,34 @@ class LLMService:
 
     def _check_image_usage_limit(self, author, image_count: int) -> Optional[tuple]:
         """Check if user can upload images. Returns error tuple or None if allowed."""
-        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        is_admin = (
+            isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        )
         # Bypass permission check if NO_CHECK_PERMISSION is set
         if self.config.no_check_permission:
             is_admin = True
         if is_admin:
             return None
-        if not self.image_usage_service.check_can_upload(author.id, image_count, limit=3):
+        if not self.image_usage_service.check_can_upload(
+            author.id, image_count, limit=3
+        ):
             return ("❌ 이미지는 하루에 최대 3개 업로드하실 수 있습니다.", None)
         return None
 
     async def _record_image_usage_if_needed(self, author, image_count: int) -> None:
         """Record image usage for non-admin users."""
-        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        is_admin = (
+            isinstance(author, discord.Member) and author.guild_permissions.manage_guild
+        )
         # Bypass permission check if NO_CHECK_PERMISSION is set
         if self.config.no_check_permission:
             is_admin = True
         if not is_admin:
             await self.image_usage_service.record_upload(author.id, image_count)
 
-    def _prepare_response_with_notification(self, response, notification: Optional[str]):
+    def _prepare_response_with_notification(
+        self, response, notification: Optional[str]
+    ):
         """Prepend notification to response if exists."""
         if response and notification:
             text, obj = response
@@ -292,7 +377,9 @@ class LLMService:
         self,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
-        thinking_budget: Optional[Optional[int]] = -1 # Special default for "not provided"
+        thinking_budget: Optional[
+            Optional[int]
+        ] = -1,  # Special default for "not provided"
     ) -> None:
         """Update model parameters and reload backends."""
         if temperature is not None:
@@ -303,18 +390,23 @@ class LLMService:
             self.config.thinking_budget = thinking_budget
 
         # Reload backends to pick up new config
-        if hasattr(self.assistant_backend, 'reload_parameters'):
+        if hasattr(self.assistant_backend, "reload_parameters"):
             self.assistant_backend.reload_parameters()
 
         # Only reload summarizer if it's a different instance (though reload is safe either way)
-        if (self.summarizer_backend is not self.assistant_backend and
-            hasattr(self.summarizer_backend, 'reload_parameters')):
+        if self.summarizer_backend is not self.assistant_backend and hasattr(
+            self.summarizer_backend, "reload_parameters"
+        ):
             self.summarizer_backend.reload_parameters()
 
         # Also reload auxiliary services if they exist
         for key, backend in self._aux_backends.items():
-            if hasattr(backend, 'reload_parameters'):
+            if hasattr(backend, "reload_parameters"):
                 backend.reload_parameters()
 
-        logger.info("Updated parameters: temperature=%s, top_p=%s, thinking_budget=%s", 
-                    self.config.temperature, self.config.top_p, self.config.thinking_budget)
+        logger.info(
+            "Updated parameters: temperature=%s, top_p=%s, thinking_budget=%s",
+            self.config.temperature,
+            self.config.top_p,
+            self.config.thinking_budget,
+        )
