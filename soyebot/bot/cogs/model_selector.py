@@ -16,7 +16,12 @@ logger = logging.getLogger(__name__)
 class ModelSelectorView(discord.ui.View):
     """View containing the model selection dropdown."""
 
-    def __init__(self, session_manager: SessionManager, current_model: str, original_message: Optional[discord.Message] = None):
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        current_model: str,
+        original_message: Optional[discord.Message] = None,
+    ):
         super().__init__(timeout=60)
         self.session_manager = session_manager
         self.original_message = original_message
@@ -33,12 +38,18 @@ class ModelSelectorView(discord.ui.View):
             # Scope updated to '서버' (Guild)
             desc = f"1일 한도: {definition.daily_limit}회 (서버 공통)"
 
-            options.append(discord.SelectOption(
-                label=alias,
-                description=desc,
-                default=(alias == current_model),
-                emoji="🤖" if definition.provider == "gemini" else "🧠"
-            ))
+            options.append(
+                discord.SelectOption(
+                    label=alias,
+                    description=desc,
+                    default=(alias == current_model),
+                    emoji="🤖"
+                    if definition.provider == "gemini"
+                    else "⚡"
+                    if definition.provider == "zai"
+                    else "🧠",
+                )
+            )
 
         self.add_item(ModelSelect(options))
 
@@ -51,7 +62,7 @@ class ModelSelect(discord.ui.Select):
             placeholder="모델을 선택하세요...",
             min_values=1,
             max_values=1,
-            options=options
+            options=options,
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -71,12 +82,14 @@ class ModelSelect(discord.ui.Select):
         # Logic change: Reply to the original !model command message, then delete the embed
         if view.original_message:
             try:
-                await send_discord_message(view.original_message, confirmation_text, mention_author=False)
+                await send_discord_message(
+                    view.original_message, confirmation_text, mention_author=False
+                )
             except (discord.NotFound, discord.HTTPException):
                 # Fallback if original deleted: reply to interaction (as followup since deferred)
                 await send_discord_message(interaction, confirmation_text)
         else:
-             await send_discord_message(interaction, confirmation_text)
+            await send_discord_message(interaction, confirmation_text)
 
         # Delete the interaction message (the embed with dropdown)
         try:
@@ -93,7 +106,9 @@ class ModelSelectorCog(commands.Cog):
         self.bot = bot
         self.session_manager = session_manager
 
-    @commands.hybrid_command(name='model', aliases=['모델'], description="사용할 AI 모델을 선택합니다.")
+    @commands.hybrid_command(
+        name="model", aliases=["모델"], description="사용할 AI 모델을 선택합니다."
+    )
     async def model_command(self, ctx: commands.Context):
         """사용할 AI 모델을 선택합니다."""
 
@@ -107,12 +122,17 @@ class ModelSelectorCog(commands.Cog):
             if ctx_alias:
                 current_alias = ctx_alias
         elif ctx.channel.id in self.session_manager.channel_model_preferences:
-            current_alias = self.session_manager.channel_model_preferences[ctx.channel.id]
+            current_alias = self.session_manager.channel_model_preferences[
+                ctx.channel.id
+            ]
 
         # Pass ctx.message as original_message
-        view = ModelSelectorView(self.session_manager, current_alias, original_message=ctx.message)
-        await send_discord_message(ctx, 
+        view = ModelSelectorView(
+            self.session_manager, current_alias, original_message=ctx.message
+        )
+        await send_discord_message(
+            ctx,
             f"현재 모델: **{current_alias}**\n변경할 모델을 선택해 주세요.",
             view=view,
-            mention_author=False
+            mention_author=False,
         )
