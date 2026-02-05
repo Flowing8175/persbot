@@ -1,0 +1,34 @@
+{
+  "Gemini 2.5 flash lite": {
+    "display_name": "Gemini 2.5 flash lite",
+    "api_model_name": "gemini-2.5-flash-lite",
+    "daily_limit": 1000,
+    "scope": "guild",
+    "provider": "gemini",
+    "fallback_alias": "GLM 4.7"
+  },
+  "Gemini 2.5 pro": {
+    "display_name": "Gemini 2.5 pro",
+    "api_model_name": "gemini-2.5-pro",
+    "daily_limit": 500,
+    "scope": "guild",
+    "provider": "gemini",
+    "fallback_alias": null
+  },
+  "GLM 4.7": {
+    "display_name": "GLM 4.7",
+    "api_model_name": "glm-4.7",
+    "daily_limit": 800,
+    "scope": "guild",
+    "provider": "zai",
+    "fallback_alias": "GLM 4.7 Flash"
+  },
+  "GLM 4.7 Flash": {
+    "display_name": "GLM 4.7 Flash",
+    "api_model_name": "glm-4.7-flash",
+    "daily_limit": 3000,
+    "scope": "guild",
+    "provider": "zai",
+    "fallback_alias": "GLM 4.7"
+  }
+}
