@@ -213,10 +213,11 @@ class ZAIService(BaseLLMService):
         prompt_service: PromptService,
     ):
         super().__init__(config)
-        # Initialize OpenAI client with Z.AI base URL
+        # Initialize OpenAI client with Z.AI base URL and timeout
         self.client = OpenAI(
             api_key=config.zai_api_key,
             base_url=config.zai_base_url,
+            timeout=config.api_request_timeout,
         )
         self._assistant_cache: dict[int, ZAIChatSession] = {}
         self._max_messages = 7

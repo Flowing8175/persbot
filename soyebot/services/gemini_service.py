@@ -173,7 +173,10 @@ class GeminiService(BaseLLMService):
         prompt_service: PromptService
     ):
         super().__init__(config)
-        self.client = genai.Client(api_key=config.gemini_api_key)
+        self.client = genai.Client(
+            api_key=config.gemini_api_key,
+            timeout=config.api_request_timeout,
+        )
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
         self.prompt_service = prompt_service

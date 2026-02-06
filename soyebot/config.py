@@ -75,7 +75,7 @@ class AppConfig:
     max_messages_per_fetch: int = 300
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
-    api_request_timeout: int = 30
+    api_request_timeout: float = 120.0
     api_retry_backoff_base: float = 2.0  # Exponential backoff base
     api_retry_backoff_max: float = 32.0  # Max backoff cap (seconds)
     progress_update_interval: float = 0.5
@@ -335,6 +335,7 @@ def load_config() -> AppConfig:
     tool_timeout = _parse_float_env("TOOL_TIMEOUT", 10.0)
     weather_api_key = os.environ.get("WEATHER_API_KEY")
     search_api_key = os.environ.get("SEARCH_API_KEY")
+    api_request_timeout = _parse_float_env("API_REQUEST_TIMEOUT", 120.0)
 
     return AppConfig(
         discord_token=discord_token,
@@ -367,4 +368,5 @@ def load_config() -> AppConfig:
         tool_timeout=tool_timeout,
         weather_api_key=weather_api_key,
         search_api_key=search_api_key,
+        api_request_timeout=api_request_timeout,
     )

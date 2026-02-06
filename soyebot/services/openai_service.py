@@ -330,7 +330,10 @@ class OpenAIService(BaseLLMService):
         prompt_service: PromptService
     ):
         super().__init__(config)
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = OpenAI(
+            api_key=config.openai_api_key,
+            timeout=config.api_request_timeout,
+        )
         self._assistant_cache: dict[int, Union[_ResponseModel, _ChatCompletionModel]] = {}
         self._max_messages = 7
         self._assistant_model_name = assistant_model_name
