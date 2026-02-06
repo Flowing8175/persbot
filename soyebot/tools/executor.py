@@ -96,7 +96,9 @@ class ToolExecutor:
         # Execute the tool
         return await self._execute_with_timeout(tool, parameters)
 
-    def _check_permissions(self, tool: ToolDefinition, message: discord.Message) -> bool:
+    def _check_permissions(
+        self, tool: ToolDefinition, message: discord.Message
+    ) -> bool:
         """Check if the user has required permissions for the tool.
 
         Args:
@@ -138,22 +140,25 @@ class ToolExecutor:
         Returns:
             True if user can use the tool, False if rate limited.
         """
-        # Check global tool rate limit from config
-        global_limit = getattr(self.config, 'tool_rate_limit', 60)
-        if global_limit <= 0:
+        # Use the tool's rate limit if set, otherwise use default
+        default_limit = getattr(self.config, "tool_rate_limit", 60)
+        limit = tool.rate_limit if tool.rate_limit is not None else default_limit
+
+        if limit <= 0:
             return True  # No rate limiting
 
         key = f"{user_id}:{tool.name}"
         last_execution = self._rate_limits.get(key, 0)
         current_time = time.time()
 
-        # Use the tool's rate limit if set, otherwise use global
-        limit = tool.rate_limit if tool.rate_limit is not None else 60
-
         if current_time - last_execution < limit:
             logger.debug(
                 "User %s rate limited for tool %s (last: %s, now: %s, limit: %s)",
-                user_id, tool.name, last_execution, current_time, limit
+                user_id,
+                tool.name,
+                last_execution,
+                current_time,
+                limit,
             )
             return False
 
@@ -174,7 +179,7 @@ class ToolExecutor:
         Returns:
             ToolResult containing the execution result.
         """
-        timeout = getattr(self.config, 'tool_timeout', 10.0)
+        timeout = getattr(self.config, "tool_timeout", 10.0)
 
         try:
             result = await asyncio.wait_for(
@@ -240,7 +245,9 @@ class ToolExecutor:
 
         return await asyncio.gather(*tasks)
 
-    def get_metrics(self, tool_name: Optional[str] = None) -> Dict[str, ExecutionMetrics]:
+    def get_metrics(
+        self, tool_name: Optional[str] = None
+    ) -> Dict[str, ExecutionMetrics]:
         """Get execution metrics for tools.
 
         Args:
@@ -262,8 +269,28 @@ class ToolExecutor:
                     If None, clears all rate limits.
         """
         if user_id:
-            keys_to_remove = [k for k in self._rate_limits if k.startswith(f"{user_id}:")]
+            keys_to_remove = [
+                k for k in self._rate_limits if k.startswith(f"{user_id}:")
+            ]
             for key in keys_to_remove:
                 del self._rate_limits[key]
         else:
             self._rate_limits.clear()
+
+    def cleanup_old_rate_limits(self, max_age_seconds: int = 3600) -> None:
+        """Clean up old rate limit entries to prevent memory leaks.
+
+        Args:
+            max_age_seconds: Maximum age of rate limit entries in seconds (default: 1 hour).
+        """
+        current_time = time.time()
+        keys_to_remove = [
+            key
+            for key, last_exec in self._rate_limits.items()
+            if current_time - last_exec > max_age_seconds
+        ]
+        for key in keys_to_remove:
+            del self._rate_limits[key]
+
+        if keys_to_remove:
+            logger.debug("Cleaned up %d old rate limit entries", len(keys_to_remove))

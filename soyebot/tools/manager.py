@@ -1,5 +1,6 @@
 """Tool manager for integrating tools with the chat system."""
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -29,23 +30,23 @@ class ToolManager:
 
     def _register_tools(self) -> None:
         """Register all enabled tools."""
-        if not getattr(self.config, 'enable_tools', True):
+        if not getattr(self.config, "enable_tools", True):
             logger.info("Tools are disabled in configuration")
             return
 
         # Register Discord tools
-        if getattr(self.config, 'enable_discord_tools', True):
+        if getattr(self.config, "enable_discord_tools", True):
             register_all_discord_tools(self.registry)
             logger.info("Registered Discord read-only tools")
 
         # Register API tools
-        if getattr(self.config, 'enable_api_tools', True):
+        if getattr(self.config, "enable_api_tools", True):
             # Register with API keys if available
             register_all_api_tools(self.registry)
             logger.info("Registered external API tools")
 
         # Register Persona tools (for Zeta.ai-style high-immersion persona bot)
-        if getattr(self.config, 'enable_persona_tools', True):
+        if getattr(self.config, "enable_persona_tools", True):
             register_all_persona_tools(self.registry)
             logger.info("Registered persona immersion tools")
 
@@ -87,14 +88,16 @@ class ToolManager:
             ToolResult containing the execution result.
         """
         # Inject discord_context and config into parameters for tool handlers
-        if 'discord_context' not in parameters and discord_context:
-            parameters['discord_context'] = discord_context
+        if "discord_context" not in parameters and discord_context:
+            parameters["discord_context"] = discord_context
 
         # Inject API keys for API tools
-        if 'search_api_key' not in parameters:
-            parameters['search_api_key'] = getattr(self.config, 'search_api_key', None)
-        if 'weather_api_key' not in parameters:
-            parameters['weather_api_key'] = getattr(self.config, 'weather_api_key', None)
+        if "search_api_key" not in parameters:
+            parameters["search_api_key"] = getattr(self.config, "search_api_key", None)
+        if "weather_api_key" not in parameters:
+            parameters["weather_api_key"] = getattr(
+                self.config, "weather_api_key", None
+            )
 
         return await self.executor.execute_tool(tool_name, parameters, discord_context)
 
@@ -103,7 +106,7 @@ class ToolManager:
         tool_calls: List[Dict[str, Any]],
         discord_context: Optional[discord.Message] = None,
     ) -> List[Any]:
-        """Execute multiple tool calls.
+        """Execute multiple tool calls in parallel.
 
         Args:
             tool_calls: List of tool call dictionaries with 'name' and 'parameters'.
@@ -112,38 +115,58 @@ class ToolManager:
         Returns:
             List of tool execution results formatted for the AI provider.
         """
-        results = []
+        # Execute all tools in parallel using asyncio.gather
+        tasks = [
+            self._execute_and_format_tool(call, discord_context) for call in tool_calls
+        ]
 
-        for call in tool_calls:
-            tool_name = call.get("name")
-            parameters = call.get("parameters", {})
-
-            # Add call ID if present (for OpenAI/Z.AI format)
-            call_id = call.get("id")
-
-            # Execute the tool
-            result = await self.execute_tool(tool_name, parameters, discord_context)
-
-            # Format result for provider
-            if call_id:
-                # OpenAI/Z.AI format with ID
-                formatted = {
-                    "id": call_id,
-                    "name": tool_name,
-                    "result": result.data if result.success else None,
-                    "error": result.error if not result.success else None,
-                }
-            else:
-                # Gemini format
-                formatted = {
-                    "name": tool_name,
-                    "result": result.data if result.success else None,
-                    "error": result.error if not result.success else None,
-                }
-
-            results.append(formatted)
-
+        results = await asyncio.gather(*tasks, return_exceptions=False)
         return results
+
+    async def _execute_and_format_tool(
+        self,
+        call: Dict[str, Any],
+        discord_context: Optional[discord.Message],
+    ) -> Dict[str, Any]:
+        """Execute a single tool and format its result.
+
+        Args:
+            call: Tool call dictionary with 'name' and 'parameters'.
+            discord_context: Discord message context for permission checks.
+
+        Returns:
+            Formatted tool result dictionary.
+        """
+        tool_name = call.get("name")
+        if not tool_name:
+            raise ValueError("Tool call missing 'name' field")
+
+        parameters = call.get("parameters", {})
+
+        # Add call ID if present (for OpenAI/Z.AI format)
+        call_id = call.get("id")
+
+        # Execute the tool
+        result = await self.execute_tool(tool_name, parameters, discord_context)
+
+        # Format result for provider
+        if call_id:
+            # OpenAI/Z.AI format with ID
+            formatted = {
+                "id": call_id,
+                "name": tool_name,
+                "result": result.data if result.success else None,
+                "error": result.error if not result.success else None,
+            }
+        else:
+            # Gemini format
+            formatted = {
+                "name": tool_name,
+                "result": result.data if result.success else None,
+                "error": result.error if not result.success else None,
+            }
+
+        return formatted
 
     def set_tool_enabled(self, tool_name: str, enabled: bool) -> bool:
         """Enable or disable a specific tool.
@@ -174,7 +197,7 @@ class ToolManager:
         Returns:
             True if tools are enabled.
         """
-        return getattr(self.config, 'enable_tools', True)
+        return getattr(self.config, "enable_tools", True)
 
     def clear_rate_limits(self, user_id: Optional[int] = None) -> None:
         """Clear rate limit records.

@@ -1,5 +1,6 @@
 """OpenAI tool format adapter."""
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -39,34 +40,46 @@ class OpenAIToolAdapter:
         function_calls = []
 
         try:
-            if hasattr(response, 'choices') and response.choices:
+            if hasattr(response, "choices") and response.choices:
                 for choice in response.choices:
-                    message = getattr(choice, 'message', None)
-                    if message and hasattr(message, 'tool_calls') and message.tool_calls:
+                    message = getattr(choice, "message", None)
+                    if (
+                        message
+                        and hasattr(message, "tool_calls")
+                        and message.tool_calls
+                    ):
                         for tool_call in message.tool_calls:
                             fc_data = {
-                                'id': tool_call.id,
-                                'name': tool_call.function.name,
-                                'parameters': {},
+                                "id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "parameters": {},
                             }
 
                             # Parse arguments
-                            import json
                             try:
                                 args = json.loads(tool_call.function.arguments)
-                                fc_data['parameters'] = args
+                                fc_data["parameters"] = args
                             except json.JSONDecodeError:
-                                logger.warning("Failed to parse tool arguments: %s", tool_call.function.arguments)
+                                logger.warning(
+                                    "Failed to parse tool arguments: %s",
+                                    tool_call.function.arguments,
+                                )
 
                             function_calls.append(fc_data)
 
         except Exception as e:
-            logger.error("Error extracting function calls from OpenAI response: %s", e, exc_info=True)
+            logger.error(
+                "Error extracting function calls from OpenAI response: %s",
+                e,
+                exc_info=True,
+            )
 
         return function_calls
 
     @staticmethod
-    def format_function_result(tool_name: str, result: Any, call_id: str) -> Dict[str, Any]:
+    def format_function_result(
+        tool_name: str, result: Any, call_id: str
+    ) -> Dict[str, Any]:
         """Format a function result for sending back to OpenAI.
 
         Args:
@@ -104,21 +117,23 @@ class OpenAIToolAdapter:
         messages = []
 
         for result_item in results:
-            call_id = result_item.get('id')
-            tool_name = result_item.get('name')
-            result_data = result_item.get('result')
-            error = result_item.get('error')
+            call_id = result_item.get("id")
+            tool_name = result_item.get("name")
+            result_data = result_item.get("result")
+            error = result_item.get("error")
 
             if error:
                 content = f"Error: {error}"
             else:
                 content = str(result_data) if result_data is not None else ""
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call_id,
-                "name": tool_name,
-                "content": content,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": tool_name,
+                    "content": content,
+                }
+            )
 
         return messages

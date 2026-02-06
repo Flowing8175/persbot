@@ -4,6 +4,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional, List, Dict
 
+try:
+    from google.genai import types as genai_types
+
+    HAS_GENAI = True
+except ImportError:
+    genai_types = None
+    HAS_GENAI = False
+
 
 class ToolCategory(Enum):
     """Categories of tools for organization and filtering."""
@@ -147,7 +155,10 @@ class ToolDefinition:
         Returns:
             genai_types.FunctionDeclaration object.
         """
-        from google.genai import types as genai_types
+        if not HAS_GENAI or genai_types is None:
+            raise ImportError(
+                "google.genai is not installed. Please install it to use Gemini format."
+            )
 
         properties = {}
         required = []

@@ -37,6 +37,19 @@ async def search_episodic_memory(
     Returns:
         ToolResult with relevant episodic memories formatted as "Date - Content".
     """
+    """Search through episodic memory for relevant past conversations and events.
+
+    This tool searches through stored memories to find specific promises,
+    preferences, facts, and past interactions with the user.
+
+    Args:
+        user_id: The Discord user ID to search memories for.
+        query: The search query to find relevant memories.
+        limit: Maximum number of memory results to return (default: 5).
+
+    Returns:
+        ToolResult with relevant episodic memories formatted as "Date - Content".
+    """
     if not query or not query.strip():
         return ToolResult(success=False, error="Search query cannot be empty")
 
@@ -55,11 +68,13 @@ async def search_episodic_memory(
                     "query": query,
                     "memories": [],
                     "message": "No episodic memories found. The persona is still building their memory bank.",
-                }
+                },
             )
 
         # Simple keyword-based matching (prototype - will be replaced with vector search)
-        relevant_memories = _filter_memories_by_keywords(memories, user_id, query, limit)
+        relevant_memories = _filter_memories_by_keywords(
+            memories, user_id, query, limit
+        )
 
         if not relevant_memories:
             return ToolResult(
@@ -69,7 +84,7 @@ async def search_episodic_memory(
                     "query": query,
                     "memories": [],
                     "message": f"No specific memories found for '{query}'. The persona will remember this interaction for future conversations.",
-                }
+                },
             )
 
         # Format memories as "Date - Content" strings
@@ -86,11 +101,74 @@ async def search_episodic_memory(
                 "query": query,
                 "count": len(formatted_memories),
                 "memories": formatted_memories,
-            }
+            },
         )
 
     except Exception as e:
         logger.error("Error searching episodic memory: %s", e, exc_info=True)
+    return ToolResult(success=False, error=str(e))
+
+
+async def save_episodic_memory(
+    user_id: str,
+    content: str,
+    memory_type: str = "preference",
+    tags: Optional[List[str]] = None,
+    **kwargs,
+) -> ToolResult:
+    """Save a new episodic memory entry.
+
+    This tool stores new memories including preferences, facts, promises,
+    and important interactions for future retrieval.
+
+    Args:
+        user_id: The Discord user ID to save memory for.
+        content: The memory content to store.
+        memory_type: Type of memory (preference, fact, promise, interest).
+        tags: Optional list of tags for categorization.
+
+    Returns:
+        ToolResult with confirmation of saved memory.
+    """
+    if not content or not content.strip():
+        return ToolResult(success=False, error="Memory content cannot be empty")
+
+    if not user_id:
+        return ToolResult(success=False, error="User ID cannot be empty")
+
+    try:
+        # Load existing memories
+        memories = await _load_memory_vector()
+
+        # Create new memory entry
+        new_memory = {
+            "user_id": user_id,
+            "content": content,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "type": memory_type.lower(),
+            "tags": tags or [],
+        }
+
+        # Add to memories list
+        memories.append(new_memory)
+
+        # Save back to file
+        await _save_memory_vector(memories)
+
+        return ToolResult(
+            success=True,
+            data={
+                "user_id": user_id,
+                "content": content,
+                "type": memory_type,
+                "tags": tags or [],
+                "date": new_memory["date"],
+                "message": "Memory saved successfully",
+            },
+        )
+
+    except Exception as e:
+        logger.error("Error saving episodic memory: %s", e, exc_info=True)
         return ToolResult(success=False, error=str(e))
 
 
@@ -172,6 +250,28 @@ async def _create_sample_memory_file(path: str) -> None:
     logger.info("Created sample memory file at %s", path)
 
 
+async def _save_memory_vector(memories: List[Dict[str, Any]]) -> None:
+    """Save memory vectors to the local JSON file.
+
+    Args:
+        memories: List of memory entries to save.
+    """
+    memory_path = os.environ.get("MEMORY_VECTOR_PATH", DEFAULT_MEMORY_PATH)
+
+    try:
+        os.makedirs(os.path.dirname(memory_path), exist_ok=True)
+
+        data = {"memories": memories}
+
+        with open(memory_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        logger.debug("Saved %d memory entries to %s", len(memories), memory_path)
+    except Exception as e:
+        logger.error("Error saving memory file: %s", e)
+        raise
+
+
 def _filter_memories_by_keywords(
     memories: List[Dict[str, Any]],
     user_id: str,
@@ -234,30 +334,69 @@ def register_memory_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="search_episodic_memory",
-        description="Search through the persona's episodic memory to find relevant past conversations, promises, preferences, and facts. Returns specific memories with dates.",
-        category=ToolCategory.PERSONA_MEMORY,
-        parameters=[
-            ToolParameter(
-                name="user_id",
-                type="string",
-                description="The Discord user ID to search memories for.",
-                required=True,
-            ),
-            ToolParameter(
-                name="query",
-                type="string",
-                description="The search query to find relevant memories (keywords, topics, or questions).",
-                required=True,
-            ),
-            ToolParameter(
-                name="limit",
-                type="integer",
-                description="Maximum number of memory results to return (default: 5, max: 10).",
-                required=False,
-                default=5,
-            ),
-        ],
-        handler=search_episodic_memory,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="search_episodic_memory",
+            description="Search through persona's episodic memory to find relevant past conversations, promises, preferences, and facts. Returns specific memories with dates.",
+            category=ToolCategory.PERSONA_MEMORY,
+            parameters=[
+                ToolParameter(
+                    name="user_id",
+                    type="string",
+                    description="The Discord user ID to search memories for.",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="query",
+                    type="string",
+                    description="The search query to find relevant memories (keywords, topics, or questions).",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="limit",
+                    type="integer",
+                    description="Maximum number of memory results to return (default: 5, max: 10).",
+                    required=False,
+                    default=5,
+                ),
+            ],
+            handler=search_episodic_memory,
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="save_episodic_memory",
+            description="Save a new episodic memory entry including preferences, facts, promises, and important interactions for future retrieval.",
+            category=ToolCategory.PERSONA_MEMORY,
+            parameters=[
+                ToolParameter(
+                    name="user_id",
+                    type="string",
+                    description="The Discord user ID to save memory for.",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="content",
+                    type="string",
+                    description="The memory content to store.",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="memory_type",
+                    type="string",
+                    description="Type of memory (preference, fact, promise, interest).",
+                    required=False,
+                    default="preference",
+                    enum=["preference", "fact", "promise", "interest"],
+                ),
+                ToolParameter(
+                    name="tags",
+                    type="array",
+                    description="Optional list of tags for categorization.",
+                    required=False,
+                ),
+            ],
+            handler=save_episodic_memory,
+        )
+    )
