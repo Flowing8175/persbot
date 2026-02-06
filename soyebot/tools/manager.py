@@ -10,6 +10,7 @@ from soyebot.tools.registry import ToolRegistry
 from soyebot.tools.executor import ToolExecutor
 from soyebot.tools.discord_tools import register_all_discord_tools
 from soyebot.tools.api_tools import register_all_api_tools
+from soyebot.tools.persona_tools import register_all_persona_tools
 from soyebot.tools.base import ToolCategory, ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,11 @@ class ToolManager:
             # Register with API keys if available
             register_all_api_tools(self.registry)
             logger.info("Registered external API tools")
+
+        # Register Persona tools (for Zeta.ai-style high-immersion persona bot)
+        if getattr(self.config, 'enable_persona_tools', True):
+            register_all_persona_tools(self.registry)
+            logger.info("Registered persona immersion tools")
 
         logger.info("Total tools registered: %d", len(self.registry))
 

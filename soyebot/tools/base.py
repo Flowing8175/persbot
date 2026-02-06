@@ -14,6 +14,10 @@ class ToolCategory(Enum):
     API_SEARCH = "api_search"
     API_WEATHER = "api_weather"
     API_TIME = "api_time"
+    PERSONA_MEMORY = "persona_memory"
+    PERSONA_MEDIA = "persona_media"
+    PERSONA_ROUTINE = "persona_routine"
+    PERSONA_WEB = "persona_web"
 
 
 @dataclass

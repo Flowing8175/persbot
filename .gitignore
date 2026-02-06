@@ -1,5 +1,6 @@
 # uv package manager
 .venv/
+.sisyphus/
 **/__pycache__/
 *.py[cod]
 *$py.class

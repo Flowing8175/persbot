@@ -1,0 +1,263 @@
+"""Episodic memory tools for SoyeBot AI.
+
+This module provides RAG-based memory search functionality for persona bots.
+It allows searching through past conversations, preferences, and specific events.
+"""
+
+import json
+import logging
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+
+logger = logging.getLogger(__name__)
+
+# Default path for memory vector data (can be overridden via config)
+DEFAULT_MEMORY_PATH = "data/memory_vector_mock.json"
+
+
+async def search_episodic_memory(
+    user_id: str,
+    query: str,
+    limit: int = 5,
+    **kwargs,
+) -> ToolResult:
+    """Search through episodic memory for relevant past conversations and events.
+
+    This tool searches through stored memories to find specific promises,
+    preferences, facts, and past interactions with the user.
+
+    Args:
+        user_id: The Discord user ID to search memories for.
+        query: The search query to find relevant memories.
+        limit: Maximum number of memory results to return (default: 5).
+
+    Returns:
+        ToolResult with relevant episodic memories formatted as "Date - Content".
+    """
+    if not query or not query.strip():
+        return ToolResult(success=False, error="Search query cannot be empty")
+
+    limit = min(max(1, limit), 10)  # Clamp between 1-10
+
+    try:
+        # Try to load from memory vector file
+        memories = await _load_memory_vector()
+
+        if not memories:
+            # Return a helpful message if no memories are stored yet
+            return ToolResult(
+                success=True,
+                data={
+                    "user_id": user_id,
+                    "query": query,
+                    "memories": [],
+                    "message": "No episodic memories found. The persona is still building their memory bank.",
+                }
+            )
+
+        # Simple keyword-based matching (prototype - will be replaced with vector search)
+        relevant_memories = _filter_memories_by_keywords(memories, user_id, query, limit)
+
+        if not relevant_memories:
+            return ToolResult(
+                success=True,
+                data={
+                    "user_id": user_id,
+                    "query": query,
+                    "memories": [],
+                    "message": f"No specific memories found for '{query}'. The persona will remember this interaction for future conversations.",
+                }
+            )
+
+        # Format memories as "Date - Content" strings
+        formatted_memories = []
+        for memory in relevant_memories:
+            date_str = memory.get("date", datetime.now().strftime("%Y-%m-%d"))
+            content = memory.get("content", memory.get("text", ""))
+            formatted_memories.append(f"{date_str} - {content}")
+
+        return ToolResult(
+            success=True,
+            data={
+                "user_id": user_id,
+                "query": query,
+                "count": len(formatted_memories),
+                "memories": formatted_memories,
+            }
+        )
+
+    except Exception as e:
+        logger.error("Error searching episodic memory: %s", e, exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def _load_memory_vector() -> List[Dict[str, Any]]:
+    """Load memory vectors from the local JSON file.
+
+    Returns:
+        List of memory entries with user_id, content, timestamp, and metadata.
+    """
+    memory_path = os.environ.get("MEMORY_VECTOR_PATH", DEFAULT_MEMORY_PATH)
+
+    if not os.path.exists(memory_path):
+        # Create a sample memory file for demonstration
+        await _create_sample_memory_file(memory_path)
+
+    try:
+        with open(memory_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("memories", [])
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON in memory file, returning empty list")
+        return []
+    except Exception as e:
+        logger.error("Error loading memory file: %s", e)
+        return []
+
+
+async def _create_sample_memory_file(path: str) -> None:
+    """Create a sample memory file for demonstration purposes.
+
+    Args:
+        path: Path where to create the sample memory file.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    sample_data = {
+        "memories": [
+            {
+                "user_id": "global",
+                "content": "User prefers short, concise responses rather than long explanations.",
+                "date": "2024-01-15",
+                "type": "preference",
+                "tags": ["communication", "style"],
+            },
+            {
+                "user_id": "global",
+                "content": "User mentioned they enjoy late-night gaming sessions.",
+                "date": "2024-01-20",
+                "type": "fact",
+                "tags": ["gaming", "hobby"],
+            },
+            {
+                "user_id": "global",
+                "content": "User asked about AI personality preferences - likes playful but helpful tone.",
+                "date": "2024-02-01",
+                "type": "preference",
+                "tags": ["personality", "tone"],
+            },
+            {
+                "user_id": "global",
+                "content": "User expressed interest in learning about machine learning concepts.",
+                "date": "2024-02-10",
+                "type": "interest",
+                "tags": ["ml", "learning"],
+            },
+            {
+                "user_id": "global",
+                "content": "User mentioned they work in software development.",
+                "date": "2024-02-15",
+                "type": "fact",
+                "tags": ["work", "profession"],
+            },
+        ]
+    }
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(sample_data, f, ensure_ascii=False, indent=2)
+
+    logger.info("Created sample memory file at %s", path)
+
+
+def _filter_memories_by_keywords(
+    memories: List[Dict[str, Any]],
+    user_id: str,
+    query: str,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Filter memories based on keyword matching (simple prototype implementation).
+
+    Args:
+        memories: List of all memory entries.
+        user_id: User ID to filter by (use 'global' for universal memories).
+        query: Search query keywords.
+        limit: Maximum results to return.
+
+    Returns:
+        Filtered and sorted list of relevant memories.
+    """
+    query_lower = query.lower()
+    keywords = query_lower.split()
+
+    scored_memories = []
+
+    for memory in memories:
+        # Check if memory belongs to the user or is global
+        memory_user_id = memory.get("user_id", "global")
+        if memory_user_id != user_id and memory_user_id != "global":
+            continue
+
+        content = memory.get("content", "").lower()
+        tags = [tag.lower() for tag in memory.get("tags", [])]
+        memory_type = memory.get("type", "").lower()
+
+        # Calculate relevance score
+        score = 0
+
+        # Exact content match
+        if query_lower in content:
+            score += 10
+
+        # Keyword matches in content
+        for keyword in keywords:
+            if keyword in content:
+                score += 2
+            if keyword in tags:
+                score += 3
+            if keyword in memory_type:
+                score += 1
+
+        if score > 0:
+            scored_memories.append((score, memory))
+
+    # Sort by score descending and return top results
+    scored_memories.sort(key=lambda x: x[0], reverse=True)
+    return [memory for _, memory in scored_memories[:limit]]
+
+
+def register_memory_tools(registry):
+    """Register episodic memory tools with the given registry.
+
+    Args:
+        registry: ToolRegistry instance to register tools with.
+    """
+    registry.register(ToolDefinition(
+        name="search_episodic_memory",
+        description="Search through the persona's episodic memory to find relevant past conversations, promises, preferences, and facts. Returns specific memories with dates.",
+        category=ToolCategory.PERSONA_MEMORY,
+        parameters=[
+            ToolParameter(
+                name="user_id",
+                type="string",
+                description="The Discord user ID to search memories for.",
+                required=True,
+            ),
+            ToolParameter(
+                name="query",
+                type="string",
+                description="The search query to find relevant memories (keywords, topics, or questions).",
+                required=True,
+            ),
+            ToolParameter(
+                name="limit",
+                type="integer",
+                description="Maximum number of memory results to return (default: 5, max: 10).",
+                required=False,
+                default=5,
+            ),
+        ],
+        handler=search_episodic_memory,
+    ))
