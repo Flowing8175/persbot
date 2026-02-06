@@ -69,6 +69,7 @@ class AppConfig:
     openai_api_key: Optional[str] = None
     zai_api_key: Optional[str] = None
     zai_base_url: str = "https://api.z.ai/api/paas/v4/"
+    zai_coding_plan: bool = False
     assistant_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
     summarizer_model_name: str = DEFAULT_GEMINI_SUMMARY_MODEL
     max_messages_per_fetch: int = 300
@@ -242,7 +243,10 @@ def load_config() -> AppConfig:
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     zai_api_key = os.environ.get("ZAI_API_KEY")
-    zai_base_url = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/paas/v4/")
+    zai_coding_plan = os.environ.get("ZAI_CODING_PLAN", "").lower() in ("true", "1", "yes")
+    # Use Coding Plan API endpoint if enabled, otherwise use standard API
+    default_base_url = "https://api.z.ai/api/coding/paas/v4/" if zai_coding_plan else "https://api.z.ai/api/paas/v4/"
+    zai_base_url = os.environ.get("ZAI_BASE_URL", default_base_url)
     service_tier = os.environ.get("SERVICE_TIER", "flex")
 
     # Provider별 설정 (어시스턴트/요약 분리)
@@ -322,6 +326,7 @@ def load_config() -> AppConfig:
         openai_api_key=openai_api_key,
         zai_api_key=zai_api_key,
         zai_base_url=zai_base_url,
+        zai_coding_plan=zai_coding_plan,
         assistant_model_name=assistant_model_name,
         summarizer_model_name=summarizer_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,

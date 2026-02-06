@@ -1,4 +1,11 @@
-"""Z.AI Coding Plan API service for SoyeBot."""
+"""Z.AI API service for SoyeBot.
+
+Supports both Standard API and Coding Plan API endpoints:
+- Standard API: https://api.z.ai/api/paas/v4/ (pay-as-you-go, token-based)
+- Coding Plan API: https://api.z.ai/api/coding/paas/v4/ (subscription-based, prompt-based)
+
+Enable Coding Plan API by setting ZAI_CODING_PLAN=true in environment.
+"""
 
 import logging
 from collections import deque
@@ -221,7 +228,13 @@ class ZAIService(BaseLLMService):
             self._assistant_model_name,
             self.prompt_service.get_active_assistant_prompt(),
         )
-        logger.info("Z.AI Coding Plan 모델 '%s' 준비 완료.", self._assistant_model_name)
+        api_type = "Coding Plan" if self.config.zai_coding_plan else "Standard"
+        logger.info(
+            "Z.AI %s API 모델 '%s' 준비 완료 (endpoint: %s)",
+            api_type,
+            self._assistant_model_name,
+            self.config.zai_base_url,
+        )
 
     def _get_or_create_assistant(self, model_name: str, system_instruction: str):
         """Get or create a chat session for the given model."""
@@ -247,7 +260,10 @@ class ZAIService(BaseLLMService):
     def reload_parameters(self) -> None:
         """Reload parameters by clearing assistant cache."""
         self._assistant_cache.clear()
-        logger.info("Z.AI assistant cache cleared to apply new parameters.")
+        api_type = "Coding Plan" if self.config.zai_coding_plan else "Standard"
+        logger.info(
+            "Z.AI %s API assistant cache cleared to apply new parameters.", api_type
+        )
 
     def get_user_role_name(self) -> str:
         """Return role name for user messages."""

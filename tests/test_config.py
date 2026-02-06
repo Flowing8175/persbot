@@ -864,6 +864,66 @@ class TestLoadConfigOtherSettings:
             config = load_config()
             assert config.zai_base_url == "https://custom.z.ai/v1"
 
+    def test_load_config_zai_coding_plan_default(self):
+        """Test ZAI_CODING_PLAN defaults to False."""
+        env = {
+            "DISCORD_TOKEN": "test_discord_token",
+            "GEMINI_API_KEY": "test_gemini_key",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config()
+            assert config.zai_coding_plan is False
+            assert config.zai_base_url == "https://api.z.ai/api/paas/v4/"
+
+    def test_load_config_zai_coding_plan_true(self):
+        """Test ZAI_CODING_PLAN true uses Coding Plan API endpoint."""
+        env = {
+            "DISCORD_TOKEN": "test_discord_token",
+            "GEMINI_API_KEY": "test_gemini_key",
+            "ZAI_CODING_PLAN": "true",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config()
+            assert config.zai_coding_plan is True
+            assert config.zai_base_url == "https://api.z.ai/api/coding/paas/v4/"
+
+    def test_load_config_zai_coding_plan_variations(self):
+        """Test ZAI_CODING_PLAN accepts various true values."""
+        for true_value in ["true", "TRUE", "1", "yes", "YES"]:
+            env = {
+                "DISCORD_TOKEN": "test_discord_token",
+                "GEMINI_API_KEY": "test_gemini_key",
+                "ZAI_CODING_PLAN": true_value,
+            }
+            with patch.dict(os.environ, env, clear=True):
+                config = load_config()
+                assert config.zai_coding_plan is True
+
+    def test_load_config_zai_coding_plan_false(self):
+        """Test ZAI_CODING_PLAN false variations."""
+        for false_value in ["false", "FALSE", "0", "no", "NO", "random"]:
+            env = {
+                "DISCORD_TOKEN": "test_discord_token",
+                "GEMINI_API_KEY": "test_gemini_key",
+                "ZAI_CODING_PLAN": false_value,
+            }
+            with patch.dict(os.environ, env, clear=True):
+                config = load_config()
+                assert config.zai_coding_plan is False
+
+    def test_load_config_zai_coding_plan_with_custom_url(self):
+        """Test ZAI_BASE_URL overrides ZAI_CODING_PLAN default endpoint."""
+        env = {
+            "DISCORD_TOKEN": "test_discord_token",
+            "GEMINI_API_KEY": "test_gemini_key",
+            "ZAI_CODING_PLAN": "true",
+            "ZAI_BASE_URL": "https://custom.z.ai/v1",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config()
+            assert config.zai_coding_plan is True
+            assert config.zai_base_url == "https://custom.z.ai/v1"
+
     def test_load_config_service_tier(self):
         """Test service tier configuration."""
         env = {
