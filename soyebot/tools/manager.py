@@ -10,6 +10,7 @@ from soyebot.tools.registry import ToolRegistry
 from soyebot.tools.executor import ToolExecutor
 from soyebot.tools.discord_tools import register_all_discord_tools
 from soyebot.tools.api_tools import register_all_api_tools
+from soyebot.tools.persona_tools import register_all_persona_tools
 from soyebot.tools.base import ToolCategory, ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -28,20 +29,25 @@ class ToolManager:
 
     def _register_tools(self) -> None:
         """Register all enabled tools."""
-        if not getattr(self.config, 'enable_tools', True):
+        if not getattr(self.config, "enable_tools", True):
             logger.info("Tools are disabled in configuration")
             return
 
         # Register Discord tools
-        if getattr(self.config, 'enable_discord_tools', True):
+        if getattr(self.config, "enable_discord_tools", True):
             register_all_discord_tools(self.registry)
             logger.info("Registered Discord read-only tools")
 
         # Register API tools
-        if getattr(self.config, 'enable_api_tools', True):
+        if getattr(self.config, "enable_api_tools", True):
             # Register with API keys if available
             register_all_api_tools(self.registry)
             logger.info("Registered external API tools")
+
+        # Register Persona tools
+        if getattr(self.config, "enable_persona_tools", True):
+            register_all_persona_tools(self.registry)
+            logger.info("Registered persona tools")
 
         logger.info("Total tools registered: %d", len(self.registry))
 
@@ -81,14 +87,16 @@ class ToolManager:
             ToolResult containing the execution result.
         """
         # Inject discord_context and config into parameters for tool handlers
-        if 'discord_context' not in parameters and discord_context:
-            parameters['discord_context'] = discord_context
+        if "discord_context" not in parameters and discord_context:
+            parameters["discord_context"] = discord_context
 
         # Inject API keys for API tools
-        if 'search_api_key' not in parameters:
-            parameters['search_api_key'] = getattr(self.config, 'search_api_key', None)
-        if 'weather_api_key' not in parameters:
-            parameters['weather_api_key'] = getattr(self.config, 'weather_api_key', None)
+        if "search_api_key" not in parameters:
+            parameters["search_api_key"] = getattr(self.config, "search_api_key", None)
+        if "weather_api_key" not in parameters:
+            parameters["weather_api_key"] = getattr(
+                self.config, "weather_api_key", None
+            )
 
         return await self.executor.execute_tool(tool_name, parameters, discord_context)
 
@@ -168,7 +176,7 @@ class ToolManager:
         Returns:
             True if tools are enabled.
         """
-        return getattr(self.config, 'enable_tools', True)
+        return getattr(self.config, "enable_tools", True)
 
     def clear_rate_limits(self, user_id: Optional[int] = None) -> None:
         """Clear rate limit records.
