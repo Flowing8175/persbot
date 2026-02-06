@@ -5,6 +5,7 @@ import discord
 
 logger = logging.getLogger(__name__)
 
+
 class MessageBuffer:
     """
     Buffers messages by channel ID to process them in batches.
@@ -16,13 +17,25 @@ class MessageBuffer:
        This allows the user to finish their thought, but prevents infinite waiting
        if they stop typing without sending.
     """
-    def __init__(self, delay: float = 2.0, typing_timeout: float = 5.0):
+
+    def __init__(
+        self,
+        delay: float = 2.0,
+        typing_timeout: float = 5.0,
+        max_buffer_size: int = 100,
+    ):
         self.default_delay = delay
         self.typing_timeout = typing_timeout
         self.buffers: Dict[int, List[discord.Message]] = {}
         self.tasks: Dict[int, asyncio.Task] = {}
+        self.max_buffer_size = max_buffer_size  # Prevent unbounded growth
 
-    async def add_message(self, channel_id: int, message: discord.Message, callback: Callable[[List[discord.Message]], Any]):
+    async def add_message(
+        self,
+        channel_id: int,
+        message: discord.Message,
+        callback: Callable[[List[discord.Message]], Any],
+    ):
         """
         Adds a message to the buffer for the given channel.
         Resets the processing timer to the default delay (e.g., 2.0s).
@@ -30,8 +43,17 @@ class MessageBuffer:
         if channel_id not in self.buffers:
             self.buffers[channel_id] = []
 
+        # Limit buffer size to prevent unbounded growth
+        if len(self.buffers[channel_id]) >= self.max_buffer_size:
+            logger.warning(
+                f"Buffer limit reached for channel {channel_id}. Removing oldest message."
+            )
+            self.buffers[channel_id].pop(0)
+
         self.buffers[channel_id].append(message)
-        logger.debug(f"Message added to buffer for channel {channel_id}. Current count: {len(self.buffers[channel_id])}")
+        logger.debug(
+            f"Message added to buffer for channel {channel_id}. Current count: {len(self.buffers[channel_id])}"
+        )
 
         # If a task is already running, cancel it to reset the timer
         if channel_id in self.tasks:
@@ -42,7 +64,9 @@ class MessageBuffer:
             self._process_buffer(channel_id, self.default_delay, callback)
         )
 
-    def handle_typing(self, channel_id: int, callback: Callable[[List[discord.Message]], Any]):
+    def handle_typing(
+        self, channel_id: int, callback: Callable[[List[discord.Message]], Any]
+    ):
         """
         Called when a typing event is detected in the channel.
         If a buffer exists and we are waiting, extend the wait time to `typing_timeout`.
@@ -55,14 +79,21 @@ class MessageBuffer:
         # If we are already waiting, cancel the current timer
         if channel_id in self.tasks:
             self.tasks[channel_id].cancel()
-            logger.debug(f"Typing detected in channel {channel_id}. Extending wait to {self.typing_timeout}s.")
+            logger.debug(
+                f"Typing detected in channel {channel_id}. Extending wait to {self.typing_timeout}s."
+            )
 
         # Restart the timer with the extended timeout
         self.tasks[channel_id] = asyncio.create_task(
             self._process_buffer(channel_id, self.typing_timeout, callback)
         )
 
-    async def _process_buffer(self, channel_id: int, delay: float, callback: Callable[[List[discord.Message]], Any]):
+    async def _process_buffer(
+        self,
+        channel_id: int,
+        delay: float,
+        callback: Callable[[List[discord.Message]], Any],
+    ):
         """
         Waits for the given delay, then processes the buffered messages.
         """
@@ -74,12 +105,17 @@ class MessageBuffer:
             self.tasks.pop(channel_id, None)
 
             if messages:
-                logger.info(f"Processing batch of {len(messages)} messages for channel {channel_id} (waited {delay:.1f}s)")
+                logger.info(
+                    f"Processing batch of {len(messages)} messages for channel {channel_id} (waited {delay:.1f}s)"
+                )
                 await callback(messages)
         except asyncio.CancelledError:
             # Task was cancelled (new message arrived or typing detected).
             pass
         except Exception as e:
-            logger.error(f"Error processing message buffer for channel {channel_id}: {e}", exc_info=True)
+            logger.error(
+                f"Error processing message buffer for channel {channel_id}: {e}",
+                exc_info=True,
+            )
             self.buffers.pop(channel_id, None)
             self.tasks.pop(channel_id, None)

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChatSession:
     """Represents a very short-lived LLM chat tied to a session key."""
+
     chat: object
     user_id: str
     session_id: str
@@ -62,8 +63,16 @@ class SessionManager:
         self.llm_service = llm_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
-        self.channel_prompts: Dict[int, str] = {} # channel_id -> prompt_content override
-        self.channel_model_preferences: Dict[int, str] = {} # channel_id -> model_alias override
+        self.channel_prompts: Dict[
+            int, str
+        ] = {}  # channel_id -> prompt_content override
+        self.channel_model_preferences: Dict[
+            int, str
+        ] = {}  # channel_id -> model_alias override
+
+        # Start periodic session cleanup task
+        if config.session_inactive_minutes > 0:
+            asyncio.create_task(self._periodic_session_cleanup())
 
     def _evict_if_needed(self) -> None:
         """Ensure the session cache does not grow without bounds."""
@@ -104,7 +113,7 @@ class SessionManager:
                 last_activity_at=now,
                 last_message_preview=preview,
                 title=None,
-                model_alias=model_alias
+                model_alias=model_alias,
             )
 
         self._evict_if_needed()
@@ -122,7 +131,9 @@ class SessionManager:
         # on the next interaction.
         if session_key in self.session_contexts:
             self.session_contexts[session_key].model_alias = model_alias
-            logger.info(f"Updated session context {session_key} preference to {model_alias}")
+            logger.info(
+                f"Updated session context {session_key} preference to {model_alias}"
+            )
 
     async def get_or_create(
         self,
@@ -140,17 +151,33 @@ class SessionManager:
 
         existing_session = self.sessions.get(session_key)
         if existing_session:
-            if self._check_session_model_compatibility(existing_session, session_key, target_model_alias):
+            if self._check_session_model_compatibility(
+                existing_session, session_key, target_model_alias
+            ):
                 # Compatible - update and return existing session
-                self._update_existing_session(existing_session, session_key, channel_id, 
-                                               user_id, username, message_content, message_ts, message_id)
+                self._update_existing_session(
+                    existing_session,
+                    session_key,
+                    channel_id,
+                    user_id,
+                    username,
+                    message_content,
+                    message_ts,
+                    message_id,
+                )
                 return existing_session.chat, session_key
             # Incompatible - will create new below
             del self.sessions[session_key]
 
         return await self._create_new_session(
-            session_key, channel_id, user_id, username,
-            message_content, message_ts, message_id, target_model_alias
+            session_key,
+            channel_id,
+            user_id,
+            username,
+            message_content,
+            message_ts,
+            message_id,
+            target_model_alias,
         )
 
     def _resolve_target_model_alias(self, session_key: str, channel_id: int) -> str:
@@ -164,14 +191,13 @@ class SessionManager:
         return ModelUsageService.DEFAULT_MODEL_ALIAS
 
     def _check_session_model_compatibility(
-        self, 
-        session: ChatSession, 
-        session_key: str, 
-        target_alias: str
+        self, session: ChatSession, session_key: str, target_alias: str
     ) -> bool:
         """Check if existing session is compatible with target model. Returns False if needs reset."""
         if session.model_alias != target_alias:
-            logger.info(f"Session {session_key} model alias changed from {session.model_alias} to {target_alias}. Resetting session.")
+            logger.info(
+                f"Session {session_key} model alias changed from {session.model_alias} to {target_alias}. Resetting session."
+            )
             return False
         return True
 
@@ -184,13 +210,15 @@ class SessionManager:
         username: str,
         message_content: str,
         message_ts: Optional[datetime],
-        message_id: Optional[str]
+        message_id: Optional[str],
     ) -> None:
         """Update existing session with new activity."""
         session.last_activity_at = datetime.now(timezone.utc)
         session.last_message_id = message_id
         self.sessions.move_to_end(session_key)
-        self._record_session_context(session_key, channel_id, user_id, username, message_content, message_ts)
+        self._record_session_context(
+            session_key, channel_id, user_id, username, message_content, message_ts
+        )
 
     async def _create_new_session(
         self,
@@ -201,13 +229,17 @@ class SessionManager:
         message_content: str,
         message_ts: Optional[datetime],
         message_id: Optional[str],
-        model_alias: str
+        model_alias: str,
     ) -> Tuple[object, str]:
         """Create a new chat session."""
-        logger.info(f"Creating new session {session_key} for user {user_id} with model {model_alias}")
+        logger.info(
+            f"Creating new session {session_key} for user {user_id} with model {model_alias}"
+        )
 
         system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
-        chat = self.llm_service.create_chat_session_for_alias(model_alias, system_prompt)
+        chat = self.llm_service.create_chat_session_for_alias(
+            model_alias, system_prompt
+        )
         chat.model_alias = model_alias
 
         self.sessions[session_key] = ChatSession(
@@ -219,20 +251,28 @@ class SessionManager:
             model_alias=model_alias,
         )
 
-        self._record_session_context(session_key, channel_id, user_id, username, 
-                                     message_content, message_ts, model_alias=model_alias)
+        self._record_session_context(
+            session_key,
+            channel_id,
+            user_id,
+            username,
+            message_content,
+            message_ts,
+            model_alias=model_alias,
+        )
         self._evict_if_needed()
 
         return chat, session_key
 
-
-    def set_channel_prompt(self, channel_id: int, prompt_content: Optional[str]) -> None:
+    def set_channel_prompt(
+        self, channel_id: int, prompt_content: Optional[str]
+    ) -> None:
         """Set a custom system prompt for a specific channel."""
         if prompt_content:
             self.channel_prompts[channel_id] = prompt_content
         else:
             self.channel_prompts.pop(channel_id, None)
-        
+
         # Reset current session for this channel to apply the new prompt
         self.reset_session_by_channel(channel_id)
 
@@ -278,16 +318,16 @@ class SessionManager:
     def link_message_to_session(self, message_id: str, session_key: str) -> None:
         """Links a Discord message ID to the last message in the session history by appending to message_ids."""
         session = self.sessions.get(session_key)
-        if session and hasattr(session.chat, 'history') and session.chat.history:
+        if session and hasattr(session.chat, "history") and session.chat.history:
             last_msg = session.chat.history[-1]
-            if not hasattr(last_msg, 'message_ids'):
-                 last_msg.message_ids = []
+            if not hasattr(last_msg, "message_ids"):
+                last_msg.message_ids = []
             last_msg.message_ids.append(message_id)
 
     def undo_last_exchanges(self, session_key: str, num_to_undo: int) -> list:
         """Remove the last N user/assistant exchanges from a session's history."""
         session = self.sessions.get(session_key)
-        if not session or not hasattr(session.chat, 'history'):
+        if not session or not hasattr(session.chat, "history"):
             return []
 
         try:
@@ -301,40 +341,54 @@ class SessionManager:
             if not indices_to_remove:
                 return []
 
-            new_history, removed = self._split_history_by_indices(history, indices_to_remove)
+            new_history, removed = self._split_history_by_indices(
+                history, indices_to_remove
+            )
             session.chat.history = new_history
 
-            logger.info("Undid last %d exchanges from session %s. New history length: %d",
-                        num_to_undo, session_key, len(new_history))
+            logger.info(
+                "Undid last %d exchanges from session %s. New history length: %d",
+                num_to_undo,
+                session_key,
+                len(new_history),
+            )
             return removed
 
         except Exception as e:
-            logger.error("Error undoing exchanges in session %s: %s", session_key, e, exc_info=True)
+            logger.error(
+                "Error undoing exchanges in session %s: %s",
+                session_key,
+                e,
+                exc_info=True,
+            )
             return []
 
     def _find_exchange_indices_to_remove(
-        self,
-        history: list,
-        assistant_role: str,
-        user_role: str,
-        num_to_undo: int
+        self, history: list, assistant_role: str, user_role: str, num_to_undo: int
     ) -> set:
-        """Find indices of messages to remove for undo operation."""
-        assistant_indices = [i for i, msg in enumerate(history) if msg.role == assistant_role]
-        if not assistant_indices:
-            return set()
-
+        """Find indices of messages to remove for undo operation (single-pass optimization)."""
         indices_to_remove = set()
-        num_to_undo = min(num_to_undo, len(assistant_indices))
-        
-        for assistant_idx in assistant_indices[-num_to_undo:]:
-            indices_to_remove.add(assistant_idx)
-            # Include preceding user messages
-            user_idx = assistant_idx - 1
-            while user_idx >= 0 and history[user_idx].role == user_role:
-                indices_to_remove.add(user_idx)
-                user_idx -= 1
-        
+
+        # Iterate backwards to find user/assistant pairs efficiently
+        # Start from the end and work backwards
+        i = len(history) - 1
+        pairs_found = 0
+
+        while i >= 0 and pairs_found < num_to_undo:
+            msg = history[i]
+            if msg.role == assistant_role:
+                # Found an assistant message - include it
+                indices_to_remove.add(i)
+                pairs_found += 1
+
+                # Include preceding user messages in this pair
+                prev_idx = i - 1
+                while prev_idx >= 0 and history[prev_idx].role == user_role:
+                    indices_to_remove.add(prev_idx)
+                    prev_idx -= 1
+
+            i -= 1
+
         return indices_to_remove
 
     def _split_history_by_indices(self, history: list, indices_to_remove: set) -> tuple:
@@ -347,3 +401,44 @@ class SessionManager:
             else:
                 new_history.append(msg)
         return new_history, removed
+
+    async def _periodic_session_cleanup(self):
+        """Periodically clean up inactive sessions."""
+        inactive_minutes = getattr(self.config, "session_inactive_minutes", 30)
+        if inactive_minutes <= 0:
+            return
+
+        # Cleanup interval: half of inactive time
+        cleanup_interval = inactive_minutes * 30  # seconds
+
+        while True:
+            try:
+                await asyncio.sleep(cleanup_interval)
+                await self._cleanup_inactive_sessions()
+            except asyncio.CancelledError:
+                logger.info("Session cleanup task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error during session cleanup: {e}", exc_info=True)
+
+    async def _cleanup_inactive_sessions(self):
+        """Remove sessions that haven't been active for configured time."""
+        try:
+            inactive_threshold = datetime.now(timezone.utc) - datetime.timedelta(
+                minutes=getattr(self.config, "session_inactive_minutes", 30)
+            )
+            cleaned_count = 0
+
+            # Clean up old session contexts
+            keys_to_remove = []
+            for key, context in list(self.session_contexts.items()):
+                if context.last_activity_at < inactive_threshold:
+                    keys_to_remove.append(key)
+
+            for key in keys_to_remove:
+                del self.session_contexts[key]
+                cleaned_count += 1
+
+            logger.debug(f"Cleaned up {cleaned_count} inactive session contexts")
+        except Exception as e:
+            logger.error(f"Error during session cleanup: {e}", exc_info=True)

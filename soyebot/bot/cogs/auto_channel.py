@@ -17,7 +17,11 @@ from soyebot.bot.session import SessionManager
 from soyebot.bot.cogs.base import BaseChatCog
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
-from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
+from soyebot.utils import (
+    GENERIC_ERROR_MESSAGE,
+    extract_message_content,
+    send_discord_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,25 +44,33 @@ class AutoChannelCog(BaseChatCog):
         self.dynamic_channel_ids: set[int] = set()
         self.env_channel_ids: set[int] = set(self.config.auto_reply_channel_ids)
 
-        self._load_dynamic_channels()
+        # Load dynamic channels (async)
+        asyncio.create_task(self._load_dynamic_channels())
 
-    def _load_dynamic_channels(self):
+    async def _load_dynamic_channels(self):
         """Loads auto-channels from JSON and updates config."""
-        # Using sync load for initialization
+        # Using async load for consistency with write operations
         self.dynamic_channel_ids = set()
         if self.json_file_path.exists():
             try:
-                with open(self.json_file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                async with aiofiles.open(
+                    self.json_file_path, "r", encoding="utf-8"
+                ) as f:
+                    content = await f.read()
+                    data = json.loads(content)
                     if isinstance(data, list):
                         self.dynamic_channel_ids = set(data)
             except Exception as e:
-                logger.error(f"Failed to load auto channels from {self.json_file_path}: {e}")
+                logger.error(
+                    f"Failed to load auto channels from {self.json_file_path}: {e}"
+                )
 
         # Merge environment config with dynamic config
         combined = self.env_channel_ids | self.dynamic_channel_ids
         self.config.auto_reply_channel_ids = tuple(combined)
-        logger.info(f"Loaded auto-channels. Env: {len(self.env_channel_ids)}, Dynamic: {len(self.dynamic_channel_ids)}, Total: {len(self.config.auto_reply_channel_ids)}")
+        logger.info(
+            f"Loaded auto-channels. Env: {len(self.env_channel_ids)}, Dynamic: {len(self.dynamic_channel_ids)}, Total: {len(self.config.auto_reply_channel_ids)}"
+        )
 
     async def _save_dynamic_channels(self):
         """Saves dynamic auto-channels to JSON and updates config."""
@@ -80,8 +92,14 @@ class AutoChannelCog(BaseChatCog):
         """자동 응답 채널 설정 관리 명령어"""
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.config.no_check_permission:
-            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
-                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+            if (
+                not isinstance(ctx.author, discord.Member)
+                or not ctx.author.guild_permissions.manage_guild
+            ):
+                await ctx.reply(
+                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                    mention_author=False,
+                )
                 return
         await ctx.send_help(ctx.command)
 
@@ -91,8 +109,8 @@ class AutoChannelCog(BaseChatCog):
         channel_id = ctx.channel.id
 
         if channel_id in self.dynamic_channel_ids:
-             await ctx.message.add_reaction("✅")
-             return
+            await ctx.message.add_reaction("✅")
+            return
 
         self.dynamic_channel_ids.add(channel_id)
         await self._save_dynamic_channels()
@@ -104,12 +122,17 @@ class AutoChannelCog(BaseChatCog):
         channel_id = ctx.channel.id
 
         if channel_id in self.env_channel_ids:
-             await ctx.reply("⚠️ 이 채널은 시스템 설정(환경 변수)으로 등록되어 있어 명령어로 해제할 수 없습니다.", mention_author=False)
-             return
+            await ctx.reply(
+                "⚠️ 이 채널은 시스템 설정(환경 변수)으로 등록되어 있어 명령어로 해제할 수 없습니다.",
+                mention_author=False,
+            )
+            return
 
         if channel_id not in self.dynamic_channel_ids:
-             await ctx.reply("⚠️ 이 채널은 자동 응답 채널이 아닙니다.", mention_author=False)
-             return
+            await ctx.reply(
+                "⚠️ 이 채널은 자동 응답 채널이 아닙니다.", mention_author=False
+            )
+            return
 
         self.dynamic_channel_ids.remove(channel_id)
         await self._save_dynamic_channels()
@@ -124,7 +147,9 @@ class AutoChannelCog(BaseChatCog):
         if not self.config.break_cut_mode:
             sent_messages = await send_discord_message(message.channel, reply.text)
             for sent_msg in sent_messages:
-                self.session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
+                self.session_manager.link_message_to_session(
+                    str(sent_msg.id), reply.session_key
+                )
             return
 
         # If Break-Cut Mode is ON, use shared helper
@@ -151,23 +176,31 @@ class AutoChannelCog(BaseChatCog):
         if message.content and message.content.lstrip().startswith("\\"):
             return
 
-        messages_to_prepend = self._cancel_active_tasks(message.channel.id, message.author.name)
+        messages_to_prepend = self._cancel_active_tasks(
+            message.channel.id, message.author.name
+        )
 
-        await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
-        
+        await self.message_buffer.add_message(
+            message.channel.id, message, self._process_batch
+        )
+
         if messages_to_prepend:
-             # Ensure the list exists before prepending
-             if message.channel.id in self.message_buffer.buffers:
-                 self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
+            # Ensure the list exists before prepending
+            if message.channel.id in self.message_buffer.buffers:
+                self.message_buffer.buffers[message.channel.id][0:0] = (
+                    messages_to_prepend
+                )
 
     @commands.Cog.listener()
-    async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
+    async def on_typing(
+        self, channel: discord.abc.Messageable, user: discord.abc.User, when: float
+    ):
         """Interrupt auto-reply if user starts typing."""
         if user.bot:
             return
-        if not hasattr(channel, 'id'):
+        if not hasattr(channel, "id"):
             return
-        
+
         # Only care if this is an auto-reply channel
         if channel.id not in self.config.auto_reply_channel_ids:
             return
@@ -177,7 +210,9 @@ class AutoChannelCog(BaseChatCog):
             self.message_buffer.handle_typing(channel.id, self._process_batch)
 
     @commands.command(name="@", aliases=["undo"])
-    async def undo_command(self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"):
+    async def undo_command(
+        self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"
+    ):
         """Deletes the last N user/assistant message pairs from the chat history."""
         if ctx.channel.id not in self.config.auto_reply_channel_ids:
             return
@@ -211,7 +246,9 @@ class AutoChannelCog(BaseChatCog):
 
         # Execute undo
         num_to_actually_undo = min(num_to_undo, 10)
-        removed_messages = self.session_manager.undo_last_exchanges(session_key, num_to_actually_undo)
+        removed_messages = self.session_manager.undo_last_exchanges(
+            session_key, num_to_actually_undo
+        )
 
         if removed_messages or undo_performed_on_pending:
             await self._try_delete_message(ctx.message)
@@ -227,7 +264,9 @@ class AutoChannelCog(BaseChatCog):
         except ValueError:
             return None
 
-    async def _cancel_pending_tasks(self, ctx, channel_id: int, num_to_undo: int) -> tuple:
+    async def _cancel_pending_tasks(
+        self, ctx, channel_id: int, num_to_undo: int
+    ) -> tuple:
         """Cancel pending tasks and return (was_cancelled, remaining_undo_count)."""
         undo_performed = False
 
@@ -235,16 +274,18 @@ class AutoChannelCog(BaseChatCog):
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.info("Undo interrupted active processing in #%s", ctx.channel.name)
+                logger.info(
+                    "Undo interrupted active processing in #%s", ctx.channel.name
+                )
                 task.cancel()
-                
+
                 # Delete pending messages
                 for msg in self.active_batches.get(channel_id, []):
                     try:
                         await msg.delete()
                     except (discord.NotFound, discord.Forbidden):
                         pass
-                
+
                 undo_performed = True
                 num_to_undo -= 1
 
@@ -261,15 +302,19 @@ class AutoChannelCog(BaseChatCog):
         """Check if user has permission for historical undo."""
         session = self.session_manager.sessions.get(session_key)
         user_message_count = 0
-        
-        if session and hasattr(session.chat, 'history'):
+
+        if session and hasattr(session.chat, "history"):
             user_role = self.llm_service.get_user_role_name()
             user_message_count = sum(
-                1 for msg in session.chat.history
+                1
+                for msg in session.chat.history
                 if msg.role == user_role and msg.author_id == ctx.author.id
             )
 
-        is_admin = isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.manage_guild
+        is_admin = (
+            isinstance(ctx.author, discord.Member)
+            and ctx.author.guild_permissions.manage_guild
+        )
         # Bypass permission check if NO_CHECK_PERMISSION is set
         if self.config.no_check_permission:
             is_admin = True
@@ -279,13 +324,26 @@ class AutoChannelCog(BaseChatCog):
         """Delete Discord messages from removed history entries."""
         assistant_role = self.llm_service.get_assistant_role_name()
 
+        # Collect all message IDs to delete in batches
+        message_ids_to_delete: list[tuple[str, str]] = []  # (message_id, role)
+
         for msg in removed_messages:
-            if not hasattr(msg, 'message_ids') or not msg.message_ids:
+            if not hasattr(msg, "message_ids") or not msg.message_ids:
                 continue
             for mid in msg.message_ids:
-                await self._try_delete_channel_message(channel, mid, msg.role)
+                message_ids_to_delete.append((mid, msg.role))
 
-    async def _try_delete_channel_message(self, channel, message_id: str, role: str) -> None:
+        # Batch delete operations for better performance
+        if message_ids_to_delete:
+            tasks = [
+                self._try_delete_channel_message(channel, mid, role)
+                for mid, role in message_ids_to_delete
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _try_delete_channel_message(
+        self, channel, message_id: str, role: str
+    ) -> None:
         """Try to delete a message by ID, logging any errors."""
         try:
             msg = await channel.fetch_message(int(message_id))
@@ -306,13 +364,17 @@ class AutoChannelCog(BaseChatCog):
         except (discord.Forbidden, discord.HTTPException, discord.NotFound):
             pass
 
-
-
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
         """Cog 내 명령어 에러 핸들러"""
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply(f"❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: {', '.join(error.missing_permissions)})", mention_author=False)
+            await ctx.reply(
+                f"❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: {', '.join(error.missing_permissions)})",
+                mention_author=False,
+            )
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ 잘못된 인자가 전달되었습니다. 명령어를 다시 확인해 주세요.", mention_author=False)
+            await ctx.reply(
+                "❌ 잘못된 인자가 전달되었습니다. 명령어를 다시 확인해 주세요.",
+                mention_author=False,
+            )
         else:
-             logger.error(f"Command error in {ctx.command}: {error}", exc_info=True)
+            logger.error(f"Command error in {ctx.command}: {error}", exc_info=True)

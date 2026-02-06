@@ -3,9 +3,10 @@ import logging
 import os
 import datetime
 import asyncio
-from typing import Dict
+from typing import Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
+
 
 class ImageUsageService:
     """Tracks daily image upload usage per user."""
@@ -15,6 +16,11 @@ class ImageUsageService:
         self._ensure_data_dir()
         self.usage_data: Dict[str, Dict[str, int]] = {}
         self._load()
+
+        # In-memory buffer for debounced writes
+        self._buffered_writes: Dict[str, Any] = {}  # (data_snapshot, timestamp)
+        self._debounce_interval = 30  # seconds
+        self._write_task: Optional[asyncio.Task] = None
 
     def _ensure_data_dir(self):
         directory = os.path.dirname(self.storage_path)
@@ -55,6 +61,31 @@ class ImageUsageService:
         data_snapshot = self.usage_data.copy()
         await asyncio.to_thread(self._save, data_snapshot)
 
+    def _schedule_write(self):
+        """Schedule a debounced write operation."""
+        # Cancel any existing write task
+        if self._write_task and not self._write_task.done():
+            self._write_task.cancel()
+
+        # Schedule new write with debounce
+        self._write_task = asyncio.create_task(self._flush_buffer())
+
+    async def _flush_buffer(self):
+        """Flush buffered changes to disk with debounce."""
+        try:
+            # Wait for debounce interval
+            await asyncio.sleep(self._debounce_interval)
+
+            # Write only if no new changes occurred
+            if self._buffered_writes:
+                data_snapshot = self._buffered_writes.pop("data_snapshot")
+                await asyncio.to_thread(self._save, data_snapshot)
+        except asyncio.CancelledError:
+            # Task cancelled, ignore
+            pass
+        except Exception as e:
+            logger.error(f"Error during flush buffer: {e}", exc_info=True)
+
     def _cleanup_old_entries(self):
         today = self._get_today_key()
         keys_to_remove = [k for k in self.usage_data.keys() if k != today]
@@ -85,7 +116,9 @@ class ImageUsageService:
         user_key = str(user_id)
         current_usage = self.usage_data[today].get(user_key, 0)
         self.usage_data[today][user_key] = current_usage + count
-        await self._save_async()
+
+        # Schedule debounced write
+        self._schedule_write()
 
     def get_usage(self, user_id: int) -> int:
         """Get current daily usage for user."""
