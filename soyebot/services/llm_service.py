@@ -1,7 +1,7 @@
 """LLM service selector for SoyeBot."""
 
 import logging
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService
@@ -298,6 +298,50 @@ class LLMService:
             await self._record_image_usage_if_needed(primary_author, image_count)
 
         return self._prepare_response_with_notification(response, notification)
+
+    def get_tools_for_backend(self, backend: BaseLLMService, tools: List[Any]) -> Any:
+        """Get tools in the format required by a specific backend.
+
+        Args:
+            backend: The backend service to format tools for.
+            tools: List of tool definitions.
+
+        Returns:
+            Provider-specific tool format.
+        """
+        return backend.get_tools_for_provider(tools)
+
+    def extract_function_calls_from_response(
+        self,
+        backend: BaseLLMService,
+        response: Any
+    ) -> List[Dict[str, Any]]:
+        """Extract function calls from a backend response.
+
+        Args:
+            backend: The backend service that generated the response.
+            response: The response object.
+
+        Returns:
+            List of function call dictionaries.
+        """
+        return backend.extract_function_calls(response)
+
+    def format_function_results_for_backend(
+        self,
+        backend: BaseLLMService,
+        results: List[Dict[str, Any]]
+    ) -> Any:
+        """Format function results for a specific backend.
+
+        Args:
+            backend: The backend service to format results for.
+            results: List of tool execution results.
+
+        Returns:
+            Provider-specific formatted results.
+        """
+        return backend.format_function_results(results)
 
     def _extract_message_metadata(self, discord_message) -> tuple:
         """Extract user_id, channel_id, guild_id, and primary_author from message(s)."""

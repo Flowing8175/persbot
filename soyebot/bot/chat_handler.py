@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, TYPE_CHECKING
 
 import discord
 
@@ -12,6 +12,9 @@ import logging
 from soyebot.bot.session import SessionManager, ResolvedSession
 from soyebot.services.llm_service import LLMService
 from soyebot.utils import smart_split
+
+if TYPE_CHECKING:
+    from soyebot.tools import ToolManager
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +85,7 @@ async def create_chat_reply(
     resolution: ResolvedSession,
     llm_service: LLMService,
     session_manager: SessionManager,
+    tool_manager: Optional["ToolManager"] = None,
 ) -> Optional[ChatReply]:
     """Create or reuse a chat session and fetch an LLM reply."""
 
@@ -119,6 +123,31 @@ async def create_chat_reply(
         return None
 
     response_text, response_obj = response_result
+
+    # Check for function calls in the response
+    if tool_manager and tool_manager.is_enabled():
+        function_calls = llm_service.extract_function_calls_from_response(
+            llm_service.assistant_backend,
+            response_obj
+        )
+
+        if function_calls:
+            logger.info("Detected %d function calls in response", len(function_calls))
+            # Execute tools and get final response
+            # This is a simplified implementation - full implementation would loop
+            # until the LLM stops calling functions
+            try:
+                results = await tool_manager.execute_tools(function_calls, primary_msg)
+                logger.info("Executed %d tools, results: %s", len(results), [r.get("name") for r in results])
+                # For now, we'll return a message about tool execution
+                # Full implementation would send results back to LLM for final response
+                tool_summary = f"Executed {len(results)} tool(s): {', '.join([r['name'] for r in results])}"
+                return ChatReply(text=response_text or "" + f"\n\n[Tool Execution: {tool_summary}]", session_key=session_key, response=response_obj)
+            except Exception as e:
+                logger.error("Error executing tools: %s", e, exc_info=True)
+                # Return original response on tool execution error
+                pass
+
     return ChatReply(text=response_text or "", session_key=session_key, response=response_obj)
 
 

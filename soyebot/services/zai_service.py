@@ -10,7 +10,7 @@ Enable Coding Plan API by setting ZAI_CODING_PLAN=true in environment.
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Optional, Tuple, Union
+from typing import Any, Deque, Optional, Tuple, Union, List, Dict
 
 import discord
 from openai import OpenAI, RateLimitError
@@ -19,6 +19,7 @@ from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
 from soyebot.utils import get_mime_type
+from soyebot.tools.adapters.zai_adapter import ZAIToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -442,3 +443,37 @@ class ZAIService(BaseLLMService):
         chat_session._history.append(model_msg)
 
         return model_msg.content, response
+
+    # Tool support methods
+    def get_tools_for_provider(self, tools: List[Any]) -> Any:
+        """Convert tool definitions to Z.AI format.
+
+        Args:
+            tools: List of ToolDefinition objects to convert.
+
+        Returns:
+            List of tool dictionaries in Z.AI function calling format.
+        """
+        return ZAIToolAdapter.convert_tools(tools)
+
+    def extract_function_calls(self, response: Any) -> List[Dict[str, Any]]:
+        """Extract function calls from Z.AI response.
+
+        Args:
+            response: Z.AI response object (from chat.completions.create).
+
+        Returns:
+            List of function call dictionaries with 'id', 'name', and 'parameters'.
+        """
+        return ZAIToolAdapter.extract_function_calls(response)
+
+    def format_function_results(self, results: List[Dict[str, Any]]) -> Any:
+        """Format function results for sending back to Z.AI.
+
+        Args:
+            results: List of dicts with 'id', 'name', 'result', and optionally 'error'.
+
+        Returns:
+            List of message dictionaries in Z.AI tool format.
+        """
+        return ZAIToolAdapter.create_tool_messages(results)

@@ -106,6 +106,15 @@ class AppConfig:
     break_cut_mode: bool = True
     no_check_permission: bool = False
 
+    # --- Tool Configuration ---
+    enable_tools: bool = True
+    enable_discord_tools: bool = True
+    enable_api_tools: bool = True
+    tool_rate_limit: int = 60  # per minute (seconds between uses)
+    tool_timeout: float = 10.0  # seconds
+    weather_api_key: Optional[str] = None
+    search_api_key: Optional[str] = None
+
 
 def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
@@ -318,6 +327,15 @@ def load_config() -> AppConfig:
         summarizer_model_name,
     )
 
+    # Parse tool configuration
+    enable_tools = os.environ.get("ENABLE_TOOLS", "true").lower() in ("true", "1", "yes")
+    enable_discord_tools = os.environ.get("ENABLE_DISCORD_TOOLS", "true").lower() in ("true", "1", "yes")
+    enable_api_tools = os.environ.get("ENABLE_API_TOOLS", "true").lower() in ("true", "1", "yes")
+    tool_rate_limit = _parse_int_env("TOOL_RATE_LIMIT", 60)
+    tool_timeout = _parse_float_env("TOOL_TIMEOUT", 10.0)
+    weather_api_key = os.environ.get("WEATHER_API_KEY")
+    search_api_key = os.environ.get("SEARCH_API_KEY")
+
     return AppConfig(
         discord_token=discord_token,
         assistant_llm_provider=assistant_llm_provider,
@@ -342,4 +360,11 @@ def load_config() -> AppConfig:
         max_history=max_history,
         no_check_permission=os.environ.get("NO_CHECK_PERMISSION", "").lower()
         in ("true", "1", "yes"),
+        enable_tools=enable_tools,
+        enable_discord_tools=enable_discord_tools,
+        enable_api_tools=enable_api_tools,
+        tool_rate_limit=tool_rate_limit,
+        tool_timeout=tool_timeout,
+        weather_api_key=weather_api_key,
+        search_api_key=search_api_key,
     )

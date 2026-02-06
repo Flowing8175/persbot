@@ -83,6 +83,45 @@ class BaseLLMService(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_tools_for_provider(self, tools: List[Any]) -> Any:
+        """
+        Convert tool definitions to provider-specific format.
+
+        Args:
+            tools: List of tool definitions to convert.
+
+        Returns:
+            Provider-specific tool format.
+        """
+        pass
+
+    @abstractmethod
+    def extract_function_calls(self, response: Any) -> List[Dict[str, Any]]:
+        """
+        Extract function calls from provider response.
+
+        Args:
+            response: Provider response object.
+
+        Returns:
+            List of function call dictionaries with 'name' and 'parameters'.
+        """
+        pass
+
+    @abstractmethod
+    def format_function_results(self, results: List[Dict[str, Any]]) -> Any:
+        """
+        Format function results for sending back to provider.
+
+        Args:
+            results: List of dicts with 'name', 'result', and optionally 'error'.
+
+        Returns:
+            Provider-specific formatted results.
+        """
+        pass
+
     def reload_parameters(self) -> None:
         """Reload service parameters (e.g. clear caches). To be overridden."""
         pass

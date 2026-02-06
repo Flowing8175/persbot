@@ -5,7 +5,7 @@ import logging
 import base64
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Optional, Tuple, Union
+from typing import Any, Deque, Optional, Tuple, Union, List, Dict
 
 import discord
 from openai import OpenAI, RateLimitError
@@ -14,6 +14,7 @@ from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
 from soyebot.utils import get_mime_type
+from soyebot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -567,3 +568,37 @@ class OpenAIService(BaseLLMService):
         chat_session._history.append(model_msg)
 
         return model_msg.content, response
+
+    # Tool support methods
+    def get_tools_for_provider(self, tools: List[Any]) -> Any:
+        """Convert tool definitions to OpenAI format.
+
+        Args:
+            tools: List of ToolDefinition objects to convert.
+
+        Returns:
+            List of tool dictionaries in OpenAI function calling format.
+        """
+        return OpenAIToolAdapter.convert_tools(tools)
+
+    def extract_function_calls(self, response: Any) -> List[Dict[str, Any]]:
+        """Extract function calls from OpenAI response.
+
+        Args:
+            response: OpenAI response object (from chat.completions.create).
+
+        Returns:
+            List of function call dictionaries with 'id', 'name', and 'parameters'.
+        """
+        return OpenAIToolAdapter.extract_function_calls(response)
+
+    def format_function_results(self, results: List[Dict[str, Any]]) -> Any:
+        """Format function results for sending back to OpenAI.
+
+        Args:
+            results: List of dicts with 'id', 'name', 'result', and optionally 'error'.
+
+        Returns:
+            List of message dictionaries in OpenAI tool format.
+        """
+        return OpenAIToolAdapter.create_tool_messages(results)

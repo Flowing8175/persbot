@@ -8,7 +8,7 @@ import logging
 import asyncio
 import re
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple, Union, Callable, Awaitable
+from typing import Any, Optional, Tuple, Union, Callable, Awaitable, List, Dict
 
 import discord
 import google.genai as genai
@@ -19,6 +19,7 @@ from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
 from soyebot.utils import GENERIC_ERROR_MESSAGE, get_mime_type
+from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -747,4 +748,38 @@ class GeminiService(BaseLLMService):
                 await discord_message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
             except discord.HTTPException:
                 pass
+
+    # Tool support methods
+    def get_tools_for_provider(self, tools: List[Any]) -> Any:
+        """Convert tool definitions to Gemini format.
+
+        Args:
+            tools: List of ToolDefinition objects to convert.
+
+        Returns:
+            List of genai_types.Tool objects.
+        """
+        return GeminiToolAdapter.convert_tools(tools)
+
+    def extract_function_calls(self, response: Any) -> List[Dict[str, Any]]:
+        """Extract function calls from Gemini response.
+
+        Args:
+            response: Gemini response object.
+
+        Returns:
+            List of function call dictionaries with 'name' and 'parameters'.
+        """
+        return GeminiToolAdapter.extract_function_calls(response)
+
+    def format_function_results(self, results: List[Dict[str, Any]]) -> Any:
+        """Format function results for sending back to Gemini.
+
+        Args:
+            results: List of dicts with 'name', 'result', and optionally 'error'.
+
+        Returns:
+            List of genai_types.Part objects with function responses.
+        """
+        return GeminiToolAdapter.create_function_response_parts(results)
 
