@@ -13,6 +13,7 @@ async def web_search(
     query: str,
     num_results: int = 5,
     search_api_key: Optional[str] = None,
+    **kwargs,
 ) -> ToolResult:
     """Search the web for information.
 

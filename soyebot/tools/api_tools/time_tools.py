@@ -30,6 +30,7 @@ TIMEZONE_MAPPINGS = {
 
 async def get_time(
     timezone_str: Optional[str] = None,
+    **kwargs  # Accept extra kwargs for compatibility with executor
 ) -> ToolResult:
     """Get the current time in a specific timezone.
 
@@ -90,7 +91,7 @@ async def get_time(
         return ToolResult(success=False, error=str(e))
 
 
-async def get_time_basic(timezone_str: Optional[str] = None) -> ToolResult:
+async def get_time_basic(timezone_str: Optional[str] = None, **kwargs) -> ToolResult:
     """Get current time using basic timezone support (fallback)."""
     try:
         tz_str = timezone_str.lower().strip() if timezone_str else "utc"

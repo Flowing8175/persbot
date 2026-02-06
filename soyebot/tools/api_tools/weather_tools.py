@@ -13,6 +13,7 @@ async def get_weather(
     location: str,
     units: str = "metric",
     weather_api_key: Optional[str] = None,
+    **kwargs,
 ) -> ToolResult:
     """Get current weather information for a location.
 

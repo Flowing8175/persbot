@@ -6,7 +6,7 @@ import time
 import io
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Union, List, Tuple
+from typing import Any, Awaitable, Callable, Optional, Union, List, Tuple, Dict
 
 import discord
 from PIL import Image
