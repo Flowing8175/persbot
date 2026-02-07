@@ -16,14 +16,12 @@ logger = logging.getLogger(__name__)
 
 async def generate_image(
     prompt: str,
-    discord_user_id: int,
     **kwargs,
 ) -> ToolResult:
     """Generate an image using Z.AI image generation API.
 
     Args:
         prompt: The text prompt for image generation.
-        discord_user_id: Discord user ID for user identification.
         **kwargs: Additional keyword arguments (unused).
 
     Returns:
@@ -57,7 +55,6 @@ async def generate_image(
             prompt=prompt,
             size="1280x1280",
             quality="hd",
-            user_id=str(discord_user_id),
         )
 
         # Check if response data is empty
@@ -252,15 +249,8 @@ def register_image_tools(registry):
                 ToolParameter(
                     name="prompt",
                     type="string",
-                    description="The text description of the image to generate",
+                    description="The text description of image to generate",
                     required=True,
-                ),
-                ToolParameter(
-                    name="discord_user_id",
-                    type="integer",
-                    description="Discord user ID for user identification (optional, uses 0 if not provided)",
-                    required=False,
-                    default=0,
                 ),
             ],
             handler=generate_image,
