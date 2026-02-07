@@ -106,7 +106,7 @@ async def search_episodic_memory(
 
     except Exception as e:
         logger.error("Error searching episodic memory: %s", e, exc_info=True)
-    return ToolResult(success=False, error=str(e))
+        return ToolResult(success=False, error=str(e))
 
 
 async def save_episodic_memory(
@@ -169,6 +169,103 @@ async def save_episodic_memory(
 
     except Exception as e:
         logger.error("Error saving episodic memory: %s", e, exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def remove_episodic_memory(
+    user_id: str,
+    content: Optional[str] = None,
+    memory_type: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    **kwargs,
+) -> ToolResult:
+    """Remove episodic memory entries matching the given criteria.
+
+    This tool removes memories from storage based on user_id and optional filters.
+    If only user_id is provided, all memories for that user are removed.
+    Additional filters (content, memory_type, tags) can be used for selective removal.
+
+    Args:
+        user_id: The Discord user ID to remove memories for.
+        content: Optional content string to match for selective removal.
+        memory_type: Optional memory type to filter by (preference, fact, promise, interest).
+        tags: Optional list of tags to filter by.
+
+    Returns:
+        ToolResult with confirmation of removed memories.
+    """
+    if not user_id:
+        return ToolResult(success=False, error="User ID cannot be empty")
+
+    try:
+        # Load existing memories
+        memories = await _load_memory_vector()
+
+        if not memories:
+            return ToolResult(
+                success=True,
+                data={
+                    "user_id": user_id,
+                    "removed_count": 0,
+                    "message": "No memories found to remove",
+                },
+            )
+
+        # Filter memories to keep (those that DON'T match removal criteria)
+        memories_to_keep = []
+        removed_count = 0
+
+        for memory in memories:
+            # Skip if memory belongs to a different user
+            memory_user_id = memory.get("user_id", "global")
+            if memory_user_id != user_id and memory_user_id != "global":
+                memories_to_keep.append(memory)
+                continue
+
+            # If user_id matches global, apply all filters
+            # If user_id matches specific user, apply all filters
+            should_remove = True
+
+            # If content filter is provided, check for match
+            if content is not None and content.strip():
+                memory_content = memory.get("content", "")
+                if content not in memory_content:
+                    should_remove = False
+
+            # If memory_type filter is provided, check for match
+            if memory_type is not None and memory_type.strip():
+                memory_type_value = memory.get("type", "")
+                if memory_type.lower() != memory_type_value.lower():
+                    should_remove = False
+
+            # If tags filter is provided, check for at least one matching tag
+            if tags is not None and tags:
+                memory_tags = memory.get("tags", [])
+                has_matching_tag = any(
+                    tag.lower() in [t.lower() for t in memory_tags] for tag in tags
+                )
+                if not has_matching_tag:
+                    should_remove = False
+
+            if should_remove:
+                removed_count += 1
+            else:
+                memories_to_keep.append(memory)
+
+        # Save updated memories
+        await _save_memory_vector(memories_to_keep)
+
+        return ToolResult(
+            success=True,
+            data={
+                "user_id": user_id,
+                "removed_count": removed_count,
+                "message": f"Removed {removed_count} memory entries",
+            },
+        )
+
+    except Exception as e:
+        logger.error("Error removing episodic memory: %s", e, exc_info=True)
         return ToolResult(success=False, error=str(e))
 
 
@@ -399,5 +496,42 @@ def register_memory_tools(registry):
                 ),
             ],
             handler=save_episodic_memory,
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="remove_episodic_memory",
+            description="Remove episodic memory entries matching the given criteria. Can remove all memories for a user or filter by content, type, or tags.",
+            category=ToolCategory.PERSONA_MEMORY,
+            parameters=[
+                ToolParameter(
+                    name="user_id",
+                    type="string",
+                    description="The Discord user ID to remove memories for.",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="content",
+                    type="string",
+                    description="Optional content string to match for selective removal. If provided, only memories containing this content will be removed.",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="memory_type",
+                    type="string",
+                    description="Optional memory type to filter by (preference, fact, promise, interest).",
+                    required=False,
+                    enum=["preference", "fact", "promise", "interest"],
+                ),
+                ToolParameter(
+                    name="tags",
+                    type="array",
+                    description="Optional list of tags to filter by. Memories matching any of these tags will be removed.",
+                    required=False,
+                    items_type="string",
+                ),
+            ],
+            handler=remove_episodic_memory,
         )
     )
