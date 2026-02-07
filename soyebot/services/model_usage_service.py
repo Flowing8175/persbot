@@ -28,7 +28,7 @@ class ModelUsageService:
 
     # Helper maps
     ALIAS_TO_API: Dict[str, str] = {}
-    DEFAULT_MODEL_ALIAS = "Gemini 3 flash"
+    DEFAULT_MODEL_ALIAS = "GLM 4.7"  # Default fallback (should match a valid model in models.json)
 
     # In-memory cache for model definitions
     _model_definition_cache: Dict[str, ModelDefinition] = {}

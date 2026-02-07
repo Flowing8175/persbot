@@ -188,6 +188,15 @@ class SessionManager:
                 return ctx_alias
         if channel_id in self.channel_model_preferences:
             return self.channel_model_preferences[channel_id]
+
+        # Derive default from config by finding the alias that matches the configured model
+        config_model = self.config.assistant_model_name
+        for alias, definition in self.llm_service.model_usage_service.MODEL_DEFINITIONS.items():
+            if definition.api_model_name == config_model:
+                logger.debug(f"Derived default model alias '{alias}' from config model '{config_model}'")
+                return alias
+
+        # Fallback to class default if no match found
         return ModelUsageService.DEFAULT_MODEL_ALIAS
 
     def _check_session_model_compatibility(
