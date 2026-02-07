@@ -38,8 +38,15 @@ async def get_user_info(
         )
 
     try:
-        # Use the bot from discord context (set by test fixtures)
-        user = await discord_context.bot.fetch_user(user_id)
+        # Get bot client from message state
+        bot = discord_context._state
+        user_data = await bot.http.get_user(user_id)
+
+        if not user_data:
+            return ToolResult(success=False, error=f"User {user_id} not found")
+
+        # Create user object from raw data
+        user = discord.User(state=bot, data=user_data)
 
         if not user:
             return ToolResult(success=False, error=f"User {user_id} not found")
@@ -104,8 +111,8 @@ async def get_member_info(
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
-        if not guild and discord_context.bot:
-            guild = discord_context.bot.get_guild(guild_id)
+        if not guild:
+            guild = discord_context._state.get_guild(guild_id)
 
         if not guild:
             return ToolResult(success=False, error=f"Guild {guild_id} not found")
@@ -185,8 +192,8 @@ async def get_member_roles(
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
-        if not guild and discord_context.bot:
-            guild = discord_context.bot.get_guild(guild_id)
+        if not guild:
+            guild = discord_context._state.get_guild(guild_id)
 
         if not guild:
             return ToolResult(success=False, error=f"Guild {guild_id} not found")

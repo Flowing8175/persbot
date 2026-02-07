@@ -58,8 +58,8 @@ class TestChannelTools:
         message.guild = mock_guild
         message.channel = mock_channel
         message.guild.get_channel = Mock(return_value=mock_channel)
-        message.bot = Mock()
-        message.bot.get_guild = Mock(return_value=mock_guild)
+        message._state = Mock()
+        message._state.get_guild = Mock(return_value=mock_guild)
         return message
 
     @pytest.mark.asyncio
@@ -218,7 +218,7 @@ class TestChannelTools:
         dm_context = Mock()
         dm_context.guild = None
         dm_context.channel = mock_channel
-        dm_context.bot = Mock()
+        dm_context._state = Mock()
 
         result = await get_channel_info(None, dm_context)
 
@@ -270,11 +270,23 @@ class TestUserTools:
         """Create a mock Discord message context."""
         message = Mock()
         message.guild = Mock(id=987654321)
-        message.bot = Mock()
-        message.bot.fetch_user = AsyncMock(return_value=mock_user)
+        message._state = Mock()
+        message._state.http = Mock()
+        message._state.http.get_user = AsyncMock(
+            return_value={
+                "id": mock_user.id,
+                "username": mock_user.name,
+                "display_name": mock_user.display_name,
+                "discriminator": mock_user.discriminator,
+                "bot": mock_user.bot,
+                "created_at": mock_user.created_at.isoformat(),
+                "avatar": mock_user.avatar,
+                "global_name": mock_user.global_name,
+            }
+        )
+        message._state.get_guild = Mock(return_value=message.guild)
         message.guild.get_member = Mock(return_value=mock_member)
         message.guild.fetch_member = AsyncMock(return_value=mock_member)
-        message.bot.get_guild = Mock(return_value=message.guild)
         return message
 
     @pytest.mark.asyncio
@@ -382,8 +394,19 @@ class TestUserTools:
         other_user.avatar.url = "https://example.com/other.png"
         other_user.global_name = "Other User Global"
 
-        # Update bot to return the other user when requested
-        mock_discord_context.bot.fetch_user = AsyncMock(return_value=other_user)
+        # Update _state to return the other user when requested
+        mock_discord_context._state.http.get_user = AsyncMock(
+            return_value={
+                "id": other_user.id,
+                "username": other_user.name,
+                "display_name": other_user.display_name,
+                "discriminator": other_user.discriminator,
+                "bot": other_user.bot,
+                "created_at": other_user.created_at.isoformat(),
+                "avatar": other_user.avatar,
+                "global_name": other_user.global_name,
+            }
+        )
 
         # Call with explicit user_id - should use this instead of context
         result = await get_user_info(other_user.id, mock_discord_context)
@@ -430,8 +453,8 @@ class TestGuildTools:
         """Create a mock Discord message context."""
         message = Mock()
         message.guild = mock_guild
-        message.bot = Mock()
-        message.bot.get_guild = Mock(return_value=mock_guild)
+        message._state = Mock()
+        message._state.get_guild = Mock(return_value=mock_guild)
         return message
 
     @pytest.mark.asyncio
