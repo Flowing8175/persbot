@@ -1,7 +1,7 @@
 {
   "Gemini 3 flash": {
     "display_name": "Gemini 3 flash",
-    "api_model_name": "gemini-3-flash",
+    "api_model_name": "gemini-3-flash-preview",
     "daily_limit": 100,
     "scope": "guild",
     "provider": "gemini",
