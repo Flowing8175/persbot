@@ -11,20 +11,26 @@ logger = logging.getLogger(__name__)
 
 
 async def get_guild_info(
-    guild_id: int,
+    guild_id: Optional[int] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get information about a Discord guild.
 
     Args:
-        guild_id: The ID of the guild to get info for.
+        guild_id: The ID of the guild to get info for (optional, auto-filled from context).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with guild information.
     """
+    # Auto-fill guild_id from context if not provided
+    if guild_id is None and discord_context and discord_context.guild:
+        guild_id = discord_context.guild.id
+
     if not discord_context or not discord_context.guild:
-        return ToolResult(success=False, error="Discord context not available or not in a guild")
+        return ToolResult(
+            success=False, error="Discord context not available or not in a guild"
+        )
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -66,20 +72,26 @@ async def get_guild_info(
 
 
 async def get_guild_roles(
-    guild_id: int,
+    guild_id: Optional[int] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get all roles in a Discord guild.
 
     Args:
-        guild_id: The ID of the guild to get roles for.
+        guild_id: The ID of the guild to get roles for (optional, auto-filled from context).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with list of guild roles.
     """
+    # Auto-fill guild_id from context if not provided
+    if guild_id is None and discord_context and discord_context.guild:
+        guild_id = discord_context.guild.id
+
     if not discord_context or not discord_context.guild:
-        return ToolResult(success=False, error="Discord context not available or not in a guild")
+        return ToolResult(
+            success=False, error="Discord context not available or not in a guild"
+        )
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -102,10 +114,18 @@ async def get_guild_roles(
                 "hoist": role.hoist,
                 "is_default": role.is_default(),
                 "tags": {
-                    "bot_id": str(role.tags.bot_id) if role.tags and role.tags.bot_id else None,
-                    "integration_id": str(role.tags.integration_id) if role.tags and role.tags.integration_id else None,
-                    "premium_subscriber": role.tags.is_premium_subscriber() if role.tags else False,
-                } if role.tags else None,
+                    "bot_id": str(role.tags.bot_id)
+                    if role.tags and role.tags.bot_id
+                    else None,
+                    "integration_id": str(role.tags.integration_id)
+                    if role.tags and role.tags.integration_id
+                    else None,
+                    "premium_subscriber": role.tags.is_premium_subscriber()
+                    if role.tags
+                    else False,
+                }
+                if role.tags
+                else None,
             }
             roles.append(role_info)
 
@@ -120,20 +140,26 @@ async def get_guild_roles(
 
 
 async def get_guild_emojis(
-    guild_id: int,
+    guild_id: Optional[int] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get custom emojis in a Discord guild.
 
     Args:
-        guild_id: The ID of the guild to get emojis for.
+        guild_id: The ID of the guild to get emojis for (optional, auto-filled from context).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with list of guild emojis.
     """
+    # Auto-fill guild_id from context if not provided
+    if guild_id is None and discord_context and discord_context.guild:
+        guild_id = discord_context.guild.id
+
     if not discord_context or not discord_context.guild:
-        return ToolResult(success=False, error="Discord context not available or not in a guild")
+        return ToolResult(
+            success=False, error="Discord context not available or not in a guild"
+        )
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -170,50 +196,59 @@ def register_guild_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="get_guild_info",
-        description="Get detailed information about a Discord guild including name, owner, member count, verification level, and features.",
-        category=ToolCategory.DISCORD_GUILD,
-        parameters=[
-            ToolParameter(
-                name="guild_id",
-                type="integer",
-                description="The ID of the guild to get information for",
-                required=True,
-            ),
-        ],
-        handler=get_guild_info,
-        requires_permission="read_messages",
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_guild_info",
+            description="Get detailed information about a Discord guild including name, owner, member count, verification level, and features.",
+            category=ToolCategory.DISCORD_GUILD,
+            parameters=[
+                ToolParameter(
+                    name="guild_id",
+                    type="integer",
+                    description="The ID of the guild to get information for (optional, auto-filled from context if in a guild)",
+                    required=False,
+                    default=None,
+                ),
+            ],
+            handler=get_guild_info,
+            requires_permission="read_messages",
+        )
+    )
 
-    registry.register(ToolDefinition(
-        name="get_guild_roles",
-        description="Get all roles in a Discord guild with their details including permissions, position, color, and special properties.",
-        category=ToolCategory.DISCORD_GUILD,
-        parameters=[
-            ToolParameter(
-                name="guild_id",
-                type="integer",
-                description="The ID of the guild to get roles for",
-                required=True,
-            ),
-        ],
-        handler=get_guild_roles,
-        requires_permission="read_messages",
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_guild_roles",
+            description="Get all roles in a Discord guild with their details including permissions, position, color, and special properties.",
+            category=ToolCategory.DISCORD_GUILD,
+            parameters=[
+                ToolParameter(
+                    name="guild_id",
+                    type="integer",
+                    description="The ID of the guild to get roles for (optional, auto-filled from context if in a guild)",
+                    required=False,
+                    default=None,
+                ),
+            ],
+            handler=get_guild_roles,
+            requires_permission="read_messages",
+        )
+    )
 
-    registry.register(ToolDefinition(
-        name="get_guild_emojis",
-        description="Get all custom emojis in a Discord guild with their details including name, animation status, and URL.",
-        category=ToolCategory.DISCORD_GUILD,
-        parameters=[
-            ToolParameter(
-                name="guild_id",
-                type="integer",
-                description="The ID of the guild to get emojis for",
-                required=True,
-            ),
-        ],
-        handler=get_guild_emojis,
-        requires_permission="read_messages",
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_guild_emojis",
+            description="Get all custom emojis in a Discord guild with their details including name, animation status, and URL.",
+            category=ToolCategory.DISCORD_GUILD,
+            parameters=[
+                ToolParameter(
+                    name="guild_id",
+                    type="integer",
+                    description="The ID of the guild to get emojis for (optional, auto-filled from context if in a guild)",
+                    required=False,
+                    default=None,
+                ),
+            ],
+            handler=get_guild_emojis,
+            requires_permission="read_messages",
+        )
+    )
