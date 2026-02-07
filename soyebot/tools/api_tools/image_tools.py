@@ -6,7 +6,7 @@ import aiohttp
 from openai import OpenAI
 
 from soyebot.config import load_config
-from soyebot.tools.base import ToolResult
+from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -74,3 +74,28 @@ async def generate_image(
             success=False,
             error=f"Image generation failed: {str(e)}",
         )
+
+
+def register_image_tools(registry):
+    """Register image tools with the given registry.
+
+    Args:
+        registry: ToolRegistry instance to register tools with.
+    """
+    registry.register(
+        ToolDefinition(
+            name="generate_image",
+            description="Generate an image using AI based on a text description. Use this when the user asks for an image, drawing, or visual content.",
+            category=ToolCategory.API_SEARCH,
+            parameters=[
+                ToolParameter(
+                    name="prompt",
+                    type="string",
+                    description="The text description of the image to generate",
+                    required=True,
+                ),
+            ],
+            handler=generate_image,
+            rate_limit=30,
+        )
+    )
