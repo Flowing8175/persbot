@@ -74,7 +74,7 @@ def _perform_search(query: str, num_results: int) -> List[Dict[str, str]]:
         search_results = ddgs.text(
             query,
             max_results=num_results,
-            region="wt-wt",
+            region="ko-kr",
             safesearch="moderate",
             backend="auto",
         )
