@@ -738,7 +738,10 @@ class GeminiService(BaseLLMService):
                 custom_tools = GeminiToolAdapter.convert_tools(tools)
 
             # Combine custom tools with search tools (for assistant model only)
+            # Always start with an empty list, then add both custom and search tools
             final_tools = []
+
+            # Add custom tools if they exist
             if custom_tools:
                 final_tools.extend(custom_tools)
 
