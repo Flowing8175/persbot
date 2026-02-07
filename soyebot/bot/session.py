@@ -4,7 +4,7 @@ import logging
 import asyncio
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Dict
 
 from soyebot.config import AppConfig
@@ -424,7 +424,7 @@ class SessionManager:
     async def _cleanup_inactive_sessions(self):
         """Remove sessions that haven't been active for configured time."""
         try:
-            inactive_threshold = datetime.now(timezone.utc) - datetime.timedelta(
+            inactive_threshold = datetime.now(timezone.utc) - timedelta(
                 minutes=getattr(self.config, "session_inactive_minutes", 30)
             )
             cleaned_count = 0
