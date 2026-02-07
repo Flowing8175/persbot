@@ -43,6 +43,11 @@ async def generate_image(
         config = load_config()
 
         # Initialize OpenAI client with Z.AI credentials
+        # Uses ZAI_BASE_URL from .env configuration
+        logger.info(
+            "Initializing image generation with base URL: %s",
+            config.zai_base_url,
+        )
         client = OpenAI(
             api_key=config.zai_api_key,
             base_url=config.zai_base_url,

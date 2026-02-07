@@ -67,6 +67,7 @@ class AppConfig:
     summarizer_llm_provider: str = "gemini"
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    openai_base_url: Optional[str] = None
     zai_api_key: Optional[str] = None
     zai_base_url: str = "https://api.z.ai/api/paas/v4/"
     zai_coding_plan: bool = False
@@ -251,10 +252,19 @@ def load_config() -> AppConfig:
     discord_token = os.environ.get("DISCORD_TOKEN")
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
+    openai_base_url = os.environ.get("OPENAI_BASE_URL")
     zai_api_key = os.environ.get("ZAI_API_KEY")
-    zai_coding_plan = os.environ.get("ZAI_CODING_PLAN", "").lower() in ("true", "1", "yes")
+    zai_coding_plan = os.environ.get("ZAI_CODING_PLAN", "").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
     # Use Coding Plan API endpoint if enabled, otherwise use standard API
-    default_base_url = "https://api.z.ai/api/coding/paas/v4/" if zai_coding_plan else "https://api.z.ai/api/paas/v4/"
+    default_base_url = (
+        "https://api.z.ai/api/coding/paas/v4/"
+        if zai_coding_plan
+        else "https://api.z.ai/api/paas/v4/"
+    )
     zai_base_url = os.environ.get("ZAI_BASE_URL", default_base_url)
     service_tier = os.environ.get("SERVICE_TIER", "flex")
 
@@ -328,9 +338,21 @@ def load_config() -> AppConfig:
     )
 
     # Parse tool configuration
-    enable_tools = os.environ.get("ENABLE_TOOLS", "true").lower() in ("true", "1", "yes")
-    enable_discord_tools = os.environ.get("ENABLE_DISCORD_TOOLS", "true").lower() in ("true", "1", "yes")
-    enable_api_tools = os.environ.get("ENABLE_API_TOOLS", "true").lower() in ("true", "1", "yes")
+    enable_tools = os.environ.get("ENABLE_TOOLS", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    enable_discord_tools = os.environ.get("ENABLE_DISCORD_TOOLS", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    enable_api_tools = os.environ.get("ENABLE_API_TOOLS", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
     tool_rate_limit = _parse_int_env("TOOL_RATE_LIMIT", 60)
     tool_timeout = _parse_float_env("TOOL_TIMEOUT", 10.0)
     weather_api_key = os.environ.get("WEATHER_API_KEY")
@@ -343,6 +365,7 @@ def load_config() -> AppConfig:
         summarizer_llm_provider=summarizer_llm_provider,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url,
         zai_api_key=zai_api_key,
         zai_base_url=zai_base_url,
         zai_coding_plan=zai_coding_plan,
