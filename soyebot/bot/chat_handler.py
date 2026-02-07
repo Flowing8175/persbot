@@ -144,30 +144,70 @@ async def create_chat_reply(
             llm_service.assistant_backend, response_obj
         )
 
-        if function_calls:
-            logger.info("Detected %d function calls in response", len(function_calls))
-            # Execute tools and get final response
-            # This is a simplified implementation - full implementation would loop
-            # until the LLM stops calling functions
+        # Loop to handle function calls until LLM stops calling tools
+        max_tool_rounds = 10  # Prevent infinite loops
+        tool_rounds = 0
+
+        while function_calls and tool_rounds < max_tool_rounds:
+            logger.info(
+                "Detected %d function calls in response (round %d)",
+                len(function_calls),
+                tool_rounds + 1,
+            )
+
             try:
+                # Execute tools in parallel
                 results = await tool_manager.execute_tools(function_calls, primary_msg)
                 logger.info(
-                    "Executed %d tools, results: %s",
+                    "Executed %d tools: %s",
                     len(results),
                     [r.get("name") for r in results],
                 )
-                # For now, we'll return a message about tool execution
-                # Full implementation would send results back to LLM for final response
-                tool_summary = f"Executed {len(results)} tool(s): {', '.join([r['name'] for r in results])}"
-                return ChatReply(
-                    text=response_text or "" + f"\n\n[Tool Execution: {tool_summary}]",
-                    session_key=session_key,
-                    response=response_obj,
+
+                # Send tool results back to LLM and get continuation
+                # Create a new round with (response_obj, tool_results)
+                tool_results_list = [(response_obj, results)]
+
+                # Use send_tool_results to get continuation response
+                continuation = await llm_service.send_tool_results(
+                    chat_session,
+                    tool_rounds=tool_results_list,
+                    tools=tools,
+                    discord_message=primary_msg,
                 )
+
+                if not continuation:
+                    logger.warning(
+                        "Tool results sent but no continuation received from LLM"
+                    )
+                    break
+
+                # Update response_text and response_obj from continuation
+                response_text, response_obj = continuation
+
+                # Check for more function calls in the continuation
+                function_calls = llm_service.extract_function_calls_from_response(
+                    llm_service.get_active_backend(
+                        chat_session,
+                        use_summarizer_backend=resolution.is_reply_to_summary,
+                    ),
+                    response_obj,
+                )
+
+                tool_rounds += 1
+
             except Exception as e:
                 logger.error("Error executing tools: %s", e, exc_info=True)
                 # Return original response on tool execution error
-                pass
+                break
+
+        if tool_rounds > 0:
+            # We executed tools, use the final response from the LLM
+            return ChatReply(
+                text=response_text or "",
+                session_key=session_key,
+                response=response_obj,
+            )
 
     return ChatReply(
         text=response_text or "", session_key=session_key, response=response_obj
