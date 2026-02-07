@@ -7,6 +7,7 @@ Supports both Standard API and Coding Plan API endpoints:
 Enable Coding Plan API by setting ZAI_CODING_PLAN=true in environment.
 """
 
+import base64
 import logging
 from collections import deque
 from dataclasses import dataclass
@@ -18,101 +19,41 @@ from openai import OpenAI, RateLimitError
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
+from soyebot.services.openai_service import BaseChatSession
 from soyebot.utils import get_mime_type
 from soyebot.tools.adapters.zai_adapter import ZAIToolAdapter
 
 logger = logging.getLogger(__name__)
 
 
-class ZAIChatSession:
+class ZAIChatSession(BaseChatSession):
     """Z.AI chat session with history management."""
 
-    def __init__(
-        self,
-        client: OpenAI,
-        model_name: str,
-        system_instruction: str,
-        temperature: float,
-        top_p: float,
-        max_messages: int,
-        text_extractor,
-    ):
-        self._client = client
-        self._model_name = model_name
-        self._system_instruction = system_instruction
-        self._temperature = temperature
-        self._top_p = top_p
-        self._max_messages = max_messages
-        self._text_extractor = text_extractor
-        self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
-
-    @property
-    def history(self) -> list[ChatMessage]:
-        """Get list of chat messages in history."""
-        return list(self._history)
-
-    @history.setter
-    def history(self, new_history: list[ChatMessage]) -> None:
-        """Replace history with a new list."""
-        self._history.clear()
-        self._history.extend(new_history)
-
-    def _append_history(
-        self,
-        role: str,
-        content: str,
-        author_id: Optional[int] = None,
-        author_name: Optional[str] = None,
-        message_ids: list[str] = None,
-    ) -> None:
-        """Append a message to history if content is not empty."""
-        if not content:
-            return
-        self._history.append(
-            ChatMessage(
-                role=role,
-                content=content,
-                author_id=author_id,
-                author_name=author_name,
-                message_ids=message_ids or [],
-            )
-        )
-
-    def _create_user_message(
+    def send_message(
         self,
         user_message: str,
         author_id: int,
         author_name: Optional[str] = None,
         message_ids: Optional[list[str]] = None,
         images: list[bytes] = None,
-    ) -> ChatMessage:
-        """Create a ChatMessage for user input."""
-        return ChatMessage(
-            role="user",
-            content=user_message,
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids or [],
-            images=images or [],
+        tools: Optional[Any] = None,
+    ):
+        """Send message to Z.AI API and get response."""
+        user_msg = self._create_user_message(
+            user_message, author_id, author_name, message_ids, images
         )
 
-    def _build_messages_list(self, user_message: str, images: list[bytes]) -> list:
-        """Build messages list for API call."""
+        # Build messages list using base class method
         messages = []
-
-        # Add system instruction
         if self._system_instruction:
             messages.append({"role": "system", "content": self._system_instruction})
 
-        # Add history
         for msg in self._history:
             if msg.images:
                 content_blocks = []
                 if msg.content:
                     content_blocks.append({"type": "text", "text": msg.content})
                 for img_bytes in msg.images:
-                    import base64
-
                     mime_type = get_mime_type(img_bytes)
                     b64_str = base64.b64encode(img_bytes).decode("utf-8")
                     content_blocks.append(
@@ -131,8 +72,6 @@ class ZAIChatSession:
             user_content.append({"type": "text", "text": user_message})
 
         if images:
-            import base64
-
             for img_bytes in images:
                 mime_type = get_mime_type(img_bytes)
                 b64_str = base64.b64encode(img_bytes).decode("utf-8")
@@ -145,47 +84,6 @@ class ZAIChatSession:
 
         if user_content:
             messages.append({"role": "user", "content": user_content})
-
-        return messages
-
-    def generate_content(self, prompt: str):
-        """Generate content for a single prompt without history (for meta-prompt generation)."""
-        messages = []
-
-        # Add system instruction
-        if self._system_instruction:
-            messages.append({"role": "system", "content": self._system_instruction})
-
-        # Add user prompt
-        messages.append({"role": "user", "content": prompt})
-
-        # Call API
-        response = self._client.chat.completions.create(
-            model=self._model_name,
-            messages=messages,
-            temperature=self._temperature,
-            top_p=self._top_p,
-        )
-
-        # Extract and return response content
-        return self._text_extractor(response)
-
-    def send_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-        tools: Optional[Any] = None,
-    ):
-        """Send message to Z.AI API and get response."""
-        user_msg = self._create_user_message(
-            user_message, author_id, author_name, message_ids, images
-        )
-
-        # Build messages list
-        messages = self._build_messages_list(user_message, images)
 
         # Call API
         api_kwargs = {
@@ -306,7 +204,7 @@ class ZAIService(BaseLLMService):
 
         try:
             logger.debug(
-                "[RAW Z.AI API REQUEST] User message preview: %r", user_message[:200]
+                "[RAW ZAI REQUEST] User message preview: %r", user_message[:200]
             )
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
@@ -324,11 +222,11 @@ class ZAIService(BaseLLMService):
                     formatted.append(f"{role} (author:{author_label}) {truncated}")
                 if formatted:
                     logger.debug(
-                        "[RAW Z.AI API REQUEST] Recent history:\n%s",
+                        "[RAW ZAI REQUEST] Recent history:\n%s",
                         "\n".join(formatted),
                     )
         except Exception:
-            logger.exception("[RAW Z.AI API REQUEST] Error logging raw request")
+            logger.exception("[RAW ZAI REQUEST] Error logging raw request")
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw response for debugging."""
@@ -336,10 +234,10 @@ class ZAIService(BaseLLMService):
             return
 
         try:
-            logger.debug("[RAW Z.AI API RESPONSE %s] %s", attempt, response_obj)
+            logger.debug("[RAW ZAI RESPONSE %s] %s", attempt, response_obj)
         except Exception:
             logger.exception(
-                "[RAW Z.AI API RESPONSE %s] Error logging raw response", attempt
+                "[RAW ZAI RESPONSE %s] Error logging raw response", attempt
             )
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
@@ -435,6 +333,7 @@ class ZAIService(BaseLLMService):
                 author_name=author_name,
                 message_ids=message_ids,
                 images=images,
+                tools=tools,
             ),
             "응답 생성",
             return_full_response=True,

@@ -19,6 +19,90 @@ from soyebot.tools.adapters.openai_adapter import OpenAIToolAdapter
 logger = logging.getLogger(__name__)
 
 
+class BaseChatSession:
+    """Base class for all LLM chat sessions with common functionality."""
+
+    def __init__(
+        self,
+        client: OpenAI,
+        model_name: str,
+        system_instruction: str,
+        temperature: float,
+        top_p: float,
+        max_messages: int,
+        service_tier: str,
+        text_extractor,
+    ):
+        self._client = client
+        self._model_name = model_name
+        self._system_instruction = system_instruction
+        self._temperature = temperature
+        self._top_p = top_p
+        self._max_messages = max_messages
+        self._service_tier = service_tier
+        self._text_extractor = text_extractor
+        self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
+
+    @property
+    def history(self) -> list[ChatMessage]:
+        """Get list of chat messages in history."""
+        return list(self._history)
+
+    @history.setter
+    def history(self, new_history: list[ChatMessage]) -> None:
+        """Replace the history with a new list."""
+        self._history.clear()
+        self._history.extend(new_history)
+
+    def _append_history(
+        self,
+        role: str,
+        content: str,
+        author_id: Optional[int] = None,
+        author_name: Optional[str] = None,
+        message_ids: list[str] = None,
+    ) -> None:
+        """Append a message to history if content is not empty."""
+        if not content:
+            return
+        self._history.append(
+            ChatMessage(
+                role=role,
+                content=content,
+                author_id=author_id,
+                author_name=author_name,
+                message_ids=message_ids or [],
+            )
+        )
+
+    def _create_user_message(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[list[str]] = None,
+        images: list[bytes] = None,
+    ) -> ChatMessage:
+        """Create a ChatMessage for user input."""
+        return ChatMessage(
+            role="user",
+            content=user_message,
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=message_ids or [],
+            images=images or [],
+        )
+
+    def _encode_image_to_url(self, img_bytes: bytes) -> dict:
+        """Convert image bytes to OpenAI image_url format."""
+        b64_str = base64.b64encode(img_bytes).decode("utf-8")
+        mime_type = get_mime_type(img_bytes)
+        return {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
+        }
+
+
 class BaseOpenAISession:
     """Base class for OpenAI chat sessions."""
 
@@ -103,7 +187,7 @@ class BaseOpenAISession:
         }
 
 
-class ResponseChatSession(BaseOpenAISession):
+class ResponseChatSession(BaseChatSession):
     """Response API-backed chat session with a bounded context window."""
 
     def _build_input_payload(self) -> list:
@@ -189,7 +273,7 @@ class ResponseChatSession(BaseOpenAISession):
         return user_msg, model_msg, response
 
 
-class ChatCompletionSession(BaseOpenAISession):
+class ChatCompletionSession(BaseChatSession):
     """Chat Completion API-backed chat session for fine-tuned models."""
 
     def send_message(
@@ -370,7 +454,7 @@ class OpenAIService(BaseLLMService):
             self._assistant_model_name,
             self.prompt_service.get_active_assistant_prompt(),
         )
-        logger.info("OpenAI Response 모델 '%s' 준비 완료.", self._assistant_model_name)
+        logger.info("OpenAI 모델 '%s' 준비 완료.", self._assistant_model_name)
 
     def _get_or_create_assistant(self, model_name: str, system_instruction: str):
         key = hash((model_name, system_instruction))
@@ -435,9 +519,7 @@ class OpenAIService(BaseLLMService):
             return
 
         try:
-            logger.debug(
-                "[RAW API REQUEST] User message preview: %r", user_message[:200]
-            )
+            logger.debug("[RAW REQUEST] User message preview: %r", user_message[:200])
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
                 formatted = []
@@ -455,21 +537,19 @@ class OpenAIService(BaseLLMService):
                     formatted.append(f"{role} (author:{author_label}) {truncated}")
                 if formatted:
                     logger.debug(
-                        "[RAW API REQUEST] Recent history:\n%s", "\n".join(formatted)
+                        "[RAW REQUEST] Recent history:\n%s", "\n".join(formatted)
                     )
         except Exception:
-            logger.exception("[RAW API REQUEST] Error logging raw request")
+            logger.exception("[RAW REQUEST] Error logging raw request")
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         if not logger.isEnabledFor(logging.DEBUG):
             return
 
         try:
-            logger.debug("[RAW API RESPONSE %s] %s", attempt, response_obj)
+            logger.debug("[RAW RESPONSE %s] %s", attempt, response_obj)
         except Exception:
-            logger.exception(
-                "[RAW API RESPONSE %s] Error logging raw response", attempt
-            )
+            logger.exception("[RAW RESPONSE %s] Error logging raw response", attempt)
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         try:
@@ -599,6 +679,7 @@ class OpenAIService(BaseLLMService):
                 author_name=author_name,
                 message_ids=message_ids,
                 images=images,
+                tools=tools,
             ),
             "응답 생성",
             return_full_response=True,
