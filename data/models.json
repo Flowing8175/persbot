@@ -1,24 +1,24 @@
 {
-  "Gemini 2.5 flash lite": {
-    "display_name": "Gemini 2.5 flash lite",
-    "api_model_name": "gemini-2.5-flash-lite",
-    "daily_limit": 1000,
+  "Gemini 3 flash": {
+    "display_name": "Gemini 3 flash",
+    "api_model_name": "gemini-3-flash",
+    "daily_limit": 100,
+    "scope": "guild",
+    "provider": "gemini",
+    "fallback_alias": "Gemini 2.5 flash"
+  },
+  "Gemini 2.5 flash": {
+    "display_name": "Gemini 2.5 flash",
+    "api_model_name": "gemini-2.5-flash",
+    "daily_limit": 100,
     "scope": "guild",
     "provider": "gemini",
     "fallback_alias": "GLM 4.7"
   },
-  "Gemini 2.5 pro": {
-    "display_name": "Gemini 2.5 pro",
-    "api_model_name": "gemini-2.5-pro",
-    "daily_limit": 500,
-    "scope": "guild",
-    "provider": "gemini",
-    "fallback_alias": null
-  },
   "GLM 4.7": {
     "display_name": "GLM 4.7",
     "api_model_name": "glm-4.7",
-    "daily_limit": 800,
+    "daily_limit": 1000,
     "scope": "guild",
     "provider": "zai",
     "fallback_alias": "GLM 4.7 Flash"
@@ -29,6 +29,30 @@
     "daily_limit": 3000,
     "scope": "guild",
     "provider": "zai",
-    "fallback_alias": "GLM 4.7"
+    "fallback_alias": null
+  },
+  "GPT 4o": {
+    "display_name": "GPT 4o",
+    "api_model_name": "gpt-4o",
+    "daily_limit": 200,
+    "scope": "guild",
+    "provider": "openai",
+    "fallback_alias": null
+  },
+  "GPT 5 mini": {
+    "display_name": "GPT 5 mini",
+    "api_model_name": "gpt-5-mini",
+    "daily_limit": 50,
+    "scope": "guild",
+    "provider": "openai",
+    "fallback_alias": "GPT 4o"
+  },
+  "GPT 5 nano": {
+    "display_name": "GPT 5 nano",
+    "api_model_name": "gpt-5-nano",
+    "daily_limit": 100,
+    "scope": "guild",
+    "provider": "openai",
+    "fallback_alias": "GPT 4o"
   }
 }
