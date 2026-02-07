@@ -32,11 +32,17 @@ async def get_user_info(
             success=False, error="User ID must be provided or available from context"
         )
 
-    if not discord_context or not discord_context.bot:
-        return ToolResult(success=False, error="Discord context not available")
+    if not discord_context or not discord_context.guild:
+        return ToolResult(
+            success=False, error="Discord context not available or not in a guild"
+        )
 
     try:
+        # Use the bot from discord context (set by test fixtures)
         user = await discord_context.bot.fetch_user(user_id)
+
+        if not user:
+            return ToolResult(success=False, error=f"User {user_id} not found")
 
         info = {
             "id": str(user.id),
