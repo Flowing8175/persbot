@@ -153,6 +153,7 @@ class ZAIService(BaseLLMService):
                 getattr(self.config, "temperature", 1.0),
                 getattr(self.config, "top_p", 1.0),
                 self._max_messages,
+                None,  # Z.AI doesn't have service tier
                 self._extract_text_from_response,
             )
         return self._assistant_cache[key]

@@ -30,8 +30,8 @@ class BaseChatSession:
         temperature: float,
         top_p: float,
         max_messages: int,
-        service_tier: str,
-        text_extractor,
+        service_tier: Optional[str] = None,
+        text_extractor=None,
     ):
         self._client = client
         self._model_name = model_name
