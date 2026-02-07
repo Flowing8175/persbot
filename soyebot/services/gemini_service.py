@@ -128,8 +128,8 @@ class _ChatSession:
         contents.append({"role": "user", "parts": current_parts})
 
         # 2. Call generate_content directly (Stateless)
-        # Tools are included in the config, not passed as a parameter
-        response = self._factory.generate_content(contents=contents)
+        # Pass tools to generate_content to enable function calling
+        response = self._factory.generate_content(contents=contents, tools=tools)
 
         # 3. Create ChatMessage objects but do NOT append to self.history yet.
         user_msg = ChatMessage(
@@ -170,11 +170,42 @@ class _CachedModel:
         self._model_name = model_name
         self._config = config
 
-    def generate_content(self, contents: Union[str, list]):
+    def generate_content(
+        self, contents: Union[str, list], tools: Optional[list] = None
+    ):
+        """Generate content with optional tools override.
+
+        Args:
+            contents: The content to generate.
+            tools: Optional override for tools configuration.
+
+        Returns:
+            The API response.
+        """
+        if tools is not None:
+            # Rebuild config with new tools while preserving other settings
+            config_kwargs = {
+                "temperature": getattr(self._config, "temperature", 1.0),
+                "top_p": getattr(self._config, "top_p", 1.0),
+                "cached_content": getattr(self._config, "cached_content", None),
+                "system_instruction": getattr(self._config, "system_instruction", None),
+                "tools": tools,
+            }
+            # Add thinking config if present
+            if (
+                hasattr(self._config, "thinking_config")
+                and self._config.thinking_config
+            ):
+                config_kwargs["thinking_config"] = self._config.thinking_config
+
+            config = genai_types.GenerateContentConfig(**config_kwargs)
+        else:
+            config = self._config
+
         return self._client.models.generate_content(
             model=self._model_name,
             contents=contents,
-            config=self._config,
+            config=config,
         )
 
     def start_chat(self, system_instruction: str):
