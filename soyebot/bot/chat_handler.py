@@ -138,67 +138,36 @@ async def create_chat_reply(
 
     response_text, response_obj = response_result
 
-    # Tool execution loop: execute tools and send results back to LLM
-    MAX_TOOL_ROUNDS = 5
-
+    # Check for function calls in the response
     if tool_manager and tool_manager.is_enabled():
-        active_backend = llm_service.get_active_backend(
-            chat_session, use_summarizer_backend=resolution.is_reply_to_summary
+        function_calls = llm_service.extract_function_calls_from_response(
+            llm_service.assistant_backend, response_obj
         )
-        tool_rounds = []
-        current_response_obj = response_obj
 
-        for round_num in range(MAX_TOOL_ROUNDS):
-            function_calls = llm_service.extract_function_calls_from_response(
-                active_backend, current_response_obj
-            )
-
-            if not function_calls:
-                break
-
-            logger.info(
-                "Tool round %d: detected %d function call(s)",
-                round_num + 1,
-                len(function_calls),
-            )
-
+        if function_calls:
+            logger.info("Detected %d function calls in response", len(function_calls))
+            # Execute tools and get final response
+            # This is a simplified implementation - full implementation would loop
+            # until the LLM stops calling functions
             try:
-                results = await tool_manager.execute_tools(
-                    function_calls, primary_msg
-                )
+                results = await tool_manager.execute_tools(function_calls, primary_msg)
                 logger.info(
-                    "Tool round %d: executed %d tool(s): %s",
-                    round_num + 1,
+                    "Executed %d tools, results: %s",
                     len(results),
                     [r.get("name") for r in results],
                 )
+                # For now, we'll return a message about tool execution
+                # Full implementation would send results back to LLM for final response
+                tool_summary = f"Executed {len(results)} tool(s): {', '.join([r['name'] for r in results])}"
+                return ChatReply(
+                    text=response_text or "" + f"\n\n[Tool Execution: {tool_summary}]",
+                    session_key=session_key,
+                    response=response_obj,
+                )
             except Exception as e:
                 logger.error("Error executing tools: %s", e, exc_info=True)
-                break
-
-            tool_rounds.append((current_response_obj, results))
-
-            # Send results back to model and get continuation
-            try:
-                new_result = await llm_service.send_tool_results(
-                    chat_session,
-                    tool_rounds,
-                    tools=tools,
-                    use_summarizer_backend=resolution.is_reply_to_summary,
-                    discord_message=primary_msg,
-                )
-            except Exception as e:
-                logger.error(
-                    "Error sending tool results to LLM: %s", e, exc_info=True
-                )
-                break
-
-            if not new_result:
-                break
-
-            response_text, current_response_obj = new_result
-
-        response_obj = current_response_obj
+                # Return original response on tool execution error
+                pass
 
     return ChatReply(
         text=response_text or "", session_key=session_key, response=response_obj

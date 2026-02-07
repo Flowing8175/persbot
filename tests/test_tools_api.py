@@ -43,22 +43,14 @@ class TestSearchTools:
 
     @pytest.mark.asyncio
     async def test_web_search_no_api_key(self):
-        """Test web search without API key returns helpful error."""
-        # Mock the DuckDuckGo API to fail
-        with patch("soyebot.tools.api_tools.search_tools.aiohttp.ClientSession") as mock_session:
-            mock_client = AsyncMock()
-            mock_session.return_value.__aenter__.return_value = mock_client
+        """Test web search without API key works (DuckDuckGo doesn't require key)."""
+        # DuckDuckGo search doesn't require an API key, so it should work
+        # We can't test actual search without network, but we can test the function doesn't crash
+        result = await web_search("test query", num_results=1)
 
-            # Mock a failed response
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={"Abstract": ""})
-            mock_client.get.return_value.__aenter__.return_value = mock_response
-
-            result = await web_search("test query")
-
-            # Should get results from DuckDuckGo or error message about API key
-            assert isinstance(result.success, bool)
+        # Should return a result (success or failure, but not crash)
+        assert isinstance(result.success, bool)
+        assert result is not None
 
 
 class TestWeatherTools:
