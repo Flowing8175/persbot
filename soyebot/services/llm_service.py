@@ -247,6 +247,7 @@ class LLMService:
         user_message: str,
         discord_message,
         use_summarizer_backend: bool = False,
+        tools: Optional[List[Any]] = None,
     ):
         # Extract message metadata
         model_alias = getattr(
@@ -290,7 +291,11 @@ class LLMService:
 
         # Generate response
         response = await active_backend.generate_chat_response(
-            chat_session, user_message, discord_message, model_name=api_model_name
+            chat_session,
+            user_message,
+            discord_message,
+            model_name=api_model_name,
+            tools=tools,
         )
 
         # Record image usage after successful generation
@@ -312,9 +317,7 @@ class LLMService:
         return backend.get_tools_for_provider(tools)
 
     def extract_function_calls_from_response(
-        self,
-        backend: BaseLLMService,
-        response: Any
+        self, backend: BaseLLMService, response: Any
     ) -> List[Dict[str, Any]]:
         """Extract function calls from a backend response.
 
@@ -328,9 +331,7 @@ class LLMService:
         return backend.extract_function_calls(response)
 
     def format_function_results_for_backend(
-        self,
-        backend: BaseLLMService,
-        results: List[Dict[str, Any]]
+        self, backend: BaseLLMService, results: List[Dict[str, Any]]
     ) -> Any:
         """Format function results for a specific backend.
 

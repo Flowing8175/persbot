@@ -18,6 +18,7 @@ from bot.cogs.assistant import AssistantCog
 from bot.cogs.persona import PersonaCog
 from bot.cogs.model_selector import ModelSelectorCog
 from services.prompt_service import PromptService
+from tools.manager import ToolManager
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,8 @@ def setup_logging(log_level: int) -> None:
         console_handler.setLevel(log_level)
 
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         console_handler.setFormatter(formatter)
 
@@ -43,10 +44,10 @@ def setup_logging(log_level: int) -> None:
         for handler in root_logger.handlers:
             handler.setLevel(log_level)
 
-    logging.getLogger('discord').setLevel(logging.WARNING)
-    logging.getLogger('discord.http').setLevel(logging.WARNING)
-    logging.getLogger('discord.client').setLevel(logging.WARNING)
-    logging.getLogger('discord.gateway').setLevel(logging.WARNING)
+    logging.getLogger("discord").setLevel(logging.WARNING)
+    logging.getLogger("discord.http").setLevel(logging.WARNING)
+    logging.getLogger("discord.client").setLevel(logging.WARNING)
+    logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 
 
 async def main(config):
@@ -55,6 +56,7 @@ async def main(config):
     if config.auto_reply_channel_ids:
         try:
             from bot.cogs.auto_channel import AutoChannelCog
+
             auto_channel_cog_cls = AutoChannelCog
         except ModuleNotFoundError as exc:
             logger.error(
@@ -67,30 +69,45 @@ async def main(config):
     intents.guilds = True
     intents.message_content = True
 
-    bot = commands.Bot(command_prefix=config.command_prefix, intents=intents, help_command=None)
+    bot = commands.Bot(
+        command_prefix=config.command_prefix, intents=intents, help_command=None
+    )
 
-        # Initialize services
+    # Initialize services
     llm_service = LLMService(config)
     session_manager = SessionManager(config, llm_service)
     prompt_service = PromptService()
+    tool_manager = ToolManager(config)
 
     @bot.event
     async def on_ready():
-        logger.info(f'로그인 완료: {bot.user.name} ({bot.user.id})')
-        logger.info(f"봇이 준비되었습니다! '{config.command_prefix}' 또는 @mention으로 상호작용할 수 있습니다.")
+        logger.info(f"로그인 완료: {bot.user.name} ({bot.user.id})")
+        logger.info(
+            f"봇이 준비되었습니다! '{config.command_prefix}' 또는 @mention으로 상호작용할 수 있습니다."
+        )
 
         if config.auto_reply_channel_ids:
-            logger.info("channel registered to reply: %s", list(config.auto_reply_channel_ids))
+            logger.info(
+                "channel registered to reply: %s", list(config.auto_reply_channel_ids)
+            )
         else:
             logger.info("channel registered to reply: []")
 
         # Initialize cogs
         await bot.add_cog(SummarizerCog(bot, config, llm_service))
-        await bot.add_cog(AssistantCog(bot, config, llm_service, session_manager, prompt_service))
-        await bot.add_cog(PersonaCog(bot, config, llm_service, session_manager, prompt_service))
+        await bot.add_cog(
+            AssistantCog(
+                bot, config, llm_service, session_manager, prompt_service, tool_manager
+            )
+        )
+        await bot.add_cog(
+            PersonaCog(bot, config, llm_service, session_manager, prompt_service)
+        )
         await bot.add_cog(ModelSelectorCog(bot, session_manager))
         if auto_channel_cog_cls:
-            await bot.add_cog(auto_channel_cog_cls(bot, config, llm_service, session_manager))
+            await bot.add_cog(
+                auto_channel_cog_cls(bot, config, llm_service, session_manager)
+            )
 
         logger.info("Cogs 로드 완료.")
 
@@ -105,7 +122,6 @@ async def main(config):
     async def on_close():
         """Cleanup on bot close."""
         logger.info("Services cleaned up successfully")
-
 
     try:
         logger.info("Discord 봇을 시작합니다...")

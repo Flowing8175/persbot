@@ -18,7 +18,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ChatReply", "resolve_session_for_message", "create_chat_reply", "send_split_response"]
+__all__ = [
+    "ChatReply",
+    "resolve_session_for_message",
+    "create_chat_reply",
+    "send_split_response",
+]
 
 
 @dataclass(frozen=True)
@@ -47,7 +52,9 @@ async def resolve_session_for_message(
         # If not resolved or deleted, try to fetch it
         if ref_msg is None or isinstance(ref_msg, discord.DeletedReferencedMessage):
             try:
-                ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                ref_msg = await message.channel.fetch_message(
+                    message.reference.message_id
+                )
             except (discord.NotFound, discord.HTTPException):
                 ref_msg = None
 
@@ -55,7 +62,7 @@ async def resolve_session_for_message(
             # Add reply context to the content
             # Using clean_content to get readable names instead of mention IDs
             ref_text = ref_msg.clean_content
-            reply_context = f"(답장 대상: {ref_msg.author.id}, 내용: \"{ref_text}\")\n"
+            reply_context = f'(답장 대상: {ref_msg.author.id}, 내용: "{ref_text}")\n'
             content = reply_context + content
 
             # Check if this is a reply to a summary message
@@ -112,11 +119,17 @@ async def create_chat_reply(
     # Note: chat_session now has .model_alias set by get_or_create (via session persistence or default)
     # llm_service.generate_chat_response will read this alias from chat_session.
 
+    # Get tools from ToolManager if available
+    tools = None
+    if tool_manager and tool_manager.is_enabled():
+        tools = tool_manager.get_enabled_tools()
+
     response_result = await llm_service.generate_chat_response(
         chat_session,
         resolution.cleaned_message,
-        message, # This can be a list of messages if AutoChannelCog passes it, but type hint says discord.Message
+        message,  # This can be a list of messages if AutoChannelCog passes it, but type hint says discord.Message
         use_summarizer_backend=resolution.is_reply_to_summary,
+        tools=tools,
     )
 
     if not response_result:
@@ -127,8 +140,7 @@ async def create_chat_reply(
     # Check for function calls in the response
     if tool_manager and tool_manager.is_enabled():
         function_calls = llm_service.extract_function_calls_from_response(
-            llm_service.assistant_backend,
-            response_obj
+            llm_service.assistant_backend, response_obj
         )
 
         if function_calls:
@@ -138,23 +150,31 @@ async def create_chat_reply(
             # until the LLM stops calling functions
             try:
                 results = await tool_manager.execute_tools(function_calls, primary_msg)
-                logger.info("Executed %d tools, results: %s", len(results), [r.get("name") for r in results])
+                logger.info(
+                    "Executed %d tools, results: %s",
+                    len(results),
+                    [r.get("name") for r in results],
+                )
                 # For now, we'll return a message about tool execution
                 # Full implementation would send results back to LLM for final response
                 tool_summary = f"Executed {len(results)} tool(s): {', '.join([r['name'] for r in results])}"
-                return ChatReply(text=response_text or "" + f"\n\n[Tool Execution: {tool_summary}]", session_key=session_key, response=response_obj)
+                return ChatReply(
+                    text=response_text or "" + f"\n\n[Tool Execution: {tool_summary}]",
+                    session_key=session_key,
+                    response=response_obj,
+                )
             except Exception as e:
                 logger.error("Error executing tools: %s", e, exc_info=True)
                 # Return original response on tool execution error
                 pass
 
-    return ChatReply(text=response_text or "", session_key=session_key, response=response_obj)
+    return ChatReply(
+        text=response_text or "", session_key=session_key, response=response_obj
+    )
 
 
 async def send_split_response(
-    channel: discord.abc.Messageable, 
-    reply: ChatReply, 
-    session_manager: SessionManager
+    channel: discord.abc.Messageable, reply: ChatReply, session_manager: SessionManager
 ):
     """
     Shared utility to split and send a response line by line.
@@ -162,14 +182,14 @@ async def send_split_response(
     """
     try:
         # First, split by existing newlines to preserve the "line by line" feel
-        initial_lines = reply.text.split('\n')
+        initial_lines = reply.text.split("\n")
         final_lines = []
-        
+
         for line in initial_lines:
             if not line.strip():
                 final_lines.append("")
                 continue
-            
+
             # If a line is too long, smart_split it
             if len(line) > 1900:
                 final_lines.extend(smart_split(line))
@@ -187,9 +207,11 @@ async def send_split_response(
             async with channel.typing():
                 await asyncio.sleep(delay)
                 sent_msg = await channel.send(line)
-                
+
                 # Link message to session
-                session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
+                session_manager.link_message_to_session(
+                    str(sent_msg.id), reply.session_key
+                )
 
     except asyncio.CancelledError:
         logger.info(f"Sending interrupted for channel {channel.id}.")

@@ -177,6 +177,7 @@ class ZAIChatSession:
         author_name: Optional[str] = None,
         message_ids: Optional[list[str]] = None,
         images: list[bytes] = None,
+        tools: Optional[Any] = None,
     ):
         """Send message to Z.AI API and get response."""
         user_msg = self._create_user_message(
@@ -187,12 +188,17 @@ class ZAIChatSession:
         messages = self._build_messages_list(user_message, images)
 
         # Call API
-        response = self._client.chat.completions.create(
-            model=self._model_name,
-            messages=messages,
-            temperature=self._temperature,
-            top_p=self._top_p,
-        )
+        api_kwargs = {
+            "model": self._model_name,
+            "messages": messages,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+        }
+
+        if tools:
+            api_kwargs["tools"] = tools
+
+        response = self._client.chat.completions.create(**api_kwargs)
 
         # Extract response content
         message_content = self._text_extractor(response)
@@ -388,6 +394,7 @@ class ZAIService(BaseLLMService):
         user_message: str,
         discord_message: Union[discord.Message, list[discord.Message]],
         model_name: Optional[str] = None,
+        tools: Optional[Any] = None,
     ) -> Optional[Tuple[str, Any]]:
         """Generate chat response."""
         self._log_raw_request(user_message, chat_session)

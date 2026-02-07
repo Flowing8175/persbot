@@ -245,7 +245,11 @@ class GeminiService(BaseLLMService):
         )
 
     def _get_or_create_model(
-        self, model_name: str, system_instruction: str, use_cache: bool = True
+        self,
+        model_name: str,
+        system_instruction: str,
+        use_cache: bool = True,
+        tools: Optional[list] = None,
     ) -> _CachedModel:
         """Get cached model instance or create new one."""
         key = hash((model_name, system_instruction, use_cache))
@@ -257,13 +261,18 @@ class GeminiService(BaseLLMService):
             return cached
 
         # Configure tools and caching
-        tools = self._get_search_tools(model_name)
+        # Use provided tools or fall back to search tools
+        effective_tools = (
+            tools if tools is not None else self._get_search_tools(model_name)
+        )
         cache_name, cache_expiration = self._resolve_gemini_cache(
-            model_name, system_instruction, tools, use_cache
+            model_name, system_instruction, effective_tools, use_cache
         )
 
         # Build and create model
-        config = self._build_generation_config(cache_name, system_instruction, tools)
+        config = self._build_generation_config(
+            cache_name, system_instruction, effective_tools
+        )
         model = _CachedModel(self.client, model_name, config)
         self._model_cache[key] = (model, cache_expiration)
 
@@ -641,6 +650,7 @@ class GeminiService(BaseLLMService):
         user_message: str,
         discord_message: Union[discord.Message, list[discord.Message]],
         model_name: Optional[str] = None,
+        tools: Optional[Any] = None,
     ) -> Optional[Tuple[str, Any]]:
         """Generate chat response."""
         self._log_raw_request(user_message, chat_session)
@@ -689,6 +699,23 @@ class GeminiService(BaseLLMService):
             logger.info("Chat session successfully refreshed with new model/cache.")
 
         try:
+            # Convert custom tools to Gemini format if provided
+            custom_tools = []
+            if tools:
+                custom_tools = GeminiToolAdapter.convert_tools(tools)
+
+            # Combine custom tools with search tools (for assistant model only)
+            final_tools = []
+            if custom_tools:
+                final_tools.extend(custom_tools)
+
+            # Add search tools for assistant model if not already added
+            search_tools = self._get_search_tools(
+                model_name or self._assistant_model_name
+            )
+            if search_tools:
+                final_tools.extend(search_tools)
+
             # Check if we need to switch model for this session
             current_model_name = getattr(chat_session._factory, "_model_name", None)
             if model_name and current_model_name != model_name:
@@ -701,8 +728,15 @@ class GeminiService(BaseLLMService):
                     getattr(chat_session, "_system_instruction", None)
                     or self.prompt_service.get_active_assistant_prompt()
                 )
-                new_model = self._get_or_create_model(model_name, system_instr)
+                new_model = self._get_or_create_model(
+                    model_name, system_instr, tools=final_tools
+                )
                 chat_session._factory = new_model
+            elif final_tools:
+                # Update tools for the current model if they changed
+                logger.debug(
+                    f"Using {len(final_tools)} tools for model {current_model_name}"
+                )
 
             # First attempt: normal flow with retry for cache errors
             result = await self._gemini_retry(

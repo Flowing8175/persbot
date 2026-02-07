@@ -10,16 +10,27 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from soyebot.bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
+from soyebot.bot.chat_handler import (
+    ChatReply,
+    create_chat_reply,
+    resolve_session_for_message,
+    send_split_response,
+)
 from soyebot.bot.session import SessionManager, ResolvedSession
 from soyebot.bot.cogs.base import BaseChatCog
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
 from soyebot.services.base import ChatMessage
 from soyebot.services.prompt_service import PromptService
-from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
+from soyebot.utils import (
+    GENERIC_ERROR_MESSAGE,
+    extract_message_content,
+    send_discord_message,
+)
+from soyebot.tools.manager import ToolManager
 
 logger = logging.getLogger(__name__)
+
 
 class AssistantCog(BaseChatCog):
     """@mention을 통한 AI 어시스턴트 기능을 처리하는 Cog"""
@@ -31,9 +42,11 @@ class AssistantCog(BaseChatCog):
         llm_service: LLMService,
         session_manager: SessionManager,
         prompt_service: PromptService,
+        tool_manager: Optional["ToolManager"] = None,
     ):
         super().__init__(bot, config, llm_service, session_manager)
         self.prompt_service = prompt_service
+        self.tool_manager = tool_manager
 
     def _should_ignore_message(self, message: discord.Message) -> bool:
         """Return True when the bot should not process the message."""
@@ -55,9 +68,13 @@ class AssistantCog(BaseChatCog):
 
         # If Break-Cut Mode is OFF, send normally (with automatic splitting)
         if not self.config.break_cut_mode:
-            sent_messages = await send_discord_message(message, reply.text, mention_author=False)
+            sent_messages = await send_discord_message(
+                message, reply.text, mention_author=False
+            )
             for sent_message in sent_messages:
-                self.session_manager.link_message_to_session(str(sent_message.id), reply.session_key)
+                self.session_manager.link_message_to_session(
+                    str(sent_message.id), reply.session_key
+                )
             return
 
         # If Break-Cut Mode is ON, use shared helper
@@ -70,7 +87,10 @@ class AssistantCog(BaseChatCog):
         # 1. Fetch recent context (10 messages before the primary message)
         primary_message = messages[0]
         context_messages = [
-            msg async for msg in primary_message.channel.history(limit=10, before=primary_message)
+            msg
+            async for msg in primary_message.channel.history(
+                limit=10, before=primary_message
+            )
         ]
         context_messages.reverse()  # Chronological order
 
@@ -83,7 +103,11 @@ class AssistantCog(BaseChatCog):
                     context_lines.append(f"{msg.author.id}: {c_content}")
 
             if context_lines:
-                context_text = "=== 이전 대화 문맥 (참고용) ===\n" + "\n".join(context_lines) + "\n=== 현재 메시지 ===\n"
+                context_text = (
+                    "=== 이전 대화 문맥 (참고용) ===\n"
+                    + "\n".join(context_lines)
+                    + "\n=== 현재 메시지 ===\n"
+                )
 
         # 2. Combine current batch contents
         combined_content = []
@@ -91,9 +115,9 @@ class AssistantCog(BaseChatCog):
             content = extract_message_content(msg)
             if content:
                 if len(messages) > 1 and msg.author.id:
-                        combined_content.append(f"{msg.author.id}: {content}")
+                    combined_content.append(f"{msg.author.id}: {content}")
                 else:
-                        combined_content.append(content)
+                    combined_content.append(content)
 
         current_text = "\n".join(combined_content)
 
@@ -108,25 +132,35 @@ class AssistantCog(BaseChatCog):
         if self._should_ignore_message(message):
             return
 
-        messages_to_prepend = self._cancel_active_tasks(message.channel.id, message.author.name)
+        messages_to_prepend = self._cancel_active_tasks(
+            message.channel.id, message.author.name
+        )
 
-        await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
-        
+        await self.message_buffer.add_message(
+            message.channel.id, message, self._process_batch
+        )
+
         if messages_to_prepend:
-             # Ensure the list exists before prepending
-             if message.channel.id in self.message_buffer.buffers:
-                 self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
+            # Ensure the list exists before prepending
+            if message.channel.id in self.message_buffer.buffers:
+                self.message_buffer.buffers[message.channel.id][0:0] = (
+                    messages_to_prepend
+                )
 
     # on_typing is inherited, but we might want to ensure it works for us.
     # BaseChatCog has it, checking break_cut_mode. That matches AssistantCog's logic.
 
-    @commands.hybrid_command(name='help', aliases=['도움말', '명령어', 'h'], description="봇의 모든 명령어와 사용법을 안내합니다.")
+    @commands.hybrid_command(
+        name="help",
+        aliases=["도움말", "명령어", "h"],
+        description="봇의 모든 명령어와 사용법을 안내합니다.",
+    )
     async def help_command(self, ctx: commands.Context):
         """봇의 모든 명령어와 사용법을 안내합니다."""
         embed = discord.Embed(
             title="🤖 명령어 가이드",
             description=f"접두사: `{self.config.command_prefix}` 또는 `@mention`을 사용하여 명령을 내릴 수 있습니다.",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
 
         # 1. 대화 제어
@@ -138,7 +172,7 @@ class AssistantCog(BaseChatCog):
                 "`!undo [N]` (`!@`): 마지막 N개의 대화 쌍을 삭제합니다. (자동응답 채널 전용)\n"
                 "`!abort` (`!중단`): 진행 중인 전송이나 AI 처리를 즉시 멈춥니다."
             ),
-            inline=False
+            inline=False,
         )
 
         # 2. 요약 및 분석
@@ -149,7 +183,7 @@ class AssistantCog(BaseChatCog):
                 "`!요약 [시간]`: 지정 시간(예: `20분`, `1시간`) 동안의 대화를 요약합니다.\n"
                 "`!요약 [ID]`: 특정 메시지 이후의 대화를 요약합니다."
             ),
-            inline=False
+            inline=False,
         )
 
         # 3. 프롬프트 관리 (Persona)
@@ -158,7 +192,7 @@ class AssistantCog(BaseChatCog):
             value=(
                 "`!prompt`: 프롬프트 관리 UI를 엽니다. (생성, 목록, 선택, 삭제 등)\n"
             ),
-            inline=False
+            inline=False,
         )
 
         # 4. 설정 및 파라미터
@@ -169,13 +203,17 @@ class AssistantCog(BaseChatCog):
                 "`!생각 <숫자|auto|off>`: Gemini Thinking Budget를 설정합니다.\n"
                 "`!끊어치기 [on|off]`: 실시간 메시지 끊어 전송 모드를 설정합니다."
             ),
-            inline=False
+            inline=False,
         )
 
         embed.set_footer(text="SoyeBot | Advanced Agentic Coding Assistant")
         await send_discord_message(ctx, "", embed=embed)
 
-    @commands.hybrid_command(name='retry', aliases=['재생성', '다시'], description="마지막 대화를 되돌리고 응답을 다시 생성합니다.")
+    @commands.hybrid_command(
+        name="retry",
+        aliases=["재생성", "다시"],
+        description="마지막 대화를 되돌리고 응답을 다시 생성합니다.",
+    )
     async def retry_command(self, ctx: commands.Context):
         """마지막 대화를 되돌리고 응답을 다시 생성합니다."""
         await ctx.defer()
@@ -201,7 +239,9 @@ class AssistantCog(BaseChatCog):
         # Regenerate response
         await self._regenerate_response(ctx, session_key, user_content)
 
-    async def _process_removed_messages(self, ctx: commands.Context, removed_messages: list) -> str:
+    async def _process_removed_messages(
+        self, ctx: commands.Context, removed_messages: list
+    ) -> str:
         """Process removed messages: delete assistant messages and return user content."""
         user_role = self.llm_service.get_user_role_name()
         assistant_role = self.llm_service.get_assistant_role_name()
@@ -217,7 +257,7 @@ class AssistantCog(BaseChatCog):
 
     async def _delete_assistant_messages(self, channel, msg) -> None:
         """Delete assistant messages from Discord."""
-        if not hasattr(msg, 'message_ids') or not msg.message_ids:
+        if not hasattr(msg, "message_ids") or not msg.message_ids:
             return
         for mid in msg.message_ids:
             try:
@@ -226,7 +266,9 @@ class AssistantCog(BaseChatCog):
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass
 
-    async def _regenerate_response(self, ctx: commands.Context, session_key: str, user_content: str) -> None:
+    async def _regenerate_response(
+        self, ctx: commands.Context, session_key: str, user_content: str
+    ) -> None:
         """Regenerate LLM response and send it."""
         async with ctx.channel.typing():
             resolution = ResolvedSession(session_key, user_content)
@@ -235,6 +277,7 @@ class AssistantCog(BaseChatCog):
                 resolution=resolution,
                 llm_service=self.llm_service,
                 session_manager=self.session_manager,
+                tool_manager=self.tool_manager,
             )
 
             if reply and reply.text:
@@ -251,24 +294,37 @@ class AssistantCog(BaseChatCog):
         # Clean up command message
         try:
             await ctx.message.delete()
-        except (discord.Forbidden, discord.HTTPException, discord.NotFound, AttributeError):
+        except (
+            discord.Forbidden,
+            discord.HTTPException,
+            discord.NotFound,
+            AttributeError,
+        ):
             pass
 
-    def _cancel_channel_tasks(self, channel_id: int, channel_name: str = "", reason: str = "") -> bool:
+    def _cancel_channel_tasks(
+        self, channel_id: int, channel_name: str = "", reason: str = ""
+    ) -> bool:
         """Cancel active processing and sending tasks for a channel. Returns True if any cancelled."""
         cancelled = False
-        
+
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.info("%s interrupted active processing in channel #%s", reason, channel_name)
+                logger.info(
+                    "%s interrupted active processing in channel #%s",
+                    reason,
+                    channel_name,
+                )
                 task.cancel()
                 cancelled = True
 
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
-                logger.info("%s interrupted active sending in channel #%s", reason, channel_name)
+                logger.info(
+                    "%s interrupted active sending in channel #%s", reason, channel_name
+                )
                 task.cancel()
                 cancelled = True
 
@@ -287,7 +343,10 @@ class AssistantCog(BaseChatCog):
                 task.cancel()
                 cancelled = True
 
-        if hasattr(auto_cog, 'processing_tasks') and channel_id in auto_cog.processing_tasks:
+        if (
+            hasattr(auto_cog, "processing_tasks")
+            and channel_id in auto_cog.processing_tasks
+        ):
             task = auto_cog.processing_tasks[channel_id]
             if not task.done():
                 task.cancel()
@@ -295,25 +354,39 @@ class AssistantCog(BaseChatCog):
 
         return cancelled
 
-    @commands.hybrid_command(name='abort', aliases=['중단', '멈춰'], description="진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다.")
+    @commands.hybrid_command(
+        name="abort",
+        aliases=["중단", "멈춰"],
+        description="진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다.",
+    )
     async def abort_command(self, ctx: commands.Context):
         """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.config.no_check_permission:
-            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
-                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+            if (
+                not isinstance(ctx.author, discord.Member)
+                or not ctx.author.guild_permissions.manage_guild
+            ):
+                await ctx.reply(
+                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                    mention_author=False,
+                )
                 return
-        
+
         channel_id = ctx.channel.id
-        
+
         # Cancel tasks in both cogs
-        aborted = self._cancel_channel_tasks(channel_id, ctx.channel.name, "Abort command")
+        aborted = self._cancel_channel_tasks(
+            channel_id, ctx.channel.name, "Abort command"
+        )
         aborted = self._cancel_auto_channel_tasks(channel_id) or aborted
 
         # Send appropriate response
         if aborted:
             await self._send_abort_success(ctx)
-            logger.info("User %s requested abort in channel %s", ctx.author.name, channel_id)
+            logger.info(
+                "User %s requested abort in channel %s", ctx.author.name, channel_id
+            )
         else:
             await self._send_abort_no_tasks(ctx)
 
@@ -331,7 +404,11 @@ class AssistantCog(BaseChatCog):
         else:
             await ctx.message.add_reaction("❓")
 
-    @commands.hybrid_command(name='초기화', aliases=['reset'], description="현재 채널의 대화 세션을 초기화합니다.")
+    @commands.hybrid_command(
+        name="초기화",
+        aliases=["reset"],
+        description="현재 채널의 대화 세션을 초기화합니다.",
+    )
     async def reset_session(self, ctx: commands.Context):
         """현재 채널의 대화 세션을 초기화합니다."""
 
@@ -345,64 +422,92 @@ class AssistantCog(BaseChatCog):
             logger.error("세션 초기화 실패: %s", exc, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
-    @commands.hybrid_command(name='temp', description="LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0).")
+    @commands.hybrid_command(
+        name="temp", description="LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0)."
+    )
     @app_commands.describe(value="설정할 Temperature 값 (0.0~2.0)")
-    async def set_temperature(self, ctx: commands.Context, value: Optional[float] = None):
+    async def set_temperature(
+        self, ctx: commands.Context, value: Optional[float] = None
+    ):
         """LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0)."""
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.config.no_check_permission:
-            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
-                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+            if (
+                not isinstance(ctx.author, discord.Member)
+                or not ctx.author.guild_permissions.manage_guild
+            ):
+                await ctx.reply(
+                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                    mention_author=False,
+                )
                 return
-        
+
         if value is None:
-            current_temp = getattr(self.config, 'temperature', 1.0)
+            current_temp = getattr(self.config, "temperature", 1.0)
             await ctx.reply(f"🌡️ 현재 Temperature: {current_temp}", mention_author=False)
             return
 
         if not (0.0 <= value <= 2.0):
-            await ctx.reply("❌ Temperature는 0.0에서 2.0 사이여야 합니다.", mention_author=False)
+            await ctx.reply(
+                "❌ Temperature는 0.0에서 2.0 사이여야 합니다.", mention_author=False
+            )
             return
 
         try:
             self.llm_service.update_parameters(temperature=value)
             if ctx.interaction:
-                await ctx.reply(f"✅ Temperature가 {value}로 설정되었습니다.", ephemeral=False)
+                await ctx.reply(
+                    f"✅ Temperature가 {value}로 설정되었습니다.", ephemeral=False
+                )
             else:
                 await ctx.message.add_reaction("✅")
         except Exception as e:
             logger.error("Temperature 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
-    @commands.hybrid_command(name='topp', description="LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0).")
+    @commands.hybrid_command(
+        name="topp", description="LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0)."
+    )
     @app_commands.describe(value="설정할 Top-P 값 (0.0~1.0)")
     async def set_top_p(self, ctx: commands.Context, value: Optional[float] = None):
         """LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0)."""
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.config.no_check_permission:
-            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
-                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+            if (
+                not isinstance(ctx.author, discord.Member)
+                or not ctx.author.guild_permissions.manage_guild
+            ):
+                await ctx.reply(
+                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                    mention_author=False,
+                )
                 return
-        
+
         if value is None:
-            current_top_p = getattr(self.config, 'top_p', 1.0)
+            current_top_p = getattr(self.config, "top_p", 1.0)
             await ctx.reply(f"📊 현재 Top-p: {current_top_p}", mention_author=False)
             return
 
         if not (0.0 <= value <= 1.0):
-            await ctx.reply("❌ Top-p는 0.0에서 1.0 사이여야 합니다.", mention_author=False)
+            await ctx.reply(
+                "❌ Top-p는 0.0에서 1.0 사이여야 합니다.", mention_author=False
+            )
             return
 
         try:
             self.llm_service.update_parameters(top_p=value)
             if ctx.interaction:
-                await ctx.reply(f"✅ Top-p가 {value}로 설정되었습니다.", ephemeral=False)
+                await ctx.reply(
+                    f"✅ Top-p가 {value}로 설정되었습니다.", ephemeral=False
+                )
             else:
                 await ctx.message.add_reaction("✅")
         except Exception as e:
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
-    
-    @commands.hybrid_command(name='끊어치기', description="긴 응답을 나누어 보내는 기능을 켜거나 끕니다.")
+
+    @commands.hybrid_command(
+        name="끊어치기", description="긴 응답을 나누어 보내는 기능을 켜거나 끕니다."
+    )
     @app_commands.describe(mode="모드 설정 (on/off)")
     async def toggle_break_cut(self, ctx: commands.Context, mode: Optional[str] = None):
         """긴 응답을 나누어 보내는 기능을 켜거나 끕니다."""
@@ -411,9 +516,9 @@ class AssistantCog(BaseChatCog):
             self.config.break_cut_mode = not self.config.break_cut_mode
         else:
             cleaned = mode.lower().strip()
-            if cleaned == 'on':
+            if cleaned == "on":
                 self.config.break_cut_mode = True
-            elif cleaned == 'off':
+            elif cleaned == "off":
                 self.config.break_cut_mode = False
             else:
                 await ctx.reply("사용법: !끊어치기 [on|off] (생략 시 토글)")
@@ -422,22 +527,34 @@ class AssistantCog(BaseChatCog):
         status = "ON" if self.config.break_cut_mode else "OFF"
         await ctx.reply(f"✂️ 끊어치기 모드가 **{status}** 상태로 변경되었습니다.")
 
-    @commands.hybrid_command(name='생각', aliases=['think'], description="Gemini Thinking Budget를 설정합니다.")
+    @commands.hybrid_command(
+        name="생각",
+        aliases=["think"],
+        description="Gemini Thinking Budget를 설정합니다.",
+    )
     @app_commands.describe(value="숫자(512~32768), 'auto', 또는 'off'")
-    async def set_thinking_budget(self, ctx: commands.Context, value: Optional[str] = None):
+    async def set_thinking_budget(
+        self, ctx: commands.Context, value: Optional[str] = None
+    ):
         """Gemini Thinking Budget를 설정합니다."""
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.config.no_check_permission:
-            if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.manage_guild:
-                await ctx.reply("❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)", mention_author=False)
+            if (
+                not isinstance(ctx.author, discord.Member)
+                or not ctx.author.guild_permissions.manage_guild
+            ):
+                await ctx.reply(
+                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                    mention_author=False,
+                )
                 return
-        
+
         if value is None:
-            current = getattr(self.config, 'thinking_budget', None)
+            current = getattr(self.config, "thinking_budget", None)
             if current is None:
-                display = 'OFF'
+                display = "OFF"
             elif current == -1:
-                display = 'AUTO'
+                display = "AUTO"
             else:
                 display = str(current)
             status = f"현재 Thinking Budget: **{display}**"
@@ -447,24 +564,33 @@ class AssistantCog(BaseChatCog):
         cleaned = value.lower().strip()
         target_value: Optional[int] = None
 
-        if cleaned == 'off':
+        if cleaned == "off":
             target_value = None
-        elif cleaned == 'auto':
-            target_value = -1 # Special value for dynamic budget
+        elif cleaned == "auto":
+            target_value = -1  # Special value for dynamic budget
         else:
             try:
                 target_value = int(cleaned)
                 if not (512 <= target_value <= 32768):
-                    await ctx.reply("❌ Thinking Budget은 512에서 32768 사이여야 합니다.", mention_author=False)
+                    await ctx.reply(
+                        "❌ Thinking Budget은 512에서 32768 사이여야 합니다.",
+                        mention_author=False,
+                    )
                     return
             except ValueError:
-                await ctx.reply("❌ 올바른 숫자(512~32768), 'auto', 또는 'off'를 입력해 주세요.", mention_author=False)
+                await ctx.reply(
+                    "❌ 올바른 숫자(512~32768), 'auto', 또는 'off'를 입력해 주세요.",
+                    mention_author=False,
+                )
                 return
 
         try:
             self.llm_service.update_parameters(thinking_budget=target_value)
             if ctx.interaction:
-                await ctx.reply(f"✅ Thinking Budget가 {target_value if target_value else 'OFF'}로 설정되었습니다.", ephemeral=False)
+                await ctx.reply(
+                    f"✅ Thinking Budget가 {target_value if target_value else 'OFF'}로 설정되었습니다.",
+                    ephemeral=False,
+                )
             else:
                 await ctx.message.add_reaction("✅")
 
@@ -475,13 +601,25 @@ class AssistantCog(BaseChatCog):
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
         """Cog 내 명령어 에러 핸들러"""
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply(f"❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: {', '.join(error.missing_permissions)})", mention_author=False)
+            await ctx.reply(
+                f"❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: {', '.join(error.missing_permissions)})",
+                mention_author=False,
+            )
         elif isinstance(error, commands.BadArgument):
-            await ctx.reply("❌ 잘못된 인자가 전달되었습니다. 명령어를 다시 확인해 주세요.", mention_author=False)
+            await ctx.reply(
+                "❌ 잘못된 인자가 전달되었습니다. 명령어를 다시 확인해 주세요.",
+                mention_author=False,
+            )
         elif isinstance(error, commands.CommandOnCooldown):
-            await ctx.reply(f"⏳ 쿨다운 중입니다. {error.retry_after:.1f}초 후에 다시 시도해 주세요.", mention_author=False)
+            await ctx.reply(
+                f"⏳ 쿨다운 중입니다. {error.retry_after:.1f}초 후에 다시 시도해 주세요.",
+                mention_author=False,
+            )
         else:
             logger.error(f"Command error in {ctx.command}: {error}", exc_info=True)
             # 기본 에러 메시지는 이미 globally 처리될 수도 있지만, cog 레벨에서 한번 더 확인
             if not ctx.command.has_error_handler():
-                await ctx.reply(f"❌ 명령어 실행 중 오류가 발생했습니다: {str(error)}", mention_author=False)
+                await ctx.reply(
+                    f"❌ 명령어 실행 중 오류가 발생했습니다: {str(error)}",
+                    mention_author=False,
+                )
