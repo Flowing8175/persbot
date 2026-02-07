@@ -220,25 +220,51 @@ class _CachedModel:
         Args:
             contents: The content to generate.
             tools: Optional override for tools configuration.
+                   Note: Cannot override tools when using cached_content.
 
         Returns:
             The API response.
         """
         if tools is not None:
-            # Rebuild config with new tools while preserving other settings
-            config_kwargs = {
-                "temperature": getattr(self._config, "temperature", 1.0),
-                "top_p": getattr(self._config, "top_p", 1.0),
-                "cached_content": getattr(self._config, "cached_content", None),
-                "system_instruction": getattr(self._config, "system_instruction", None),
-                "tools": tools,
-            }
-            # Add thinking config if present
-            if (
-                hasattr(self._config, "thinking_config")
-                and self._config.thinking_config
-            ):
-                config_kwargs["thinking_config"] = self._config.thinking_config
+            # Check if we're using cached_content - if so, cannot override tools
+            has_cached_content = (
+                getattr(self._config, "cached_content", None) is not None
+            )
+
+            if has_cached_content:
+                # When using cached_content, tools are already baked in
+                # Rebuild config without tools to avoid API error
+                config_kwargs = {
+                    "temperature": getattr(self._config, "temperature", 1.0),
+                    "top_p": getattr(self._config, "top_p", 1.0),
+                    "cached_content": self._config.cached_content,
+                }
+                # Add thinking config if present
+                if (
+                    hasattr(self._config, "thinking_config")
+                    and self._config.thinking_config
+                ):
+                    config_kwargs["thinking_config"] = self._config.thinking_config
+
+                logger.warning(
+                    "Ignoring tools override when using cached_content. Tools are already in the cache."
+                )
+            else:
+                # Not using cache, can override tools normally
+                config_kwargs = {
+                    "temperature": getattr(self._config, "temperature", 1.0),
+                    "top_p": getattr(self._config, "top_p", 1.0),
+                    "system_instruction": getattr(
+                        self._config, "system_instruction", None
+                    ),
+                    "tools": tools,
+                }
+                # Add thinking config if present
+                if (
+                    hasattr(self._config, "thinking_config")
+                    and self._config.thinking_config
+                ):
+                    config_kwargs["thinking_config"] = self._config.thinking_config
 
             config = genai_types.GenerateContentConfig(**config_kwargs)
         else:
