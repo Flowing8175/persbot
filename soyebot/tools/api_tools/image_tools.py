@@ -255,6 +255,13 @@ def register_image_tools(registry):
                     description="The text description of the image to generate",
                     required=True,
                 ),
+                ToolParameter(
+                    name="discord_user_id",
+                    type="integer",
+                    description="Discord user ID for user identification (optional, uses 0 if not provided)",
+                    required=False,
+                    default=0,
+                ),
             ],
             handler=generate_image,
             rate_limit=30,
