@@ -91,13 +91,18 @@ class ToolManager:
         if "discord_context" not in parameters and discord_context:
             parameters["discord_context"] = discord_context
 
-        # Inject API keys for API tools
-        if "search_api_key" not in parameters:
-            parameters["search_api_key"] = getattr(self.config, "search_api_key", None)
-        if "weather_api_key" not in parameters:
-            parameters["weather_api_key"] = getattr(
-                self.config, "weather_api_key", None
-            )
+        # Inject API keys for API tools - only if tool category requires them
+        tool = self.registry.get(tool_name)
+        if tool and tool.category == ToolCategory.API_SEARCH:
+            if "search_api_key" not in parameters:
+                parameters["search_api_key"] = getattr(
+                    self.config, "search_api_key", None
+                )
+        if tool and tool.category == ToolCategory.API_WEATHER:
+            if "weather_api_key" not in parameters:
+                parameters["weather_api_key"] = getattr(
+                    self.config, "weather_api_key", None
+                )
 
         return await self.executor.execute_tool(tool_name, parameters, discord_context)
 
