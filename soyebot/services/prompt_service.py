@@ -12,12 +12,17 @@ from soyebot.prompts import BOT_PERSONA_PROMPT, SUMMARY_SYSTEM_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 
+
 class PromptService:
-    def __init__(self, prompt_dir: str = "soyebot/assets", usage_path: str = "prompt_usage.json"):
+    def __init__(
+        self, prompt_dir: str = "soyebot/assets", usage_path: str = "prompt_usage.json"
+    ):
         self.prompt_dir = Path(prompt_dir)
         self.usage_path = usage_path
         self.prompts: List[Dict[str, str]] = []
-        self.usage_data: Dict[str, Dict[str, int]] = {} # { "date": { "user_id": count } }
+        self.usage_data: Dict[
+            str, Dict[str, int]
+        ] = {}  # { "date": { "user_id": count } }
 
         # Ensure directory exists
         self.prompt_dir.mkdir(parents=True, exist_ok=True)
@@ -40,8 +45,10 @@ class PromptService:
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                    name = file_path.stem # Filename without extension
-                    self.prompts.append({"name": name, "content": content, "path": str(file_path)})
+                    name = file_path.stem  # Filename without extension
+                    self.prompts.append(
+                        {"name": name, "content": content, "path": str(file_path)}
+                    )
             except Exception as e:
                 logger.error(f"Failed to load prompt from {file_path}: {e}")
 
@@ -69,14 +76,20 @@ class PromptService:
                 async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                     content = await f.read()
                     name = file_path.stem
-                    new_prompts.append({"name": name, "content": content, "path": str(file_path)})
+                    new_prompts.append(
+                        {"name": name, "content": content, "path": str(file_path)}
+                    )
             except Exception as e:
                 logger.error(f"Failed to load prompt from {file_path}: {e}")
 
         if new_prompts:
             self.prompts = new_prompts
-        elif not self.prompts: # Only fallback if absolutely nothing and prev list empty
-             self.prompts = [{"name": "기본값", "content": BOT_PERSONA_PROMPT, "path": ""}]
+        elif (
+            not self.prompts
+        ):  # Only fallback if absolutely nothing and prev list empty
+            self.prompts = [
+                {"name": "기본값", "content": BOT_PERSONA_PROMPT, "path": ""}
+            ]
 
     def _load_usage_sync(self):
         if os.path.exists(self.usage_path):
@@ -122,9 +135,10 @@ class PromptService:
         await self._save_usage()
 
     def _sanitize_filename(self, name: str) -> str:
-        # Simple sanitization
-        safe_name = "".join(c for c in name if c.isalnum() or c in (' ', '-', '_')).strip()
-        safe_name = safe_name.replace(' ', '_')
+        # Simple sanitization - keep spaces for display
+        safe_name = "".join(
+            c for c in name if c.isalnum() or c in (" ", "-", "_")
+        ).strip()
         return safe_name or "untitled"
 
     async def add_prompt(self, name: str, content: str) -> int:
@@ -149,9 +163,9 @@ class PromptService:
 
             # Find the index of the newly added prompt
             for i, p in enumerate(self.prompts):
-                if p['path'] == str(file_path):
+                if p["path"] == str(file_path):
                     return i
-            return len(self.prompts) - 1 # Fallback
+            return len(self.prompts) - 1  # Fallback
 
         except Exception as e:
             logger.error(f"Failed to add prompt file {file_path}: {e}")

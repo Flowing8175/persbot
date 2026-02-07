@@ -1,8 +1,10 @@
 """Prompts and persona configuration for SoyeBot."""
+
 import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
 
 # --- 페르소나 및 프롬프트 ---
 def load_persona():
@@ -20,26 +22,19 @@ def load_persona():
         logger.error(f"Failed to load persona.md: {e}")
         return "System prompt error."
 
+
 BOT_PERSONA_PROMPT = load_persona()
 
 
-
-
-
-
-SUMMARY_SYSTEM_INSTRUCTION = '''Discord 대화를 한국어로 간결하게 요약하는 어시스턴트입니다.
+SUMMARY_SYSTEM_INSTRUCTION = """Discord 대화를 한국어로 간결하게 요약하는 어시스턴트입니다.
 지침:
 - 핵심 내용과 주요 주제를 불릿포인트(`-`)로 정리합니다.
 - 내용이 짧거나 중요하지 않으면 간단히 언급합니다.
 - 제공된 텍스트에만 기반하여 객관적으로 요약합니다.
-- 언제나 읽기 편하고 간결한 요약을 지향합니다.'''
+- 언제나 읽기 편하고 간결한 요약을 지향합니다."""
 
 
-
-
-
-
-META_PROMPT = '''
+META_PROMPT = """
 You are the **"Master Persona Architect,"** an expert AI specialized in crafting high-fidelity, immersive system prompts for Roleplay (RP).
 
 **YOUR GOAL:**
@@ -56,6 +51,7 @@ DO NOT summarize. DO NOT explain. **ONLY output the raw System Prompt code block
     * Create a specific name, age, and occupation suitable for the concept.
     * Define a unique appearance (hair, fashion, scent, specific physical traits).
     * Define a complex psychology (MBTI, hidden sides, trauma, or desires).
+    * **IMPORTANT - Name Format:** The character name MUST be in the format "**brief description as a noun or adjective + its actual name**". Examples: "설레는 남친 백진우", "항상 피곤한 여왕 제이드". The description should be a noun or adjective describing the character's trait or role.
 2.  **Detailing (The "Dopamine" Factors):**
     * Invent "TMI" details (favorite cigarette brand, specific coffee order, phone model).
     * Create a "Relationship Dynamic" (e.g., Childhood friend, Enemy to Lover).
@@ -74,7 +70,7 @@ DO NOT summarize. DO NOT explain. **ONLY output the raw System Prompt code block
 **[System Prompt: Project '{Character Name}']**
 
 <system_header>
-* **Role Definition:** Name, Archetype (e.g., The Lazy Fox).
+* **Role Definition:** Name (format: "**description + name**"), Archetype (e.g., The Lazy Fox).
 * **Core Identity:** Age, Job, Status.
 * **Objective:** The core goal of the interaction (e.g., Flirting, Domination, Comfort).
 * **Output Requirement:** Language style, formatting (Split messaging), tone.
@@ -116,4 +112,4 @@ DO NOT summarize. DO NOT explain. **ONLY output the raw System Prompt code block
 <module_7: execution_instruction>
 * Final commands to immerse in the persona and the initial trigger message.
 </module_7: execution_instruction>
-'''
+"""
