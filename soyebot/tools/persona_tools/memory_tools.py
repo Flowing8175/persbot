@@ -395,6 +395,7 @@ def register_memory_tools(registry):
                     type="array",
                     description="Optional list of tags for categorization.",
                     required=False,
+                    items_type="string",
                 ),
             ],
             handler=save_episodic_memory,

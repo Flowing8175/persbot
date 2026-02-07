@@ -50,6 +50,9 @@ class ToolParameter:
     enum: Optional[List[Any]] = None
     """List of allowed values for enum parameters."""
 
+    items_type: Optional[str] = None
+    """Type of items for array parameters (e.g., 'string', 'integer')."""
+
 
 @dataclass
 class ToolResult:
@@ -131,6 +134,8 @@ class ToolDefinition:
                 prop_def["enum"] = param.enum
             if param.default is not None:
                 prop_def["default"] = param.default
+            if param.type == "array" and param.items_type:
+                prop_def["items"] = {"type": param.items_type}
 
             properties[param.name] = prop_def
             if param.required:
@@ -172,6 +177,8 @@ class ToolDefinition:
                 prop_def.enum = param.enum
             if param.default is not None:
                 prop_def.default = param.default
+            if param.type == "array" and param.items_type:
+                prop_def.items = genai_types.Schema(type=param.items_type)
 
             properties[param.name] = prop_def
             if param.required:
