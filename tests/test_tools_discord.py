@@ -116,7 +116,9 @@ class TestChannelTools:
 
         mock_channel.history = Mock(return_value=async_history_iter())
 
-        result = await get_channel_history(mock_channel.id, limit=5, discord_context=mock_discord_context)
+        result = await get_channel_history(
+            mock_channel.id, limit=5, discord_context=mock_discord_context
+        )
 
         assert result.success is True
         data = result.data
@@ -166,7 +168,9 @@ class TestChannelTools:
 
         mock_guild.channels = [text_channel, voice_channel]
 
-        result = await list_channels(mock_guild.id, discord_context=mock_discord_context)
+        result = await list_channels(
+            mock_guild.id, discord_context=mock_discord_context
+        )
 
         assert result.success is True
         data = result.data
@@ -206,6 +210,24 @@ class TestChannelTools:
         data = result.data
         assert data["count"] == 1
         assert data["channels"][0]["name"] == "general"
+
+    @pytest.mark.asyncio
+    async def test_get_channel_info_in_dm(self, mock_channel):
+        """Test getting channel info in DM (no guild context)."""
+        # Create DM context (no guild)
+        dm_context = Mock()
+        dm_context.guild = None
+        dm_context.channel = mock_channel
+        dm_context.bot = Mock()
+
+        result = await get_channel_info(None, dm_context)
+
+        # Should handle gracefully with clear error message
+        assert result.success is False
+        assert (
+            "not available" in result.error.lower()
+            or "not in a guild" in result.error.lower()
+        )
 
 
 class TestUserTools:
@@ -332,6 +354,45 @@ class TestUserTools:
         # Check sorting by position (highest first)
         assert data["roles"][0]["name"] == "Admin"
         assert data["roles"][1]["name"] == "Moderator"
+
+    @pytest.mark.asyncio
+    async def test_get_user_info_uses_context(self, mock_user, mock_discord_context):
+        """Test that get_user_info uses discord_context when user_id is None."""
+        # Call with None user_id - should auto-fill from context
+        result = await get_user_info(None, mock_discord_context)
+
+        assert result.success is True
+        data = result.data
+        assert data["id"] == str(mock_user.id)
+        assert data["username"] == "TestUser"
+        assert data["display_name"] == "Test User"
+
+    @pytest.mark.asyncio
+    async def test_explicit_id_overrides_context(self, mock_discord_context):
+        """Test that explicit user_id parameter overrides context."""
+        # Create a different user
+        other_user = Mock()
+        other_user.id = 999888777
+        other_user.name = "OtherUser"
+        other_user.display_name = "Other User"
+        other_user.discriminator = "5678"
+        other_user.bot = False
+        other_user.created_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        other_user.avatar = Mock()
+        other_user.avatar.url = "https://example.com/other.png"
+        other_user.global_name = "Other User Global"
+
+        # Update bot to return the other user when requested
+        mock_discord_context.bot.fetch_user = AsyncMock(return_value=other_user)
+
+        # Call with explicit user_id - should use this instead of context
+        result = await get_user_info(other_user.id, mock_discord_context)
+
+        assert result.success is True
+        data = result.data
+        assert data["id"] == str(other_user.id)
+        assert data["username"] == "OtherUser"
+        assert data["display_name"] == "Other User"
 
 
 class TestGuildTools:

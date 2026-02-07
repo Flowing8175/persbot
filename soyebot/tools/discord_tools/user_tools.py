@@ -11,18 +11,27 @@ logger = logging.getLogger(__name__)
 
 
 async def get_user_info(
-    user_id: int,
+    user_id: Optional[int] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get information about a Discord user.
 
     Args:
-        user_id: The ID of the user to get info for.
+        user_id: The ID of the user to get info for. Optional - defaults to current user if not specified.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with user information.
     """
+    # Auto-fill user_id from context if not provided
+    if user_id is None and discord_context and discord_context.author:
+        user_id = discord_context.author.id
+
+    if user_id is None:
+        return ToolResult(
+            success=False, error="User ID must be provided or available from context"
+        )
+
     if not discord_context or not discord_context.bot:
         return ToolResult(success=False, error="Discord context not available")
 
@@ -50,22 +59,42 @@ async def get_user_info(
 
 
 async def get_member_info(
-    user_id: int,
-    guild_id: int,
+    user_id: Optional[int] = None,
+    guild_id: Optional[int] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get information about a Discord guild member.
 
     Args:
-        user_id: The ID of the user to get member info for.
-        guild_id: The ID of the guild.
+        user_id: The ID of the user to get member info for. Optional - defaults to current user if not specified.
+        guild_id: The ID of the guild. Optional - defaults to current guild if not specified.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with member information.
     """
+    # Auto-fill user_id from context if not provided
+    if user_id is None and discord_context and discord_context.author:
+        user_id = discord_context.author.id
+
+    # Auto-fill guild_id from context if not provided
+    if guild_id is None and discord_context and discord_context.guild:
+        guild_id = discord_context.guild.id
+
+    if user_id is None:
+        return ToolResult(
+            success=False, error="User ID must be provided or available from context"
+        )
+
+    if guild_id is None:
+        return ToolResult(
+            success=False, error="Guild ID must be provided or available from context"
+        )
+
     if not discord_context or not discord_context.guild:
-        return ToolResult(success=False, error="Discord context not available or not in a guild")
+        return ToolResult(
+            success=False, error="Discord context not available or not in a guild"
+        )
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -81,7 +110,10 @@ async def get_member_info(
             try:
                 member = await guild.fetch_member(user_id)
             except discord.NotFound:
-                return ToolResult(success=False, error=f"Member {user_id} not found in guild {guild_id}")
+                return ToolResult(
+                    success=False,
+                    error=f"Member {user_id} not found in guild {guild_id}",
+                )
 
         info = {
             "id": str(member.id),
@@ -89,10 +121,14 @@ async def get_member_info(
             "display_name": member.display_name,
             "bot": member.bot,
             "joined_at": member.joined_at.isoformat() if member.joined_at else None,
-            "premium_since": member.premium_since.isoformat() if member.premium_since else None,
+            "premium_since": member.premium_since.isoformat()
+            if member.premium_since
+            else None,
             "pending": member.pending,
             "avatar_url": member.avatar.url if member.avatar else None,
-            "guild_avatar_url": member.guild_avatar.url if member.guild_avatar else None,
+            "guild_avatar_url": member.guild_avatar.url
+            if member.guild_avatar
+            else None,
             "is_owner": guild.owner_id == member.id,
         }
 
@@ -104,22 +140,42 @@ async def get_member_info(
 
 
 async def get_member_roles(
-    user_id: int,
-    guild_id: int,
+    user_id: Optional[int] = None,
+    guild_id: Optional[int] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get roles for a guild member.
 
     Args:
-        user_id: The ID of the user to get roles for.
-        guild_id: The ID of the guild.
+        user_id: The ID of the user to get roles for. Optional - defaults to current user if not specified.
+        guild_id: The ID of the guild. Optional - defaults to current guild if not specified.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with member roles.
     """
+    # Auto-fill user_id from context if not provided
+    if user_id is None and discord_context and discord_context.author:
+        user_id = discord_context.author.id
+
+    # Auto-fill guild_id from context if not provided
+    if guild_id is None and discord_context and discord_context.guild:
+        guild_id = discord_context.guild.id
+
+    if user_id is None:
+        return ToolResult(
+            success=False, error="User ID must be provided or available from context"
+        )
+
+    if guild_id is None:
+        return ToolResult(
+            success=False, error="Guild ID must be provided or available from context"
+        )
+
     if not discord_context or not discord_context.guild:
-        return ToolResult(success=False, error="Discord context not available or not in a guild")
+        return ToolResult(
+            success=False, error="Discord context not available or not in a guild"
+        )
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -134,7 +190,10 @@ async def get_member_roles(
             try:
                 member = await guild.fetch_member(user_id)
             except discord.NotFound:
-                return ToolResult(success=False, error=f"Member {user_id} not found in guild {guild_id}")
+                return ToolResult(
+                    success=False,
+                    error=f"Member {user_id} not found in guild {guild_id}",
+                )
 
         roles = []
         for role in member.roles:
@@ -170,61 +229,72 @@ def register_user_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="get_user_info",
-        description="Get detailed information about a Discord user including username, display name, bot status, and account creation date.",
-        category=ToolCategory.DISCORD_USER,
-        parameters=[
-            ToolParameter(
-                name="user_id",
-                type="integer",
-                description="The ID of the user to get information for",
-                required=True,
-            ),
-        ],
-        handler=get_user_info,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_user_info",
+            description="Get detailed information about a Discord user including username, display name, bot status, and account creation date.",
+            category=ToolCategory.DISCORD_USER,
+            parameters=[
+                ToolParameter(
+                    name="user_id",
+                    type="integer",
+                    description="The ID of the user to get information for (optional - defaults to current user if not specified)",
+                    required=False,
+                    default=None,
+                ),
+            ],
+            handler=get_user_info,
+        )
+    )
 
-    registry.register(ToolDefinition(
-        name="get_member_info",
-        description="Get detailed information about a Discord guild member including join date, premium status, and ownership status.",
-        category=ToolCategory.DISCORD_USER,
-        parameters=[
-            ToolParameter(
-                name="user_id",
-                type="integer",
-                description="The ID of the user to get member info for",
-                required=True,
-            ),
-            ToolParameter(
-                name="guild_id",
-                type="integer",
-                description="The ID of the guild the user is in",
-                required=True,
-            ),
-        ],
-        handler=get_member_info,
-        requires_permission="read_messages",
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_member_info",
+            description="Get detailed information about a Discord guild member including join date, premium status, and ownership status.",
+            category=ToolCategory.DISCORD_USER,
+            parameters=[
+                ToolParameter(
+                    name="user_id",
+                    type="integer",
+                    description="The ID of the user to get member info for (optional - defaults to current user if not specified)",
+                    required=False,
+                    default=None,
+                ),
+                ToolParameter(
+                    name="guild_id",
+                    type="integer",
+                    description="The ID of the guild the user is in (optional - defaults to current guild if not specified)",
+                    required=False,
+                    default=None,
+                ),
+            ],
+            handler=get_member_info,
+            requires_permission="read_messages",
+        )
+    )
 
-    registry.register(ToolDefinition(
-        name="get_member_roles",
-        description="Get all roles assigned to a guild member, including role details like position, color, and permissions.",
-        category=ToolCategory.DISCORD_USER,
-        parameters=[
-            ToolParameter(
-                name="user_id",
-                type="integer",
-                description="The ID of the user to get roles for",
-                required=True,
-            ),
-            ToolParameter(
-                name="guild_id",
-                type="integer",
-                description="The ID of the guild the user is in",
-                required=True,
-            ),
-        ],
-        handler=get_member_roles,
-        requires_permission="read_messages",
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_member_roles",
+            description="Get all roles assigned to a guild member, including role details like position, color, and permissions.",
+            category=ToolCategory.DISCORD_USER,
+            parameters=[
+                ToolParameter(
+                    name="user_id",
+                    type="integer",
+                    description="The ID of the user to get roles for (optional - defaults to current user if not specified)",
+                    required=False,
+                    default=None,
+                ),
+                ToolParameter(
+                    name="guild_id",
+                    type="integer",
+                    description="The ID of the guild the user is in (optional - defaults to current guild if not specified)",
+                    required=False,
+                    default=None,
+                ),
+            ],
+            handler=get_member_roles,
+            requires_permission="read_messages",
+        )
+    )
