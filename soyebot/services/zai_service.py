@@ -327,6 +327,9 @@ class ZAIService(BaseLLMService):
         else:
             images = await self._extract_images_from_message(discord_message)
 
+        # Convert tools to Z.AI (OpenAI-compatible) format if provided
+        converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None
+
         result = await self.execute_with_retry(
             lambda: chat_session.send_message(
                 user_message,
@@ -334,7 +337,7 @@ class ZAIService(BaseLLMService):
                 author_name=author_name,
                 message_ids=message_ids,
                 images=images,
-                tools=tools,
+                tools=converted_tools,
             ),
             "응답 생성",
             return_full_response=True,
