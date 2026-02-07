@@ -5,17 +5,17 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+
 
 from dotenv import load_dotenv
 
-# --- 로딩 및 기본 설정 ---
+# --- Load Environment & Default Configuration ---
 # Load the local .env file from the project root to populate environment
 # variables. We intentionally avoid find_dotenv because the project is typically
 # run from the repository root and we want predictable loading behavior.
 _dotenv_path = Path(__file__).resolve().parent.parent / ".env"
 if _dotenv_path.exists():
-    load_dotenv(_dotenv_path)
+    _ = load_dotenv(_dotenv_path)
     logging.getLogger(__name__).debug(
         "Loaded environment variables from %s", _dotenv_path
     )
@@ -32,8 +32,11 @@ def _resolve_log_level(raw_level: str) -> int:
         return logging.INFO
 
     normalized = raw_level.strip().upper()
-    if normalized in logging._nameToLevel:
-        return logging._nameToLevel[normalized]
+
+    # Use getattr to access logging level constants (public API)
+    level = getattr(logging, normalized, None)
+    if isinstance(level, int) and level > 0:
+        return level
 
     logging.getLogger(__name__).warning(
         "Unknown LOG_LEVEL '%s'; defaulting to INFO", raw_level
@@ -49,7 +52,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# --- 설정 ---
+# --- Configuration Defaults ---
 DEFAULT_GEMINI_ASSISTANT_MODEL = "gemini-3-flash"
 DEFAULT_GEMINI_SUMMARY_MODEL = "gemini-2.5-pro"
 DEFAULT_OPENAI_ASSISTANT_MODEL = "gpt-5-mini"
@@ -60,15 +63,15 @@ DEFAULT_ZAI_SUMMARY_MODEL = "glm-4-flash"
 
 @dataclass
 class AppConfig:
-    """애플리케이션 설정"""
+    """Application configuration"""
 
     discord_token: str
     assistant_llm_provider: str = "gemini"
     summarizer_llm_provider: str = "gemini"
-    gemini_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
-    openai_base_url: Optional[str] = None
-    zai_api_key: Optional[str] = None
+    gemini_api_key: str | None = None
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
+    zai_api_key: str | None = None
     zai_base_url: str = "https://api.z.ai/api/paas/v4/"
     zai_coding_plan: bool = False
     assistant_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
@@ -83,7 +86,7 @@ class AppConfig:
     countdown_update_interval: int = 5
     command_prefix: str = "!"
     service_tier: str = "flex"
-    openai_finetuned_model: Optional[str] = None
+    openai_finetuned_model: str | None = None
 
     # Gemini/LLM model tuning
     # Temperature controls creativity (0.0 = deterministic, higher = more creative)
@@ -94,11 +97,11 @@ class AppConfig:
     gemini_cache_min_tokens: int = 32768
     gemini_cache_ttl_minutes: int = 60
     # Gemini Thinking Budget (in tokens)
-    thinking_budget: Optional[int] = None
+    thinking_budget: int | None = None
     max_history: int = 50
 
     # Channels where every message should be auto-processed by Gemini
-    auto_reply_channel_ids: Tuple[int, ...] = ()
+    auto_reply_channel_ids: tuple[int, ...] = ()
     log_level: int = logging.INFO
     # --- Session Management ---
     session_cache_limit: int = 200
@@ -113,11 +116,11 @@ class AppConfig:
     enable_api_tools: bool = True
     tool_rate_limit: int = 60  # per minute (seconds between uses)
     tool_timeout: float = 10.0  # seconds
-    weather_api_key: Optional[str] = None
-    search_api_key: Optional[str] = None
+    weather_api_key: str | None = None
+    search_api_key: str | None = None
 
 
-def _normalize_provider(raw_provider: Optional[str], default: str) -> str:
+def _normalize_provider(raw_provider: str | None, default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
         return default
     return raw_provider.strip().lower()
@@ -133,7 +136,7 @@ def _validate_provider(provider: str) -> str:
     return provider
 
 
-def _first_nonempty_env(*names: str) -> Optional[str]:
+def _first_nonempty_env(*names: str) -> str | None:
     for name in names:
         value = os.environ.get(name)
         if value and value.strip():
@@ -169,7 +172,15 @@ def _parse_int_env(name: str, default: int) -> int:
         return default
 
 
-def _parse_thinking_budget() -> Optional[int]:
+def _parse_bool_env(name: str, default: bool = False) -> bool:
+    """Parse boolean from environment variable with fallback."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("true", "1", "yes")
+
+
+def _parse_thinking_budget() -> int | None:
     """Parse THINKING_BUDGET with special 'off' handling."""
     raw = os.environ.get("THINKING_BUDGET", "off").strip().lower()
     if raw == "off":
@@ -183,7 +194,7 @@ def _parse_thinking_budget() -> Optional[int]:
         return None
 
 
-def _parse_auto_channel_ids() -> Tuple[int, ...]:
+def _parse_auto_channel_ids() -> tuple[int, ...]:
     """Parse comma-separated channel IDs from environment."""
     raw = os.environ.get("AUTO_REPLY_CHANNEL_IDS", "").strip()
     if not raw:
@@ -248,17 +259,13 @@ def _resolve_model_name(provider: str, *, role: str) -> str:
 
 
 def load_config() -> AppConfig:
-    """환경 변수에서 설정을 로드합니다."""
+    """Load configuration from environment variables."""
     discord_token = os.environ.get("DISCORD_TOKEN")
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     openai_base_url = os.environ.get("OPENAI_BASE_URL")
     zai_api_key = os.environ.get("ZAI_API_KEY")
-    zai_coding_plan = os.environ.get("ZAI_CODING_PLAN", "").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
+    zai_coding_plan = _parse_bool_env("ZAI_CODING_PLAN")
     # Use Coding Plan API endpoint if enabled, otherwise use standard API
     default_base_url = (
         "https://api.z.ai/api/coding/paas/v4/"
@@ -269,13 +276,10 @@ def load_config() -> AppConfig:
     service_tier = os.environ.get("SERVICE_TIER", "flex")
 
     # Provider별 설정 (어시스턴트/요약 분리)
-    default_assistant_provider = AppConfig.__dataclass_fields__[
-        "assistant_llm_provider"
-    ].default
     assistant_llm_provider = _validate_provider(
         _normalize_provider(
             os.environ.get("ASSISTANT_LLM_PROVIDER"),
-            default_assistant_provider,
+            "gemini",  # Default from AppConfig dataclass
         )
     )
     summarizer_llm_provider = _validate_provider(
@@ -338,21 +342,9 @@ def load_config() -> AppConfig:
     )
 
     # Parse tool configuration
-    enable_tools = os.environ.get("ENABLE_TOOLS", "true").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    enable_discord_tools = os.environ.get("ENABLE_DISCORD_TOOLS", "true").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    enable_api_tools = os.environ.get("ENABLE_API_TOOLS", "true").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
+    enable_tools = _parse_bool_env("ENABLE_TOOLS", default=True)
+    enable_discord_tools = _parse_bool_env("ENABLE_DISCORD_TOOLS", default=True)
+    enable_api_tools = _parse_bool_env("ENABLE_API_TOOLS", default=True)
     tool_rate_limit = _parse_int_env("TOOL_RATE_LIMIT", 60)
     tool_timeout = _parse_float_env("TOOL_TIMEOUT", 10.0)
     weather_api_key = os.environ.get("WEATHER_API_KEY")
@@ -382,8 +374,7 @@ def load_config() -> AppConfig:
         gemini_cache_ttl_minutes=_parse_int_env("GEMINI_CACHE_TTL_MINUTES", 60),
         thinking_budget=thinking_budget,
         max_history=max_history,
-        no_check_permission=os.environ.get("NO_CHECK_PERMISSION", "").lower()
-        in ("true", "1", "yes"),
+        no_check_permission=_parse_bool_env("NO_CHECK_PERMISSION"),
         enable_tools=enable_tools,
         enable_discord_tools=enable_discord_tools,
         enable_api_tools=enable_api_tools,
