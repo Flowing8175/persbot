@@ -156,6 +156,48 @@ class _ChatSession:
         # Return the new messages and the raw response
         return user_msg, model_msg, response
 
+    def send_tool_results(self, tool_rounds, tools=None):
+        """Send tool execution results back to model and get continuation.
+
+        Args:
+            tool_rounds: List of (response_obj, tool_results) tuples from each round.
+            tools: Tools to pass for the next API call.
+
+        Returns:
+            Tuple of (model_msg, response_obj).
+        """
+        from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
+
+        # Build contents from history
+        contents = self._get_api_history()
+
+        # The last entry is the text-only model msg from initial response - remove it
+        if contents and contents[-1]["role"] == "model":
+            contents.pop()
+
+        # Add each tool round: model response (with function_call) + function results
+        for resp_obj, results in tool_rounds:
+            # Add model's response with function_call parts
+            model_content = resp_obj.candidates[0].content
+            contents.append({"role": "model", "parts": list(model_content.parts)})
+
+            # Add function response parts
+            fn_parts = GeminiToolAdapter.create_function_response_parts(results)
+            contents.append({"role": "user", "parts": fn_parts})
+
+        # Call generate_content
+        response = self._factory.generate_content(contents=contents, tools=tools)
+
+        # Create model message
+        clean_content = extract_clean_text(response)
+        model_msg = ChatMessage(
+            role="model",
+            content=clean_content,
+            parts=[{"text": clean_content}],
+        )
+
+        return model_msg, response
+
 
 class _CachedModel:
     """Lightweight wrapper that mimics the old GenerativeModel interface."""
@@ -852,6 +894,58 @@ class GeminiService(BaseLLMService):
 
             # Re-raise or return None if still failing
             return None
+
+    async def send_tool_results(
+        self,
+        chat_session,
+        tool_rounds,
+        tools=None,
+        discord_message=None,
+    ):
+        """Send tool results back to model and get continuation response.
+
+        Args:
+            chat_session: The Gemini chat session.
+            tool_rounds: List of (response_obj, tool_results) tuples.
+            tools: Original tool definitions (will be converted to Gemini format).
+            discord_message: Discord message for error notifications.
+
+        Returns:
+            Tuple of (response_text, response_obj) or None.
+        """
+        # Convert tools to Gemini format
+        final_tools = []
+        if tools:
+            custom_tools = GeminiToolAdapter.convert_tools(tools)
+            final_tools.extend(custom_tools)
+
+        model_name = getattr(
+            chat_session._factory, "_model_name", self._assistant_model_name
+        )
+        search_tools = self._get_search_tools(model_name)
+        if search_tools:
+            final_tools.extend(search_tools)
+
+        result = await self.execute_with_retry(
+            lambda: chat_session.send_tool_results(
+                tool_rounds, tools=final_tools or None
+            ),
+            "tool 결과 전송",
+            return_full_response=True,
+            discord_message=discord_message,
+        )
+
+        if result is None:
+            return None
+
+        model_msg, response_obj = result
+
+        # Update the last model entry in history with the final response
+        if chat_session.history and chat_session.history[-1].role == "model":
+            chat_session.history[-1] = model_msg
+
+        response_text = self._extract_text_from_response(response_obj)
+        return (response_text, response_obj)
 
     async def _gemini_retry(
         self,

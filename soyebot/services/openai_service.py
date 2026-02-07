@@ -352,6 +352,68 @@ class ChatCompletionSession(BaseChatSession):
             return response.choices[0].message.content.strip()
         return self._text_extractor(response)
 
+    def send_tool_results(self, tool_rounds, tools=None):
+        """Send tool execution results back to model and get continuation.
+
+        Args:
+            tool_rounds: List of (response_obj, tool_results) tuples from each round.
+            tools: Tools for the next API call.
+
+        Returns:
+            Tuple of (model_msg, response_obj).
+        """
+        from soyebot.tools.adapters.openai_adapter import OpenAIToolAdapter
+
+        # Build base messages from history
+        messages = self._build_system_message()
+        messages.extend(self._convert_history_to_api_format())
+
+        # Remove last assistant entry (text-only from initial response)
+        if messages and messages[-1].get("role") == "assistant":
+            messages.pop()
+
+        # Add each tool round: assistant response (with tool_calls) + tool results
+        for resp_obj, results in tool_rounds:
+            assistant_msg = resp_obj.choices[0].message
+            tool_calls_data = []
+            if assistant_msg.tool_calls:
+                for tc in assistant_msg.tool_calls:
+                    tool_calls_data.append({
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    })
+
+            messages.append({
+                "role": "assistant",
+                "content": assistant_msg.content,
+                "tool_calls": tool_calls_data,
+            })
+
+            # Add tool result messages
+            messages.extend(OpenAIToolAdapter.create_tool_messages(results))
+
+        # Call API
+        api_kwargs = {
+            "model": self._model_name,
+            "messages": messages,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "service_tier": self._service_tier,
+        }
+        if tools:
+            api_kwargs["tools"] = tools
+
+        response = self._client.chat.completions.create(**api_kwargs)
+
+        message_content = self._extract_response_content(response)
+        model_msg = ChatMessage(role="assistant", content=message_content)
+
+        return model_msg, response
+
 
 class _ChatCompletionModel:
     """Chat Completion API wrapper."""
@@ -697,6 +759,46 @@ class OpenAIService(BaseLLMService):
         # Update history safely
         chat_session._history.append(user_msg)
         chat_session._history.append(model_msg)
+
+        return model_msg.content, response
+
+    async def send_tool_results(
+        self,
+        chat_session,
+        tool_rounds,
+        tools=None,
+        discord_message=None,
+    ):
+        """Send tool results back to model and get continuation response.
+
+        Args:
+            chat_session: The OpenAI chat session.
+            tool_rounds: List of (response_obj, tool_results) tuples.
+            tools: Original tool definitions (will be converted to OpenAI format).
+            discord_message: Discord message for error notifications.
+
+        Returns:
+            Tuple of (response_text, response_obj) or None.
+        """
+        converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None
+
+        result = await self.execute_with_retry(
+            lambda: chat_session.send_tool_results(
+                tool_rounds, tools=converted_tools
+            ),
+            "tool 결과 전송",
+            return_full_response=True,
+            discord_message=discord_message,
+        )
+
+        if result is None:
+            return None
+
+        model_msg, response = result
+
+        # Update the last model entry in history with the final response
+        if chat_session._history and chat_session._history[-1].role == "assistant":
+            chat_session._history[-1] = model_msg
 
         return model_msg.content, response
 

@@ -304,6 +304,52 @@ class LLMService:
 
         return self._prepare_response_with_notification(response, notification)
 
+    def get_active_backend(
+        self, chat_session, use_summarizer_backend: bool = False
+    ) -> Optional[BaseLLMService]:
+        """Get the active backend for a chat session."""
+        if use_summarizer_backend:
+            return self.summarizer_backend
+        model_alias = getattr(
+            chat_session, "model_alias", self.model_usage_service.DEFAULT_MODEL_ALIAS
+        )
+        return self.get_backend_for_model(model_alias) or self.assistant_backend
+
+    async def send_tool_results(
+        self,
+        chat_session,
+        tool_rounds,
+        tools=None,
+        use_summarizer_backend: bool = False,
+        discord_message=None,
+    ):
+        """Send tool results back to the model and get continuation response.
+
+        Args:
+            chat_session: The chat session.
+            tool_rounds: List of (response_obj, tool_results) tuples.
+            tools: Tool definitions for the API call.
+            use_summarizer_backend: Whether to use summarizer backend.
+            discord_message: Discord message for error notifications.
+
+        Returns:
+            Tuple of (response_text, response_obj) or None.
+        """
+        active_backend = self.get_active_backend(
+            chat_session, use_summarizer_backend
+        )
+
+        if not active_backend or not hasattr(active_backend, "send_tool_results"):
+            logger.warning("Active backend does not support send_tool_results")
+            return None
+
+        return await active_backend.send_tool_results(
+            chat_session,
+            tool_rounds,
+            tools=tools,
+            discord_message=discord_message,
+        )
+
     def get_tools_for_backend(self, backend: BaseLLMService, tools: List[Any]) -> Any:
         """Get tools in the format required by a specific backend.
 

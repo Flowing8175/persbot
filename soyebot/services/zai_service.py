@@ -104,6 +104,85 @@ class ZAIChatSession(BaseChatSession):
 
         return user_msg, model_msg, response
 
+    def send_tool_results(self, tool_rounds, tools=None):
+        """Send tool execution results back to model and get continuation.
+
+        Args:
+            tool_rounds: List of (response_obj, tool_results) tuples from each round.
+            tools: Tools for the next API call.
+
+        Returns:
+            Tuple of (model_msg, response_obj).
+        """
+        from soyebot.tools.adapters.zai_adapter import ZAIToolAdapter
+
+        # Build messages
+        messages = []
+        if self._system_instruction:
+            messages.append({"role": "system", "content": self._system_instruction})
+
+        # Add history (will remove last assistant msg below)
+        for msg in self._history:
+            if msg.images:
+                content_blocks = []
+                if msg.content:
+                    content_blocks.append({"type": "text", "text": msg.content})
+                for img_bytes in msg.images:
+                    mime_type = get_mime_type(img_bytes)
+                    b64_str = base64.b64encode(img_bytes).decode("utf-8")
+                    content_blocks.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
+                    })
+                messages.append({"role": msg.role, "content": content_blocks})
+            else:
+                messages.append({"role": msg.role, "content": msg.content})
+
+        # Remove last assistant entry (text-only from initial response)
+        if messages and messages[-1].get("role") == "assistant":
+            messages.pop()
+
+        # Add each tool round: assistant response (with tool_calls) + tool results
+        for resp_obj, results in tool_rounds:
+            assistant_msg = resp_obj.choices[0].message
+            tool_calls_data = []
+            if assistant_msg.tool_calls:
+                for tc in assistant_msg.tool_calls:
+                    tool_calls_data.append({
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    })
+
+            messages.append({
+                "role": "assistant",
+                "content": assistant_msg.content,
+                "tool_calls": tool_calls_data,
+            })
+
+            # Add tool result messages
+            messages.extend(ZAIToolAdapter.create_tool_messages(results))
+
+        # Call API
+        api_kwargs = {
+            "model": self._model_name,
+            "messages": messages,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+        }
+        if tools:
+            api_kwargs["tools"] = tools
+
+        response = self._client.chat.completions.create(**api_kwargs)
+
+        message_content = self._text_extractor(response)
+        model_msg = ChatMessage(role="assistant", content=message_content)
+
+        return model_msg, response
+
 
 class ZAIService(BaseLLMService):
     """Z.AI Coding Plan API와의 모든 상호작용을 관리합니다."""
@@ -352,6 +431,46 @@ class ZAIService(BaseLLMService):
         # Update history safely
         chat_session._history.append(user_msg)
         chat_session._history.append(model_msg)
+
+        return model_msg.content, response
+
+    async def send_tool_results(
+        self,
+        chat_session,
+        tool_rounds,
+        tools=None,
+        discord_message=None,
+    ):
+        """Send tool results back to model and get continuation response.
+
+        Args:
+            chat_session: The Z.AI chat session.
+            tool_rounds: List of (response_obj, tool_results) tuples.
+            tools: Original tool definitions (will be converted to Z.AI format).
+            discord_message: Discord message for error notifications.
+
+        Returns:
+            Tuple of (response_text, response_obj) or None.
+        """
+        converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None
+
+        result = await self.execute_with_retry(
+            lambda: chat_session.send_tool_results(
+                tool_rounds, tools=converted_tools
+            ),
+            "tool 결과 전송",
+            return_full_response=True,
+            discord_message=discord_message,
+        )
+
+        if result is None:
+            return None
+
+        model_msg, response = result
+
+        # Update the last model entry in history with the final response
+        if chat_session._history and chat_session._history[-1].role == "assistant":
+            chat_session._history[-1] = model_msg
 
         return model_msg.content, response
 
