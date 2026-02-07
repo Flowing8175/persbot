@@ -200,7 +200,8 @@ class AssistantCog(BaseChatCog):
             value=(
                 "`!temp <0.0~2.0>`: AI의 창의성(Temperature)을 조절합니다.\n"
                 "`!생각 <숫자|auto|off>`: Gemini Thinking Budget를 설정합니다.\n"
-                "`!끊어치기 [on|off]`: 실시간 메시지 끊어 전송 모드를 설정합니다."
+                "`!끊어치기 [on|off]`: 실시간 메시지 끊어 전송 모드를 설정합니다.\n"
+                "`!대기 <초>` (`!delay`): 메시지 버퍼 대기 시간을 설정합니다 (0~60초)."
             ),
             inline=False,
         )
@@ -595,6 +596,54 @@ class AssistantCog(BaseChatCog):
 
         except Exception as e:
             logger.error("Thinking Budget 설정 실패: %s", e, exc_info=True)
+            await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+
+    @commands.hybrid_command(
+        name="delay",
+        aliases=["대기"],
+        description="메시지 버퍼 대기 시간을 설정합니다 (초 단위).",
+    )
+    @app_commands.describe(value="설정할 대기 시간 (초, 0~60)")
+    async def set_buffer_delay(
+        self, ctx: commands.Context, value: Optional[float] = None
+    ):
+        """메시지 버퍼 대기 시간을 설정합니다 (초 단위)."""
+        # Check permissions unless NO_CHECK_PERMISSION is set
+        if not self.config.no_check_permission:
+            if (
+                not isinstance(ctx.author, discord.Member)
+                or not ctx.author.guild_permissions.manage_guild
+            ):
+                await ctx.reply(
+                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                    mention_author=False,
+                )
+                return
+
+        if value is None:
+            current_delay = self.message_buffer.default_delay
+            await ctx.reply(
+                f"⏱️ 현재 버퍼 대기 시간: {current_delay}초", mention_author=False
+            )
+            return
+
+        if not (0.0 <= value <= 60.0):
+            await ctx.reply(
+                "❌ 대기 시간은 0에서 60초 사이여야 합니다.", mention_author=False
+            )
+            return
+
+        try:
+            self.message_buffer.update_delay(value)
+            self.config.message_buffer_delay = value
+            if ctx.interaction:
+                await ctx.reply(
+                    f"✅ 버퍼 대기 시간이 {value}초로 설정되었습니다.", ephemeral=False
+                )
+            else:
+                await ctx.message.add_reaction("✅")
+        except Exception as e:
+            logger.error("버퍼 대기 시간 설정 실패: %s", e, exc_info=True)
             await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
     async def cog_command_error(self, ctx: commands.Context, error: Exception):

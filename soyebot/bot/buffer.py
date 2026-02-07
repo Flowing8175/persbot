@@ -88,6 +88,15 @@ class MessageBuffer:
             self._process_buffer(channel_id, self.typing_timeout, callback)
         )
 
+    def update_delay(self, delay: float):
+        """
+        Update the default delay for message buffering.
+        """
+        if delay < 0:
+            raise ValueError("Delay must be non-negative")
+        self.default_delay = delay
+        logger.info(f"Buffer delay updated to {delay}s")
+
     async def _process_buffer(
         self,
         channel_id: int,
