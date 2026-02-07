@@ -24,60 +24,6 @@ from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
 logger = logging.getLogger(__name__)
 
-
-class BaseGeminiSession:
-    """Base class for Gemini chat sessions with common functionality."""
-
-    def __init__(
-        self,
-        system_instruction: str,
-    ):
-        self._system_instruction = system_instruction
-        # Use deque with maxlen for automatic memory management
-        max_history = 50  # Default max history size
-        self.history: deque[ChatMessage] = deque(maxlen=max_history)
-
-    def _append_history(
-        self,
-        role: str,
-        content: str,
-        author_id: Optional[int] = None,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-    ) -> None:
-        """Append a message to history if content is not empty."""
-        if not content:
-            return
-        self.history.append(
-            ChatMessage(
-                role=role,
-                content=content,
-                author_id=author_id,
-                author_name=author_name,
-                message_ids=message_ids or [],
-            )
-        )
-
-    def _create_user_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-    ) -> ChatMessage:
-        """Create a ChatMessage for user input."""
-        return ChatMessage(
-            role="user",
-            content=user_message,
-            parts=[{"text": user_message}],
-            images=images or [],
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids or [],
-        )
-
-
 # Configuration Constants
 DEFAULT_TEMPERATURE = 1.0
 DEFAULT_TOP_P = 1.0
@@ -120,12 +66,16 @@ def extract_clean_text(response_obj: Any) -> str:
         return ""
 
 
-class _ChatSession(BaseGeminiSession):
+class _ChatSession:
     """A wrapper for a Gemini chat session to manage history with author tracking."""
 
     def __init__(self, system_instruction: str, factory: "_CachedModel"):
-        super().__init__(system_instruction)
+        self._system_instruction = system_instruction
         self._factory = factory
+        # We will manage the history manually to include author_id
+        # Use deque with maxlen for automatic memory management
+        max_history = 50  # Default max history size
+        self.history: deque[ChatMessage] = deque(maxlen=max_history)
 
     def _get_api_history(self) -> list[dict]:
         """Convert local history to API format."""
@@ -161,12 +111,7 @@ class _ChatSession(BaseGeminiSession):
         images: list[bytes] = None,
         tools: Optional[list] = None,
     ):
-        # Use base class method to create user message
-        user_msg = self._create_user_message(
-            user_message, author_id, author_name, message_ids, images
-        )
-
-        # Build the full content list for this turn (History + Current Message)
+        # 1. Build the full content list for this turn (History + Current Message)
         contents = self._get_api_history()
 
         current_parts = []
@@ -182,11 +127,24 @@ class _ChatSession(BaseGeminiSession):
 
         contents.append({"role": "user", "parts": current_parts})
 
-        # Call generate_content directly (Stateless)
+        # 2. Call generate_content directly (Stateless)
         # Tools are included in the config, not passed as a parameter
         response = self._factory.generate_content(contents=contents)
 
-        # Extract text from response
+        # 3. Create ChatMessage objects but do NOT append to self.history yet.
+        user_msg = ChatMessage(
+            role="user",
+            content=user_message,
+            parts=[
+                {"text": user_message}
+            ],  # We store text part only in parts for compatibility/simplicity?
+            # Or we should store the text part. Images are stored in 'images' field.
+            images=images or [],
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=message_ids or [],
+        )
+
         clean_content = extract_clean_text(response)
         model_msg = ChatMessage(
             role="model",
@@ -194,10 +152,6 @@ class _ChatSession(BaseGeminiSession):
             parts=[{"text": clean_content}],
             author_id=None,  # Bot messages have no author
         )
-
-        # Append to history using base class method
-        self._append_history("user", user_message, author_id, author_name, message_ids)
-        self._append_history("model", clean_content, author_id=None)
 
         # Return the new messages and the raw response
         return user_msg, model_msg, response
@@ -453,7 +407,7 @@ class GeminiService(BaseLLMService):
 
         try:
             logger.debug(
-                f"[RAW REQUEST] User message preview: {user_message[:REQUEST_PREVIEW_LENGTH]!r}"
+                f"[RAW API REQUEST] User message preview: {user_message[:REQUEST_PREVIEW_LENGTH]!r}"
             )
 
             if chat_session and hasattr(chat_session, "history"):
@@ -475,10 +429,13 @@ class GeminiService(BaseLLMService):
                     )
                 if formatted_history:
                     logger.debug(
-                        "[RAW REQUEST] Recent history:\n" + "\n".join(formatted_history)
+                        "[RAW API REQUEST] Recent history:\n"
+                        + "\n".join(formatted_history)
                     )
         except Exception as e:
-            logger.error(f"[RAW REQUEST] Error logging raw request: {e}", exc_info=True)
+            logger.error(
+                f"[RAW API REQUEST] Error logging raw request: {e}", exc_info=True
+            )
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw API response data for debugging."""
@@ -498,7 +455,7 @@ class GeminiService(BaseLLMService):
                 )
         except Exception as e:
             logger.error(
-                f"[RAW RESPONSE {attempt}] Error logging token counts: {e}",
+                f"[RAW API RESPONSE {attempt}] Error logging token counts: {e}",
                 exc_info=True,
             )
 
@@ -510,7 +467,7 @@ class GeminiService(BaseLLMService):
                 for idx, candidate in enumerate(actual_response.candidates):
                     finish_reason = getattr(candidate, "finish_reason", "unknown")
                     logger.debug(
-                        f"[RAW RESPONSE {attempt}] Candidate {idx} finish_reason={finish_reason}"
+                        f"[RAW API RESPONSE {attempt}] Candidate {idx} finish_reason={finish_reason}"
                     )
                     if hasattr(candidate, "content") and hasattr(
                         candidate.content, "parts"
@@ -526,11 +483,11 @@ class GeminiService(BaseLLMService):
                                 )
                         if texts:
                             logger.debug(
-                                f"[RAW RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}"
+                                f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}"
                             )
         except Exception as e:
             logger.error(
-                f"[RAW RESPONSE {attempt}] Error logging raw response: {e}",
+                f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}",
                 exc_info=True,
             )
 
