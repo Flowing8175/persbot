@@ -109,6 +109,7 @@ class _ChatSession:
         author_name: Optional[str] = None,
         message_ids: Optional[list[str]] = None,
         images: list[bytes] = None,
+        tools: Optional[list] = None,
     ):
         # 1. Build the full content list for this turn (History + Current Message)
         contents = self._get_api_history()
@@ -127,6 +128,7 @@ class _ChatSession:
         contents.append({"role": "user", "parts": current_parts})
 
         # 2. Call generate_content directly (Stateless)
+        # Tools are included in the config, not passed as a parameter
         response = self._factory.generate_content(contents=contents)
 
         # 3. Create ChatMessage objects but do NOT append to self.history yet.
@@ -746,6 +748,7 @@ class GeminiService(BaseLLMService):
                     author_name=author_name,
                     message_ids=message_ids,
                     images=images,
+                    tools=final_tools,
                 ),
                 on_cache_error=_refresh_chat_session,
                 discord_message=primary_msg,
@@ -981,7 +984,7 @@ class GeminiService(BaseLLMService):
             # Use a timeout to avoid blocking too long
             timeout = 5.0
             response = await asyncio.wait_for(
-                self.client.caches.list(), timeout=timeout
+                asyncio.to_thread(self.client.caches.list), timeout=timeout
             )
 
             # Process a reasonable number of caches to avoid API overload
@@ -992,11 +995,13 @@ class GeminiService(BaseLLMService):
                     # Refresh TTL for frequently used caches
                     ttl_seconds = ttl_minutes * 60
                     await asyncio.wait_for(
-                        self.client.caches.update(
-                            name=cache.name,
-                            config=genai_types.UpdateCachedContentConfig(
-                                ttl=f"{ttl_seconds}s"
-                            ),
+                        asyncio.to_thread(
+                            self.client.caches.update(
+                                name=cache.name,
+                                config=genai_types.UpdateCachedContentConfig(
+                                    ttl=f"{ttl_seconds}s"
+                                ),
+                            )
                         ),
                         timeout=2.0,
                     )

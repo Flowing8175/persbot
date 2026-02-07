@@ -122,7 +122,8 @@ async def create_chat_reply(
     # Get tools from ToolManager if available
     tools = None
     if tool_manager and tool_manager.is_enabled():
-        tools = tool_manager.get_enabled_tools()
+        # get_enabled_tools() returns a dict, but we need a list
+        tools = list(tool_manager.get_enabled_tools().values())
 
     response_result = await llm_service.generate_chat_response(
         chat_session,
