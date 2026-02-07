@@ -26,11 +26,13 @@ class BaseChatCog(commands.Cog):
         config: AppConfig,
         llm_service: LLMService,
         session_manager: SessionManager,
+        tool_manager=None,
     ):
         self.bot = bot
         self.config = config
         self.llm_service = llm_service
         self.session_manager = session_manager
+        self.tool_manager = tool_manager
 
         # Buffer and Task Management
         self.message_buffer = MessageBuffer(delay=config.message_buffer_delay)
@@ -78,6 +80,7 @@ class BaseChatCog(commands.Cog):
                     resolution=resolution,
                     llm_service=self.llm_service,
                     session_manager=self.session_manager,
+                    tool_manager=self.tool_manager,
                 )
 
                 if reply:

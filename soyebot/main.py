@@ -106,7 +106,7 @@ async def main(config):
         await bot.add_cog(ModelSelectorCog(bot, session_manager))
         if auto_channel_cog_cls:
             await bot.add_cog(
-                auto_channel_cog_cls(bot, config, llm_service, session_manager)
+                auto_channel_cog_cls(bot, config, llm_service, session_manager, tool_manager)
             )
 
         logger.info("Cogs 로드 완료.")

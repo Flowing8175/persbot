@@ -44,9 +44,8 @@ class AssistantCog(BaseChatCog):
         prompt_service: PromptService,
         tool_manager: Optional["ToolManager"] = None,
     ):
-        super().__init__(bot, config, llm_service, session_manager)
+        super().__init__(bot, config, llm_service, session_manager, tool_manager)
         self.prompt_service = prompt_service
-        self.tool_manager = tool_manager
 
     def _should_ignore_message(self, message: discord.Message) -> bool:
         """Return True when the bot should not process the message."""

@@ -35,8 +35,9 @@ class AutoChannelCog(BaseChatCog):
         config: AppConfig,
         llm_service: LLMService,
         session_manager: SessionManager,
+        tool_manager=None,
     ):
-        super().__init__(bot, config, llm_service, session_manager)
+        super().__init__(bot, config, llm_service, session_manager, tool_manager)
 
         # Load dynamic channels
         self.json_file_path = Path("data/auto_channels.json")
