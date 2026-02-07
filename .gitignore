@@ -47,3 +47,5 @@ env/
 */*.json
 */*.db
 .env
+prompt_usage.json
+soyebot/assets/
