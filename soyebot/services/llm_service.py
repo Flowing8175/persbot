@@ -231,34 +231,14 @@ class LLMService:
             META_PROMPT, use_cache=False
         )
 
-        if hasattr(meta_model, "generate_content"):
-            # Gemini-style model
+        if hasattr(self.summarizer_backend, "assistant_model"):
+            # Create meta model
             result = await self.summarizer_backend.execute_with_retry(
                 lambda: meta_model.generate_content(concept),
                 "프롬프트 생성",
                 timeout=60.0,
             )
             return result
-        elif hasattr(meta_model, "send_message"):
-            # OpenAI/ZAI-style chat session
-            (
-                user_msg,
-                model_msg,
-                response,
-            ) = await self.summarizer_backend.execute_with_retry(
-                lambda: meta_model.send_message(
-                    concept,
-                    author_id=0,
-                    author_name="system",
-                    message_ids=None,
-                    images=None,
-                    tools=None,
-                ),
-                "프롬프트 생성",
-                timeout=60.0,
-                return_full_response=True,
-            )
-            return model_msg.content
         return None
 
     async def generate_chat_response(
@@ -355,7 +335,9 @@ class LLMService:
         Returns:
             Tuple of (response_text, response_obj) or None.
         """
-        active_backend = self.get_active_backend(chat_session, use_summarizer_backend)
+        active_backend = self.get_active_backend(
+            chat_session, use_summarizer_backend
+        )
 
         if not active_backend or not hasattr(active_backend, "send_tool_results"):
             logger.warning("Active backend does not support send_tool_results")

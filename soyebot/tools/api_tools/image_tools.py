@@ -50,7 +50,7 @@ async def generate_image(
         )
 
         # Call OpenAI client to generate image
-        api_response = client.images.create(
+        api_response = client.images.generate(
             model="glm-image",
             prompt=prompt,
             size="1280x1280",
