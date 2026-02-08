@@ -1,10 +1,10 @@
 """Image generation tools for SoyeBot AI."""
 
+import base64
 import hashlib
 import logging
 import time
 
-import aiohttp
 from openai import OpenAI
 from openai import AuthenticationError, RateLimitError, APIStatusError
 
@@ -18,7 +18,7 @@ async def generate_image(
     prompt: str,
     **kwargs,
 ) -> ToolResult:
-    """Generate an image using Z.AI image generation API.
+    """Generate an image using OpenRouter image generation API.
 
     Args:
         prompt: The text prompt for image generation.
@@ -42,30 +42,34 @@ async def generate_image(
         # Load config to get API credentials
         config = load_config()
 
-        # Initialize OpenAI client with Z.AI credentials
-        # Uses ZAI_BASE_URL from .env configuration
+        # Initialize OpenAI client with OpenRouter credentials
+        image_base_url = "https://openrouter.ai/api/v1"
         logger.info(
-            "Initializing image generation with base URL: %s",
-            config.zai_base_url,
+            "Initializing image generation with OpenRouter: %s (model=%s)",
+            image_base_url,
+            config.openrouter_image_model,
         )
         client = OpenAI(
-            api_key=config.zai_api_key,
-            base_url=config.zai_base_url,
+            api_key=config.openrouter_api_key,
+            base_url=image_base_url,
             timeout=config.api_request_timeout,
         )
 
-        # Call OpenAI client to generate image
-        api_response = client.images.generate(
-            model="glm-image",
-            prompt=prompt,
-            size="1280x1280",
-            quality="hd",
+        # Add anime style prefix to prompt
+        enhanced_prompt = f"{prompt}, anime style, detailed artwork"
+
+        # Call OpenAI client to generate image via OpenRouter
+        api_response = client.chat.completions.create(
+            model=config.openrouter_image_model,
+            messages=[{"role": "user", "content": enhanced_prompt}],
+            modalities=["image"],
+            extra_body={"image_config": {"aspect_ratio": "1:1"}},
         )
 
-        # Check if response data is empty
-        if not api_response.data or len(api_response.data) == 0:
+        # Validate response structure
+        if not api_response.choices or len(api_response.choices) == 0:
             logger.error(
-                "Empty data array in image generation response (prompt_hash=%s, length=%d)",
+                "No choices in image generation response (prompt_hash=%s, length=%d)",
                 prompt_hash,
                 prompt_length,
             )
@@ -74,53 +78,38 @@ async def generate_image(
                 error="No image generated",
             )
 
-        # Check for content filter violations
-        if hasattr(api_response, "content_filter") and api_response.content_filter:
-            reasons = (
-                ", ".join(api_response.content_filter)
-                if api_response.content_filter
-                else "unknown"
-            )
-            logger.warning(
-                "Content filter violation (prompt_hash=%s, length=%d, reasons=%s)",
-                prompt_hash,
-                prompt_length,
-                reasons,
-            )
-            return ToolResult(
-                success=False,
-                error=f"Content filter violation: {reasons}",
-            )
-
-        # Extract image URL from response
-        image_url = api_response.data[0].url
-
-        # Download image from returned URL using aiohttp
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as resp:
-                    if resp.status != 200:
-                        logger.error(
-                            "Failed to download image (prompt_hash=%s, length=%d, HTTP status=%d)",
-                            prompt_hash,
-                            prompt_length,
-                            resp.status,
-                        )
-                        return ToolResult(
-                            success=False,
-                            error="Failed to download generated image",
-                        )
-                    image_bytes = await resp.read()
-        except Exception as download_error:
+        message = api_response.choices[0].message
+        if (
+            not hasattr(message, "images")
+            or not message.images
+            or len(message.images) == 0
+        ):
             logger.error(
-                "Download failed (prompt_hash=%s, length=%d): %s",
+                "No images in response message (prompt_hash=%s, length=%d)",
                 prompt_hash,
                 prompt_length,
-                download_error,
             )
             return ToolResult(
                 success=False,
-                error="Failed to download generated image",
+                error="No image generated",
+            )
+
+        # Parse base64 data URL: "data:image/png;base64,iVBORw0KG..."
+        image_data_url = message.images[0].image_url.url
+
+        try:
+            header, data = image_data_url.split(",", 1)
+            image_bytes = base64.b64decode(data)
+        except (ValueError, IndexError) as decode_error:
+            logger.error(
+                "Failed to decode base64 image (prompt_hash=%s, length=%d): %s",
+                prompt_hash,
+                prompt_length,
+                decode_error,
+            )
+            return ToolResult(
+                success=False,
+                error="Failed to decode generated image",
             )
 
         # Calculate response time
@@ -128,7 +117,7 @@ async def generate_image(
 
         # Log successful generation
         logger.info(
-            "Image generated successfully (prompt_hash=%s, length=%d, response_time=%.2fs)",
+            "Image generated successfully via OpenRouter (prompt_hash=%s, length=%d, response_time=%.2fs)",
             prompt_hash,
             prompt_length,
             response_time,
