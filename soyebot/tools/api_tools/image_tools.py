@@ -155,9 +155,12 @@ async def generate_image(
             response_time,
         )
 
+        # Return success message and store image in metadata for Discord sending
+        # Don't return the binary data in the main result field to avoid LLM prompt length issues
         return ToolResult(
             success=True,
-            data=image_bytes,
+            data="Image generated successfully",
+            metadata={"image_bytes": image_bytes},
         )
 
     except AuthenticationError as e:

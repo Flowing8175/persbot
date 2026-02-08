@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Union, TYPE_CHECKING
 
 import discord
@@ -33,6 +33,7 @@ class ChatReply:
     text: str
     session_key: str
     response: object
+    images: list[bytes] = field(default_factory=list)
 
 
 async def resolve_session_for_message(
@@ -147,6 +148,7 @@ async def create_chat_reply(
         # Loop to handle function calls until LLM stops calling tools
         max_tool_rounds = 10  # Prevent infinite loops
         tool_rounds = 0
+        generated_images = []  # Collect all images across tool rounds
 
         while function_calls and tool_rounds < max_tool_rounds:
             logger.info(
@@ -163,6 +165,18 @@ async def create_chat_reply(
                     len(results),
                     [r.get("name") for r in results],
                 )
+
+                # Collect any generated images to send after LLM response
+                for result_item in results:
+                    result_data = result_item.get("result")
+                    if (
+                        hasattr(result_data, "success")
+                        and result_data.success
+                        and hasattr(result_data, "metadata")
+                    ):
+                        image_bytes = result_data.metadata.get("image_bytes")
+                        if image_bytes:
+                            generated_images.append(image_bytes)
 
                 # Send tool results back to LLM and get continuation
                 # Create a new round with (response_obj, tool_results)
@@ -207,10 +221,14 @@ async def create_chat_reply(
                 text=response_text or "",
                 session_key=session_key,
                 response=response_obj,
+                images=generated_images,
             )
 
     return ChatReply(
-        text=response_text or "", session_key=session_key, response=response_obj
+        text=response_text or "",
+        session_key=session_key,
+        response=response_obj,
+        images=[],
     )
 
 
@@ -253,6 +271,22 @@ async def send_split_response(
                 session_manager.link_message_to_session(
                     str(sent_msg.id), reply.session_key
                 )
+
+        # Send any generated images as attachments
+        if reply.images:
+            import io
+
+            for img_bytes in reply.images:
+                async with channel.typing():
+                    img_file = discord.File(
+                        io.BytesIO(img_bytes), filename="generated_image.png"
+                    )
+                    img_msg = await channel.send(file=img_file)
+
+                    # Link image message to session
+                    session_manager.link_message_to_session(
+                        str(img_msg.id), reply.session_key
+                    )
 
     except asyncio.CancelledError:
         logger.info(f"Sending interrupted for channel {channel.id}.")

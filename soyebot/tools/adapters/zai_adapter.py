@@ -131,7 +131,20 @@ class ZAIToolAdapter:
             if error:
                 content = f"Error: {error}"
             else:
-                content = str(result_data) if result_data is not None else ""
+                # Handle binary data (bytes) by returning summary instead of full content
+                if isinstance(result_data, bytes):
+                    content = f"Binary data ({len(result_data)} bytes)"
+                elif result_data is not None:
+                    # For non-binary data, convert to string but limit length
+                    content = str(result_data)
+                    # Truncate very long strings to avoid prompt length limits
+                    MAX_CONTENT_LENGTH = (
+                        10000  # Z.AI has ~20000 char limit, keep buffer
+                    )
+                    if len(content) > MAX_CONTENT_LENGTH:
+                        content = content[:MAX_CONTENT_LENGTH] + "... [truncated]"
+                else:
+                    content = ""
 
             messages.append(
                 {
