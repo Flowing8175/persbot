@@ -74,6 +74,8 @@ class AppConfig:
     zai_api_key: str | None = None
     zai_base_url: str = "https://api.z.ai/api/paas/v4/"
     zai_coding_plan: bool = False
+    openrouter_api_key: str | None = None
+    openrouter_image_model: str = "black-forest-labs/flux.2-klein-4b"
     assistant_model_name: str = DEFAULT_GEMINI_ASSISTANT_MODEL
     summarizer_model_name: str = DEFAULT_GEMINI_SUMMARY_MODEL
     max_messages_per_fetch: int = 300
@@ -273,6 +275,10 @@ def load_config() -> AppConfig:
         else "https://api.z.ai/api/paas/v4/"
     )
     zai_base_url = os.environ.get("ZAI_BASE_URL", default_base_url)
+    openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
+    openrouter_image_model = os.environ.get(
+        "OPENROUTER_IMAGE_MODEL", "black-forest-labs/flux.2-klein-4b"
+    )
     service_tier = os.environ.get("SERVICE_TIER", "flex")
 
     # Provider별 설정 (어시스턴트/요약 분리)
@@ -361,6 +367,8 @@ def load_config() -> AppConfig:
         zai_api_key=zai_api_key,
         zai_base_url=zai_base_url,
         zai_coding_plan=zai_coding_plan,
+        openrouter_api_key=openrouter_api_key,
+        openrouter_image_model=openrouter_image_model,
         assistant_model_name=assistant_model_name,
         summarizer_model_name=summarizer_model_name,
         auto_reply_channel_ids=auto_reply_channel_ids,
