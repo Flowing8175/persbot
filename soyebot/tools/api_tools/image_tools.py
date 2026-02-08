@@ -35,6 +35,36 @@ async def generate_image(
     prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
     prompt_length = len(prompt)
 
+    # Check prompt length before API call (OpenRouter has ~2000 char limit for image models)
+    # Add anime prefix and validate total length
+    enhanced_prompt = f"{prompt}, anime"
+    total_prompt_length = len(enhanced_prompt)
+
+    # OpenRouter character limit for image generation is approximately 2000 chars
+    MAX_PROMPT_LENGTH = 2000
+
+    if total_prompt_length > MAX_PROMPT_LENGTH:
+        logger.warning(
+            "Prompt too long (prompt_hash=%s, length=%d, max=%d): truncating",
+            prompt_hash,
+            prompt_length,
+            MAX_PROMPT_LENGTH,
+        )
+        # Truncate to fit within limit, keep as much of user's original prompt as possible
+        # Reserve room for ", anime" prefix
+        available_chars = MAX_PROMPT_LENGTH - len(", anime")
+        if available_chars > 0:
+            # Truncate user's prompt to fit, leaving room for anime prefix
+            truncated_prompt = prompt[:available_chars]
+            enhanced_prompt = f"{truncated_prompt}, anime"
+        else:
+            # Even user's prompt is too long to add anime prefix, use truncated version
+            enhanced_prompt = prompt[:MAX_PROMPT_LENGTH]
+            logger.warning(
+                "User prompt exceeds maximum, using truncated version (prompt_hash=%s)",
+                prompt_hash,
+            )
+
     try:
         # Record start time for performance logging
         start_time = time.time()
@@ -54,9 +84,6 @@ async def generate_image(
             base_url=image_base_url,
             timeout=config.api_request_timeout,
         )
-
-        # Add anime style prefix to prompt (keep concise to avoid length limits)
-        enhanced_prompt = f"{prompt}, anime"
 
         # Call OpenAI client to generate image via OpenRouter
         api_response = client.chat.completions.create(
