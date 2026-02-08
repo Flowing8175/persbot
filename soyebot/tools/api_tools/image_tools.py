@@ -147,6 +147,12 @@ async def generate_image(
             prompt_length,
             e,
         )
+        # Log raw API response for debugging rate limit issues
+        logger.debug(
+            "Raw API response for rate limit (prompt_hash=%s): %s",
+            prompt_hash,
+            str(e),
+        )
         return ToolResult(
             success=False,
             error="Rate limited, please try again later",
