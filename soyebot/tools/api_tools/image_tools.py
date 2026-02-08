@@ -200,7 +200,7 @@ async def generate_image(
             )
 
     except Exception as e:
-        # Check if it's a rate limit error via error string (fallback pattern from zai_service.py)
+        # Check if it's a rate limit error via error string
         error_str = str(e).lower()
         if "rate limit" in error_str or "429" in error_str:
             logger.error(
