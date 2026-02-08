@@ -28,7 +28,7 @@ class ModelUsageService:
 
     # Helper maps
     ALIAS_TO_API: Dict[str, str] = {}
-    DEFAULT_MODEL_ALIAS = "GLM 4.7"  # Default fallback (should match a valid model in models.json)
+    DEFAULT_MODEL_ALIAS = "Gemini 2.5 flash"
 
     # In-memory cache for model definitions
     _model_definition_cache: Dict[str, ModelDefinition] = {}
@@ -173,15 +173,16 @@ class ModelUsageService:
         return False, current_alias, "❌ 모델 전환 오류."
 
     def get_api_model_name(self, model_alias: str) -> str:
-        # First check cache
         if model_alias in self._model_definition_cache:
             def_obj = self._model_definition_cache[model_alias]
             return def_obj.api_model_name
 
-        # Fall back to MODEL_DEFINITIONS
         def_obj = self.MODEL_DEFINITIONS.get(model_alias)
         if def_obj:
             return def_obj.api_model_name
 
-        # Safe default
-        return "gemini-2.5-flash-lite"
+        default_def = self._model_definition_cache.get(self.DEFAULT_MODEL_ALIAS)
+        if default_def:
+            return default_def.api_model_name
+
+        return "gemini-2.5-flash"

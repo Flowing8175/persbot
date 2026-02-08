@@ -712,7 +712,10 @@ class TestGetOrCreate:
 class TestResolveTargetModelAlias:
     """Tests for _resolve_target_model_alias method."""
 
-    def test_session_context_priority(self, mock_app_config, mock_llm_service):
+    @patch("asyncio.create_task")
+    def test_session_context_priority(
+        self, mock_create_task, mock_app_config, mock_llm_service
+    ):
         """Test that session context model_alias has priority."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         session_key = "channel:111"
@@ -735,7 +738,10 @@ class TestResolveTargetModelAlias:
         target = manager._resolve_target_model_alias(session_key, 111)
         assert target == "gemini-2.5-pro"
 
-    def test_channel_preference_priority(self, mock_app_config, mock_llm_service):
+    @patch("asyncio.create_task")
+    def test_channel_preference_priority(
+        self, mock_create_task, mock_app_config, mock_llm_service
+    ):
         """Test that channel preference is used when no session context model."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         session_key = "channel:111"
@@ -757,18 +763,43 @@ class TestResolveTargetModelAlias:
         target = manager._resolve_target_model_alias(session_key, 111)
         assert target == "gemini-2.5-pro"
 
-    def test_default_model_fallback(self, mock_app_config, mock_llm_service):
+    @patch("asyncio.create_task")
+    def test_default_model_fallback(
+        self, mock_create_task, mock_app_config, mock_llm_service
+    ):
         """Test falling back to default model."""
+        from soyebot.services.model_usage_service import ModelDefinition
+
+        mock_llm_service.model_usage_service = Mock()
+        mock_llm_service.model_usage_service.MODEL_DEFINITIONS = {
+            "Gemini 2.5 flash": ModelDefinition(
+                display_name="Gemini 2.5 flash",
+                api_model_name="gemini-2.5-flash",
+                daily_limit=100,
+                scope="guild",
+                provider="gemini",
+            ),
+            "GLM 4.7": ModelDefinition(
+                display_name="GLM 4.7",
+                api_model_name="glm-4.7",
+                daily_limit=1000,
+                scope="guild",
+                provider="zai",
+            ),
+        }
+
         manager = SessionManager(mock_app_config, mock_llm_service)
         session_key = "channel:111"
 
         # No session context or channel preference
         target = manager._resolve_target_model_alias(session_key, 111)
 
-        # Should use default model
-        assert target == "Gemini 2.5 flash lite"
+        assert target == "Gemini 2.5 flash"
 
-    def test_none_handling_in_session_context(self, mock_app_config, mock_llm_service):
+    @patch("asyncio.create_task")
+    def test_none_handling_in_session_context(
+        self, mock_create_task, mock_app_config, mock_llm_service
+    ):
         """Test handling None model_alias in session context."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         session_key = "channel:111"

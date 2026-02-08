@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 
 # --- Configuration Defaults ---
-DEFAULT_GEMINI_ASSISTANT_MODEL = "gemini-3-flash"
+DEFAULT_GEMINI_ASSISTANT_MODEL = "gemini-2.5-flash"
 DEFAULT_GEMINI_SUMMARY_MODEL = "gemini-2.5-pro"
 DEFAULT_OPENAI_ASSISTANT_MODEL = "gpt-5-mini"
 DEFAULT_OPENAI_SUMMARY_MODEL = "gpt-5-mini"
