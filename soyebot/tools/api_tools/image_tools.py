@@ -95,7 +95,12 @@ async def generate_image(
             )
 
         # Parse base64 data URL: "data:image/png;base64,iVBORw0KG..."
-        image_data_url = message.images[0].image_url.url
+        # Handle both object and dict response formats
+        image_obj = message.images[0]
+        if isinstance(image_obj, dict):
+            image_data_url = image_obj["image_url"]["url"]
+        else:
+            image_data_url = image_obj.image_url.url
 
         try:
             header, data = image_data_url.split(",", 1)
