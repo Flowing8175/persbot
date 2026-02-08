@@ -55,8 +55,8 @@ async def generate_image(
             timeout=config.api_request_timeout,
         )
 
-        # Add anime style prefix to prompt
-        enhanced_prompt = f"{prompt}, anime style, detailed artwork"
+        # Add anime style prefix to prompt (keep concise to avoid length limits)
+        enhanced_prompt = f"{prompt}, anime"
 
         # Call OpenAI client to generate image via OpenRouter
         api_response = client.chat.completions.create(
