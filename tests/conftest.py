@@ -91,13 +91,12 @@ def mock_app_config(mock_discord_config):
 @pytest.fixture
 def mock_bot(mock_app_config):
     """Create a mock Discord bot instance."""
-    from discord.ext import commands
-
-    bot = commands.Bot(command_prefix="!", intents=Mock())
+    bot = Mock()
     bot.user = Mock(id=123456789, name="TestBot")
     bot.add_cog = Mock()
     bot.tree = Mock()
     bot.tree.sync = AsyncMock(return_value=[])
+    bot.get_cog = Mock()
 
     return bot
 
@@ -237,9 +236,7 @@ def mock_llm_service():
     service = Mock()
     service.generate_chat_response = AsyncMock(return_value=("Mock LLM response", None))
     service.summarize_text = AsyncMock(return_value="Mock summary")
-    service.generate_prompt_from_concept = AsyncMock(
-        return_value="Mock generated prompt"
-    )
+    service.generate_prompt_from_concept = AsyncMock(return_value="Mock generated prompt")
     service.create_assistant_model = Mock(
         return_value=Mock(start_chat=Mock(return_value="Chat response"))
     )
@@ -303,9 +300,7 @@ def mock_prompt_service():
 def mock_model_usage_service():
     """Create a mock ModelUsageService."""
     service = Mock()
-    service.check_and_increment_usage = AsyncMock(
-        return_value=(True, "gemini-2.5-flash", None)
-    )
+    service.check_and_increment_usage = AsyncMock(return_value=(True, "gemini-2.5-flash", None))
     service.get_api_model_name = Mock(return_value="gemini-2.5-flash")
     service.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
     service.MODEL_DEFINITIONS = {
@@ -360,8 +355,53 @@ def mock_gemini_client():
     client = AsyncMock()
     client.aio_client = AsyncMock()
     client.cached_content = AsyncMock()
-    client.models = AsyncMock(return_value=[])
+    client.models = Mock()
+    client.models.count_tokens = Mock(return_value=Mock(total_tokens=0))
     return client
+
+
+@pytest.fixture(autouse=True)
+def mock_gemini_cache_methods():
+    """Automatically mock Gemini cache methods to prevent API calls during tests."""
+    # Configure default return values for config attributes that Mock might return
+    original_getattr = Mock.__getattr__
+    original_setattr = Mock.__setattr__
+
+    def safe_getattr(self, name):
+        """Return sensible defaults for common config attributes."""
+        if name == "gemini_cache_ttl_minutes":
+            return 60
+        if name == "gemini_cache_min_tokens":
+            return 32768
+        if name == "temperature":
+            return 1.0
+        if name == "top_p":
+            return 1.0
+        if name == "thinking_budget":
+            return None
+        if name == "service_tier":
+            return "flex"
+        # Fall back to default Mock behavior
+        return original_getattr(self, name)
+
+    def safe_setattr(self, name, value):
+        """Allow setting attributes to None explicitly in tests."""
+        if name in ("openai_api_key", "zai_api_key", "gemini_api_key"):
+            if value is None:
+                self.__dict__[name] = None
+                return
+        return original_setattr(self, name, value)
+
+    with patch.object(Mock, "__getattr__", safe_getattr):
+        with patch.object(Mock, "__setattr__", safe_setattr):
+            with (
+                patch(
+                    "soyebot.services.gemini_service.GeminiService._get_gemini_cache",
+                    return_value=(None, None),
+                ),
+                patch("asyncio.create_task", return_value=Mock()),
+            ):
+                yield
 
 
 @pytest.fixture
@@ -458,10 +498,7 @@ def sample_prompts():
 @pytest.fixture
 def sample_long_text():
     """Generate a long text for testing splitting logic."""
-    return (
-        "This is line one.\nThis is line two.\nThis is line three with much more content "
-        * 100
-    )
+    return "This is line one.\nThis is line two.\nThis is line three with much more content " * 100
 
 
 @pytest.fixture
@@ -478,9 +515,7 @@ def sample_message_history():
 
 
 # Helper functions for tests
-def create_mock_message_with_context(
-    user_id, channel_id, content, mentions=None, attachments=None
-):
+def create_mock_message_with_context(user_id, channel_id, content, mentions=None, attachments=None):
     """Helper to create a mock message with specific attributes."""
     msg = Mock()
     msg.id = f"{user_id}_{channel_id}_{content[:10]}"

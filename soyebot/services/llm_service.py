@@ -30,9 +30,7 @@ class LLMService:
         self._aux_backends = {}
 
         assistant_provider = (config.assistant_llm_provider or "gemini").lower()
-        summarizer_provider = (
-            config.summarizer_llm_provider or assistant_provider
-        ).lower()
+        summarizer_provider = (config.summarizer_llm_provider or assistant_provider).lower()
 
         self.assistant_backend = self._create_backend(
             assistant_provider,
@@ -86,12 +84,6 @@ class LLMService:
                 summary_model_name=summary_model_name,
                 prompt_service=self.prompt_service,
             )
-        return GeminiService(
-            self.config,
-            assistant_model_name=assistant_model_name,
-            summary_model_name=summary_model_name,
-            prompt_service=self.prompt_service,
-        )
         return GeminiService(
             self.config,
             assistant_model_name=assistant_model_name,
@@ -227,9 +219,7 @@ class LLMService:
         # Use a powerful model for this task (usually the summarizer or assistant model)
         # We'll create a temporary model instance with the META_PROMPT
         # Disable caching for the meta prompt generation itself
-        meta_model = self.summarizer_backend.create_assistant_model(
-            META_PROMPT, use_cache=False
-        )
+        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
 
         if hasattr(self.summarizer_backend, "assistant_model"):
             # Create meta model
@@ -262,9 +252,7 @@ class LLMService:
             is_allowed,
             final_alias,
             notification,
-        ) = await self.model_usage_service.check_and_increment_usage(
-            guild_id, model_alias
-        )
+        ) = await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
         if final_alias != model_alias:
             chat_session.model_alias = final_alias
 
@@ -335,9 +323,7 @@ class LLMService:
         Returns:
             Tuple of (response_text, response_obj) or None.
         """
-        active_backend = self.get_active_backend(
-            chat_session, use_summarizer_backend
-        )
+        active_backend = self.get_active_backend(chat_session, use_summarizer_backend)
 
         if not active_backend or not hasattr(active_backend, "send_tool_results"):
             logger.warning("Active backend does not support send_tool_results")
@@ -422,34 +408,26 @@ class LLMService:
 
     def _check_image_usage_limit(self, author, image_count: int) -> Optional[tuple]:
         """Check if user can upload images. Returns error tuple or None if allowed."""
-        is_admin = (
-            isinstance(author, discord.Member) and author.guild_permissions.manage_guild
-        )
+        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
         # Bypass permission check if NO_CHECK_PERMISSION is set
         if self.config.no_check_permission:
             is_admin = True
         if is_admin:
             return None
-        if not self.image_usage_service.check_can_upload(
-            author.id, image_count, limit=3
-        ):
+        if not self.image_usage_service.check_can_upload(author.id, image_count, limit=3):
             return ("❌ 이미지는 하루에 최대 3개 업로드하실 수 있습니다.", None)
         return None
 
     async def _record_image_usage_if_needed(self, author, image_count: int) -> None:
         """Record image usage for non-admin users."""
-        is_admin = (
-            isinstance(author, discord.Member) and author.guild_permissions.manage_guild
-        )
+        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
         # Bypass permission check if NO_CHECK_PERMISSION is set
         if self.config.no_check_permission:
             is_admin = True
         if not is_admin:
             await self.image_usage_service.record_upload(author.id, image_count)
 
-    def _prepare_response_with_notification(
-        self, response, notification: Optional[str]
-    ):
+    def _prepare_response_with_notification(self, response, notification: Optional[str]):
         """Prepend notification to response if exists."""
         if response and notification:
             text, obj = response
@@ -468,9 +446,7 @@ class LLMService:
         self,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
-        thinking_budget: Optional[
-            Optional[int]
-        ] = -1,  # Special default for "not provided"
+        thinking_budget: Optional[Optional[int]] = -1,  # Special default for "not provided"
     ) -> None:
         """Update model parameters and reload backends."""
         if temperature is not None:
