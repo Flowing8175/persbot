@@ -305,6 +305,7 @@ class SessionManager:
         message_content: str,
         reference_message_id: Optional[str] = None,
         created_at: Optional[datetime] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> ResolvedSession:
         """Decide which session should be used for an incoming message."""
 
