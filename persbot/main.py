@@ -15,11 +15,11 @@ from persbot.bot.cogs.assistant import AssistantCog
 from persbot.bot.cogs.model_selector import ModelSelectorCog
 from persbot.bot.cogs.persona import PersonaCog
 from persbot.bot.cogs.summarizer import SummarizerCog
-from bot.session import SessionManager
-from config import load_config
-from services.llm_service import LLMService
-from services.prompt_service import PromptService
-from tools.manager import ToolManager
+from persbot.bot.session import SessionManager
+from persbot.config import load_config
+from persbot.services.llm_service import LLMService
+from persbot.services.prompt_service import PromptService
+from persbot.tools.manager import ToolManager
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,7 @@ async def main(config):
     intents = discord.Intents.default()
     intents.messages = True
     intents.guilds = True
+    intents.members = True
     intents.message_content = True
 
     bot = commands.Bot(command_prefix=config.command_prefix, intents=intents, help_command=None)
@@ -78,9 +79,27 @@ async def main(config):
     prompt_service = PromptService()
     tool_manager = ToolManager(config)
 
+    # Register cogs before starting so listeners are ready on first connect
+    # and won't raise on reconnect (on_ready can fire multiple times).
+    await bot.add_cog(SummarizerCog(bot, config, llm_service))
+    await bot.add_cog(
+        AssistantCog(bot, config, llm_service, session_manager, prompt_service, tool_manager)
+    )
+    await bot.add_cog(PersonaCog(bot, config, llm_service, session_manager, prompt_service))
+    await bot.add_cog(ModelSelectorCog(bot, session_manager))
+    if auto_channel_cog_cls:
+        await bot.add_cog(
+            auto_channel_cog_cls(bot, config, llm_service, session_manager, tool_manager)
+        )
+    logger.info("Cogs 로드 완료.")
+
+    tree_synced = False
+
     @bot.event
     async def on_ready():
-        logger.info(f"로그인 완료: {bot.user.name} ({bot.user.id})")
+        nonlocal tree_synced
+        if bot.user:
+            logger.info(f"로그인 완료: {bot.user.name} ({bot.user.id})")
         logger.info(
             f"봇이 준비되었습니다! '{config.command_prefix}' 또는 @mention으로 상호작용할 수 있습니다."
         )
@@ -90,26 +109,14 @@ async def main(config):
         else:
             logger.info("channel registered to reply: []")
 
-        # Initialize cogs
-        await bot.add_cog(SummarizerCog(bot, config, llm_service))
-        await bot.add_cog(
-            AssistantCog(bot, config, llm_service, session_manager, prompt_service, tool_manager)
-        )
-        await bot.add_cog(PersonaCog(bot, config, llm_service, session_manager, prompt_service))
-        await bot.add_cog(ModelSelectorCog(bot, session_manager))
-        if auto_channel_cog_cls:
-            await bot.add_cog(
-                auto_channel_cog_cls(bot, config, llm_service, session_manager, tool_manager)
-            )
-
-        logger.info("Cogs 로드 완료.")
-
-        # Sync Command Tree
-        try:
-            synced = await bot.tree.sync()
-            logger.info(f"Command Tree Synced: {len(synced)} commands.")
-        except Exception as e:
-            logger.error(f"Failed to sync command tree: {e}")
+        # Sync Command Tree (only once, on_ready can fire multiple times on reconnect)
+        if not tree_synced:
+            try:
+                synced = await bot.tree.sync()
+                tree_synced = True
+                logger.info(f"Command Tree Synced: {len(synced)} commands.")
+            except Exception as e:
+                logger.error(f"Failed to sync command tree: {e}")
 
     @bot.event
     async def on_close():

@@ -8,6 +8,7 @@ import pytest
 from discord.ext import commands
 
 from persbot.bot.cogs.assistant import AssistantCog
+from persbot.bot.cogs.assistant.utils import should_ignore_message
 from persbot.bot.session import ResolvedSession
 from persbot.services.base import ChatMessage
 
@@ -66,16 +67,8 @@ class TestShouldIgnoreMessage:
         mock_message,
     ):
         """Test that bot messages are ignored."""
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
         mock_message.author.bot = True
-        assert cog._should_ignore_message(mock_message) is True
+        assert should_ignore_message(mock_message, mock_bot.user, mock_app_config) is True
 
     @pytest.mark.asyncio
     async def test_ignore_auto_reply_channel_messages(
@@ -95,15 +88,7 @@ class TestShouldIgnoreMessage:
             break_cut_mode=False,
         )
 
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=config_with_auto_reply,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
-        assert cog._should_ignore_message(mock_message) is True
+        assert should_ignore_message(mock_message, mock_bot.user, config_with_auto_reply) is True
 
     @pytest.mark.asyncio
     async def test_ignore_unmentioned_messages(
@@ -119,15 +104,7 @@ class TestShouldIgnoreMessage:
         mock_bot.user = Mock(id=123456789)
         mock_bot.user.mentioned_in = Mock(return_value=False)
 
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
-        assert cog._should_ignore_message(mock_message) is True
+        assert should_ignore_message(mock_message, mock_bot.user, mock_app_config) is True
 
     @pytest.mark.asyncio
     async def test_process_mentioned_messages(
@@ -145,15 +122,7 @@ class TestShouldIgnoreMessage:
         mock_mention_message.author.bot = False
         mock_mention_message.channel.id = 999888777  # Not an auto-reply channel
 
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
-        assert cog._should_ignore_message(mock_mention_message) is False
+        assert should_ignore_message(mock_mention_message, mock_bot.user, mock_app_config) is False
 
     @pytest.mark.asyncio
     async def test_ignore_mention_everyone(
@@ -172,15 +141,7 @@ class TestShouldIgnoreMessage:
         mock_mention_message.channel.id = 999888777
         mock_mention_message.mention_everyone = True
 
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
-        assert cog._should_ignore_message(mock_mention_message) is True
+        assert should_ignore_message(mock_mention_message, mock_bot.user, mock_app_config) is True
 
 
 class TestHelpCommand:
