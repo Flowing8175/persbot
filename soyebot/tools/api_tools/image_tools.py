@@ -1,5 +1,6 @@
 """Image generation tools for SoyeBot AI."""
 
+import asyncio
 import base64
 import hashlib
 import logging
