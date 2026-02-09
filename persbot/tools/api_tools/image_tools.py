@@ -6,6 +6,7 @@ import hashlib
 import logging
 import time
 
+import aiohttp
 from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
 from persbot.config import load_config
@@ -118,7 +119,7 @@ async def generate_image(
                 error="No image generated",
             )
 
-        # Parse base64 data URL: "data:image/png;base64,iVBORw0KG..."
+        # Parse image URL: handle both base64 data URLs and HTTP/HTTPS URLs
         # Handle both object and dict response formats
         image_obj = message.images[0]
         if isinstance(image_obj, dict):
@@ -126,19 +127,61 @@ async def generate_image(
         else:
             image_data_url = image_obj.image_url.url
 
-        try:
-            header, data = image_data_url.split(",", 1)
-            image_bytes = base64.b64decode(data)
-        except (ValueError, IndexError) as decode_error:
+        # Check if URL is base64 data URL or HTTP/HTTPS URL
+        if image_data_url.startswith("data:"):
+            # Base64 data URL format: "data:image/png;base64,iVBORw0KG..."
+            try:
+                header, data = image_data_url.split(",", 1)
+                image_bytes = base64.b64decode(data)
+            except (ValueError, IndexError) as decode_error:
+                logger.error(
+                    "Failed to decode base64 image (prompt_hash=%s, length=%d): %s",
+                    prompt_hash,
+                    prompt_length,
+                    decode_error,
+                )
+                return ToolResult(
+                    success=False,
+                    error="Failed to decode generated image",
+                )
+        elif image_data_url.startswith(("http://", "https://")):
+            # HTTP/HTTPS URL - fetch the image bytes
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_data_url) as response:
+                        if response.status != 200:
+                            logger.error(
+                                "Failed to fetch image from URL (prompt_hash=%s, length=%d, status=%d)",
+                                prompt_hash,
+                                prompt_length,
+                                response.status,
+                            )
+                            return ToolResult(
+                                success=False,
+                                error=f"Failed to fetch generated image (HTTP {response.status})",
+                            )
+                        image_bytes = await response.read()
+            except Exception as fetch_error:
+                logger.error(
+                    "Failed to fetch image from URL (prompt_hash=%s, length=%d): %s",
+                    prompt_hash,
+                    prompt_length,
+                    fetch_error,
+                )
+                return ToolResult(
+                    success=False,
+                    error="Failed to fetch generated image",
+                )
+        else:
             logger.error(
-                "Failed to decode base64 image (prompt_hash=%s, length=%d): %s",
+                "Unknown image URL format (prompt_hash=%s, length=%d): %s",
                 prompt_hash,
                 prompt_length,
-                decode_error,
+                image_data_url[:50] if image_data_url else "empty",
             )
             return ToolResult(
                 success=False,
-                error="Failed to decode generated image",
+                error="Invalid image URL format",
             )
 
         # Calculate response time
