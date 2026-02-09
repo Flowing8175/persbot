@@ -11,10 +11,10 @@ from discord.ext import commands
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from bot.cogs.assistant import AssistantCog
-from bot.cogs.model_selector import ModelSelectorCog
-from bot.cogs.persona import PersonaCog
-from bot.cogs.summarizer import SummarizerCog
+from soyebot.bot.cogs.assistant import AssistantCog
+from soyebot.bot.cogs.model_selector import ModelSelectorCog
+from soyebot.bot.cogs.persona import PersonaCog
+from soyebot.bot.cogs.summarizer import SummarizerCog
 from bot.session import SessionManager
 from config import load_config
 from services.llm_service import LLMService
@@ -56,7 +56,7 @@ async def main(config):
     auto_channel_cog_cls = None
     if config.auto_reply_channel_ids:
         try:
-            from bot.cogs.auto_channel import AutoChannelCog
+            from soyebot.bot.cogs.auto_channel import AutoChannelCog
 
             auto_channel_cog_cls = AutoChannelCog
         except ModuleNotFoundError as exc:
