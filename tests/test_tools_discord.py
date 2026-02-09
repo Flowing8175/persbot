@@ -5,18 +5,18 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from soyebot.tools.discord_tools.channel_tools import (
+from persbot.tools.discord_tools.channel_tools import (
     get_channel_history,
     get_channel_info,
     get_message,
     list_channels,
 )
-from soyebot.tools.discord_tools.guild_tools import (
+from persbot.tools.discord_tools.guild_tools import (
     get_guild_emojis,
     get_guild_info,
     get_guild_roles,
 )
-from soyebot.tools.discord_tools.user_tools import (
+from persbot.tools.discord_tools.user_tools import (
     get_member_info,
     get_member_roles,
     get_user_info,

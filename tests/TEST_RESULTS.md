@@ -42,7 +42,7 @@ Comprehensive tests were created to verify that tools are properly passed throug
 
 ## Tool Passing Flow Analysis
 
-### 1. LLMService Layer (soyebot/services/llm_service.py)
+### 1. LLMService Layer (persbot/services/llm_service.py)
 **Method Signature:**
 ```python
 async def generate_chat_response(
@@ -62,7 +62,7 @@ async def generate_chat_response(
 - Determines appropriate backend (assistant or summarizer)
 - Passes tools to backend.generate_chat_response()
 
-### 2. GeminiService Layer (soyebot/services/gemini_service.py)
+### 2. GeminiService Layer (persbot/services/gemini_service.py)
 **Method Signature:**
 ```python
 async def generate_chat_response(
@@ -82,7 +82,7 @@ async def generate_chat_response(
 - Line 742-753: Combines custom tools with search tools for assistant model
 - Line 778-786: Passes `final_tools` to `chat_session.send_message()`
 
-### 3. GeminiToolAdapter (soyebot/tools/adapters/gemini_adapter.py)
+### 3. GeminiToolAdapter (persbot/tools/adapters/gemini_adapter.py)
 **Method:**
 ```python
 @staticmethod
@@ -94,7 +94,7 @@ def convert_tools(tools: List[ToolDefinition]) -> List[genai_types.Tool]:
 - Line 27-36: Groups by category, filters enabled tools, creates Tool objects
 - Returns list of `genai_types.Tool` objects with `function_declarations`
 
-### 4. Session.send_message (soyebot/services/gemini_service.py)
+### 4. Session.send_message (persbot/services/gemini_service.py)
 **Method Signature:**
 ```python
 def send_message(
@@ -138,7 +138,7 @@ def send_message(
 
 ## Code Review Summary
 
-### soyebot/services/gemini_service.py (Lines 680-855)
+### persbot/services/gemini_service.py (Lines 680-855)
 
 **Critical Section - Tools Processing:**
 ```python
@@ -170,7 +170,7 @@ result = await self._gemini_retry(
 
 **Conclusion:** ✓ Tools are correctly passed from LLMService → GeminiService → Session → API
 
-### soyebot/services/llm_service.py (Lines 244-306)
+### persbot/services/llm_service.py (Lines 244-306)
 
 **Critical Section - Tools Passing:**
 ```python

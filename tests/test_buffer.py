@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from soyebot.bot.buffer import MessageBuffer
+from persbot.bot.buffer import MessageBuffer
 
 
 @pytest.fixture

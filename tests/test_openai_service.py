@@ -8,12 +8,12 @@ import pytest
 import pytest_asyncio
 
 # Import the module for coverage tracking
-from soyebot.services import openai_service  # noqa: F401
+from persbot.services import openai_service  # noqa: F401
 
 openai_service  # Use the module to ensure it's imported
 
-from soyebot.services.base import ChatMessage
-from soyebot.services.openai_service import (
+from persbot.services.base import ChatMessage
+from persbot.services.openai_service import (
     BaseOpenAISession,
     ChatCompletionSession,
     OpenAIService,
@@ -73,7 +73,7 @@ def openai_service(mock_config, mock_prompt_service, mocker):
     mock_responses.create = Mock()
     mock_client.responses = mock_responses
 
-    mocker.patch("soyebot.services.openai_service.OpenAI", return_value=mock_client)
+    mocker.patch("persbot.services.openai_service.OpenAI", return_value=mock_client)
 
     service = OpenAIService(
         config=mock_config,
@@ -109,7 +109,7 @@ class TestOpenAIServiceInitialization:
         """Test that initialization creates OpenAI client."""
         mock_client = Mock()
         mock_patch = mocker.patch(
-            "soyebot.services.openai_service.OpenAI", return_value=mock_client
+            "persbot.services.openai_service.OpenAI", return_value=mock_client
         )
 
         service = OpenAIService(
@@ -132,7 +132,7 @@ class TestOpenAIServiceInitialization:
         mock_client.responses = Mock()
         mock_client.chat = Mock()
         mock_client.chat.completions = Mock()
-        mocker.patch("soyebot.services.openai_service.OpenAI", return_value=mock_client)
+        mocker.patch("persbot.services.openai_service.OpenAI", return_value=mock_client)
 
         service = OpenAIService(
             config=mock_config,
@@ -181,7 +181,7 @@ class TestModelCreation:
         mock_client.responses = Mock()
         mock_client.chat = Mock()
         mock_client.chat.completions = Mock()
-        mocker.patch("soyebot.services.openai_service.OpenAI", return_value=mock_client)
+        mocker.patch("persbot.services.openai_service.OpenAI", return_value=mock_client)
 
         service = OpenAIService(
             config=mock_config,
@@ -582,10 +582,10 @@ class TestChatCompletionSession:
 
     def test_send_tool_results(self, completion_session, mock_openai_client, mocker):
         """Test send_tool_results functionality."""
-        from soyebot.services.openai_service import OpenAIToolAdapter
+        from persbot.services.openai_service import OpenAIToolAdapter
 
         # Mock the OpenAIToolAdapter
-        mock_adapter = mocker.patch("soyebot.services.openai_service.OpenAIToolAdapter")
+        mock_adapter = mocker.patch("persbot.services.openai_service.OpenAIToolAdapter")
         mock_adapter.create_tool_messages.return_value = [
             {"role": "tool", "tool_call_id": "123", "content": "result"}
         ]
@@ -909,7 +909,7 @@ class TestToolCallingIntegration:
 
     def test_get_tools_for_provider(self, openai_service, mocker):
         """Test get_tools_for_provider delegates to adapter."""
-        mock_adapter = mocker.patch("soyebot.services.openai_service.OpenAIToolAdapter")
+        mock_adapter = mocker.patch("persbot.services.openai_service.OpenAIToolAdapter")
         mock_tools = [Mock()]
 
         openai_service.get_tools_for_provider(mock_tools)
@@ -918,7 +918,7 @@ class TestToolCallingIntegration:
 
     def test_extract_function_calls(self, openai_service, mocker):
         """Test extract_function_calls delegates to adapter."""
-        mock_adapter = mocker.patch("soyebot.services.openai_service.OpenAIToolAdapter")
+        mock_adapter = mocker.patch("persbot.services.openai_service.OpenAIToolAdapter")
         mock_response = Mock()
 
         openai_service.extract_function_calls(mock_response)
@@ -927,7 +927,7 @@ class TestToolCallingIntegration:
 
     def test_format_function_results(self, openai_service, mocker):
         """Test format_function_results delegates to adapter."""
-        mock_adapter = mocker.patch("soyebot.services.openai_service.OpenAIToolAdapter")
+        mock_adapter = mocker.patch("persbot.services.openai_service.OpenAIToolAdapter")
         mock_results = [{"name": "test", "result": "success"}]
 
         openai_service.format_function_results(mock_results)

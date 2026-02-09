@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
-from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter
+from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
+from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter
 
 
 def create_test_tool(name="test_tool", description="Test tool"):
@@ -34,7 +34,7 @@ class TestToolsPassingVerification:
         import inspect
         from typing import Any, List, Optional
 
-        from soyebot.services.llm_service import LLMService
+        from persbot.services.llm_service import LLMService
 
         # Get the signature of generate_chat_response method
         sig = inspect.signature(LLMService.generate_chat_response)
@@ -50,7 +50,7 @@ class TestToolsPassingVerification:
         import inspect
         from typing import Any, Optional
 
-        from soyebot.services.gemini_service import GeminiService
+        from persbot.services.gemini_service import GeminiService
 
         # Get the signature of generate_chat_response method
         sig = inspect.signature(GeminiService.generate_chat_response)
@@ -141,7 +141,7 @@ class TestToolsFlowAnalysis:
         """Analyze how LLMService passes tools to backend."""
         import inspect
 
-        from soyebot.services.llm_service import LLMService
+        from persbot.services.llm_service import LLMService
 
         # Check generate_chat_response implementation
         source = inspect.getsource(LLMService.generate_chat_response)
@@ -153,7 +153,7 @@ class TestToolsFlowAnalysis:
         """Analyze how GeminiService processes tools."""
         import inspect
 
-        from soyebot.services.gemini_service import GeminiService
+        from persbot.services.gemini_service import GeminiService
 
         # Check generate_chat_response implementation
         source = inspect.getsource(GeminiService.generate_chat_response)
@@ -171,7 +171,7 @@ class TestToolsFlowAnalysis:
         """Test that tools parameter is correctly propagated through the chain."""
         import inspect
 
-        from soyebot.services.llm_service import LLMService
+        from persbot.services.llm_service import LLMService
 
         # Get the code that calls the backend
         source = inspect.getsource(LLMService.generate_chat_response)
@@ -201,7 +201,7 @@ class TestToolsPassingScenarios:
         """Verify assistant model path accepts and forwards tools."""
         import inspect
 
-        from soyebot.services.gemini_service import GeminiService
+        from persbot.services.gemini_service import GeminiService
 
         source = inspect.getsource(GeminiService.generate_chat_response)
 
@@ -221,7 +221,7 @@ class TestToolsPassingScenarios:
         """Verify summarizer model path accepts and forwards tools."""
         import inspect
 
-        from soyebot.services.gemini_service import GeminiService
+        from persbot.services.gemini_service import GeminiService
 
         # Check the summarize_text method
         source = inspect.getsource(GeminiService.summarize_text)
@@ -234,7 +234,7 @@ class TestToolsPassingScenarios:
         """Verify custom model selection passes tools."""
         import inspect
 
-        from soyebot.services.llm_service import LLMService
+        from persbot.services.llm_service import LLMService
 
         # Check get_backend_for_model and flow
         source = inspect.getsource(LLMService.generate_chat_response)

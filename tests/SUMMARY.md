@@ -40,7 +40,7 @@ Comprehensive tests have been created to verify that tools are properly passed t
 
 ### Verified Methods
 
-#### 1. soyebot/services/llm_service.py
+#### 1. persbot/services/llm_service.py
 ```python
 async def generate_chat_response(
     self,
@@ -53,7 +53,7 @@ async def generate_chat_response(
 ```
 **Verification:** ✓ Tools parameter correctly defined with type hint and default value
 
-#### 2. soyebot/services/gemini_service.py
+#### 2. persbot/services/gemini_service.py
 ```python
 async def generate_chat_response(
     self,
@@ -66,14 +66,14 @@ async def generate_chat_response(
 ```
 **Verification:** ✓ Tools parameter correctly defined with type hint and default value
 
-#### 3. soyebot/tools/adapters/gemini_adapter.py
+#### 3. persbot/tools/adapters/gemini_adapter.py
 ```python
 @staticmethod
 def convert_tools(tools: List[ToolDefinition]) -> List[genai_types.Tool]:
 ```
 **Verification:** ✓ Adapter correctly converts tools to Gemini format
 
-#### 4. soyebot/services/gemini_service.py (Session.send_message)
+#### 4. persbot/services/gemini_service.py (Session.send_message)
 ```python
 def send_message(
     self,
@@ -87,7 +87,7 @@ def send_message(
 ```
 **Verification:** ✓ Session correctly receives and passes tools to generate_content()
 
-#### 5. soyebot/services/gemini_service.py (_CachedModel.generate_content)
+#### 5. persbot/services/gemini_service.py (_CachedModel.generate_content)
 ```python
 def generate_content(
     self, contents: Union[str, list], tools: Optional[list] = None
@@ -125,9 +125,9 @@ def generate_content(
 ## Files Analyzed
 
 ### Modified Files (No changes, only analysis):
-- soyebot/services/llm_service.py
-- soyebot/services/gemini_service.py
-- soyebot/tools/adapters/gemini_adapter.py
+- persbot/services/llm_service.py
+- persbot/services/gemini_service.py
+- persbot/tools/adapters/gemini_adapter.py
 
 ### New Test Files:
 - tests/test_tools_passing.py

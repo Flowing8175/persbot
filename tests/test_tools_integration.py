@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from soyebot.tools import ToolManager
-from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
-from soyebot.tools.executor import ToolExecutor
-from soyebot.tools.registry import ToolRegistry
+from persbot.tools import ToolManager
+from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
+from persbot.tools.executor import ToolExecutor
+from persbot.tools.registry import ToolRegistry
 
 
 class TestToolManager:

@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
-from soyebot.bot.session import (
+from persbot.bot.session import (
     ChatSession,
     ResolvedSession,
     SessionContext,
     SessionManager,
 )
-from soyebot.services.base import ChatMessage
+from persbot.services.base import ChatMessage
 
 # =============================================================================
 # 1. ChatSession - Test dataclass
@@ -756,7 +756,7 @@ class TestResolveTargetModelAlias:
     @patch("asyncio.create_task")
     def test_default_model_fallback(self, mock_create_task, mock_app_config, mock_llm_service):
         """Test falling back to default model."""
-        from soyebot.services.model_usage_service import ModelDefinition
+        from persbot.services.model_usage_service import ModelDefinition
 
         mock_llm_service.model_usage_service = Mock()
         mock_llm_service.model_usage_service.MODEL_DEFINITIONS = {
@@ -868,7 +868,7 @@ class TestCheckSessionModelCompatibility:
             model_alias="gemini-2.5-flash",
         )
 
-        with patch("soyebot.bot.session.logger") as mock_logger:
+        with patch("persbot.bot.session.logger") as mock_logger:
             result = manager._check_session_model_compatibility(
                 session, session_key, "gemini-2.5-pro"
             )
@@ -906,7 +906,7 @@ class TestUpdateExistingSession:
 
         # Freeze time for update
         new_time = datetime(2025, 1, 1, 11, 0, 0, tzinfo=timezone.utc)
-        with patch("soyebot.bot.session.datetime") as mock_datetime:
+        with patch("persbot.bot.session.datetime") as mock_datetime:
             mock_datetime.now.return_value = new_time
             mock_datetime.timezone = timezone
 

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from soyebot.tools.api_tools.image_tools import generate_image
-from soyebot.tools.base import ToolResult
+from persbot.tools.api_tools.image_tools import generate_image
+from persbot.tools.base import ToolResult
 
 
 @pytest.mark.asyncio
@@ -29,8 +29,8 @@ async def test_generate_image_success():
     mock_config.openrouter_image_model = "test-model"
     mock_config.api_request_timeout = 120.0
 
-    with patch("soyebot.tools.api_tools.image_tools.load_config", return_value=mock_config):
-        with patch("soyebot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
+    with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+        with patch("persbot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
             result = await generate_image("test prompt")
 
     # Verify success
@@ -71,8 +71,8 @@ async def test_generate_image_anime_prefix():
     mock_config.openrouter_image_model = "test-model"
     mock_config.api_request_timeout = 120.0
 
-    with patch("soyebot.tools.api_tools.image_tools.load_config", return_value=mock_config):
-        with patch("soyebot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
+    with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+        with patch("persbot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
             await generate_image("cat")
 
     # Verify prompt includes anime prefix
@@ -102,8 +102,8 @@ async def test_generate_image_base64_decode():
     mock_config.openrouter_image_model = "test-model"
     mock_config.api_request_timeout = 120.0
 
-    with patch("soyebot.tools.api_tools.image_tools.load_config", return_value=mock_config):
-        with patch("soyebot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
+    with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+        with patch("persbot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
             result = await generate_image("test")
 
     # Verify bytes decoded correctly
@@ -128,8 +128,8 @@ async def test_generate_image_invalid_base64():
     mock_config.openrouter_image_model = "test-model"
     mock_config.api_request_timeout = 120.0
 
-    with patch("soyebot.tools.api_tools.image_tools.load_config", return_value=mock_config):
-        with patch("soyebot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
+    with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+        with patch("persbot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
             result = await generate_image("test")
 
     # Should fail with decode error
@@ -150,8 +150,8 @@ async def test_generate_image_no_choices():
     mock_config.openrouter_image_model = "test-model"
     mock_config.api_request_timeout = 120.0
 
-    with patch("soyebot.tools.api_tools.image_tools.load_config", return_value=mock_config):
-        with patch("soyebot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
+    with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+        with patch("persbot.tools.api_tools.image_tools.OpenAI", return_value=mock_client):
             result = await generate_image("test")
 
     assert result.success is False

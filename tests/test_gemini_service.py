@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 import pytest
 import pytest_asyncio
 
-from soyebot.services.base import ChatMessage
-from soyebot.services.gemini_service import (
+from persbot.services.base import ChatMessage
+from persbot.services.gemini_service import (
     DEFAULT_CACHE_MIN_TOKENS,
     DEFAULT_CACHE_TTL_MINUTES,
     DEFAULT_TEMPERATURE,
@@ -70,7 +70,7 @@ def mock_genai_client(mocker):
     mock_client.caches.create = Mock(return_value=mock_cache)
     mock_client.caches.update = Mock()
 
-    mocker.patch("soyebot.services.gemini_service.genai.Client", return_value=mock_client)
+    mocker.patch("persbot.services.gemini_service.genai.Client", return_value=mock_client)
     return mock_client
 
 
@@ -87,7 +87,7 @@ def mock_genai_types(mocker):
     mock_types.Part = Mock()
     mock_types.Part.from_bytes = Mock(return_value=Mock())
 
-    mocker.patch("soyebot.services.gemini_service.genai_types", mock_types)
+    mocker.patch("persbot.services.gemini_service.genai_types", mock_types)
     return mock_types
 
 
@@ -231,7 +231,7 @@ class TestGeminiServiceInitialization:
         """Test that initialization creates genai.Client."""
         mock_client = Mock()
         mock_patch = mocker.patch(
-            "soyebot.services.gemini_service.genai.Client", return_value=mock_client
+            "persbot.services.gemini_service.genai.Client", return_value=mock_client
         )
 
         mock_count_result = Mock()
@@ -447,7 +447,7 @@ class TestCacheManagement:
         """Test cache key format."""
         key = gemini_service._get_cache_key("gemini-2.5-flash", "test content")
 
-        assert key.startswith("soyebot-")
+        assert key.startswith("persbot-")
         assert "gemini-2-5-flash" in key
 
     def test_get_cache_key_with_tools(self, gemini_service):
@@ -893,7 +893,7 @@ class TestToolCalling:
 
     def test_get_tools_for_provider(self, gemini_service, mocker):
         """Test get_tools_for_provider delegates to adapter."""
-        mock_adapter = mocker.patch("soyebot.services.gemini_service.GeminiToolAdapter")
+        mock_adapter = mocker.patch("persbot.services.gemini_service.GeminiToolAdapter")
         mock_tools = [Mock()]
 
         gemini_service.get_tools_for_provider(mock_tools)
@@ -902,7 +902,7 @@ class TestToolCalling:
 
     def test_extract_function_calls(self, gemini_service, mocker):
         """Test extract_function_calls delegates to adapter."""
-        mock_adapter = mocker.patch("soyebot.services.gemini_service.GeminiToolAdapter")
+        mock_adapter = mocker.patch("persbot.services.gemini_service.GeminiToolAdapter")
         mock_response = Mock()
 
         gemini_service.extract_function_calls(mock_response)
@@ -911,7 +911,7 @@ class TestToolCalling:
 
     def test_format_function_results(self, gemini_service, mocker):
         """Test format_function_results delegates to adapter."""
-        mock_adapter = mocker.patch("soyebot.services.gemini_service.GeminiToolAdapter")
+        mock_adapter = mocker.patch("persbot.services.gemini_service.GeminiToolAdapter")
         mock_results = [{"name": "test", "result": "success"}]
 
         gemini_service.format_function_results(mock_results)

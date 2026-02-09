@@ -6,14 +6,14 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from soyebot.tools.base import (
+from persbot.tools.base import (
     ToolCategory,
     ToolDefinition,
     ToolParameter,
     ToolResult,
 )
-from soyebot.tools.executor import ExecutionMetrics, ToolExecutor
-from soyebot.tools.registry import ToolRegistry
+from persbot.tools.executor import ExecutionMetrics, ToolExecutor
+from persbot.tools.registry import ToolRegistry
 
 
 class TestToolParameter:

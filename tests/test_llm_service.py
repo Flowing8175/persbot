@@ -6,13 +6,13 @@ import discord
 import pytest
 import pytest_asyncio
 
-from soyebot.services.gemini_service import GeminiService
-from soyebot.services.llm_service import LLMService
-from soyebot.services.model_usage_service import ModelUsageService
-from soyebot.services.openai_service import OpenAIService
-from soyebot.services.prompt_service import PromptService
-from soyebot.services.usage_service import ImageUsageService
-from soyebot.services.zai_service import ZAIService
+from persbot.services.gemini_service import GeminiService
+from persbot.services.llm_service import LLMService
+from persbot.services.model_usage_service import ModelUsageService
+from persbot.services.openai_service import OpenAIService
+from persbot.services.prompt_service import PromptService
+from persbot.services.usage_service import ImageUsageService
+from persbot.services.zai_service import ZAIService
 
 
 class TestLLMServiceInit:
@@ -32,7 +32,7 @@ class TestLLMServiceInit:
         config.no_check_permission = True
         return config
 
-    @patch("soyebot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.GeminiService")
     def test_init_with_gemini_provider(self, mock_gemini, mock_config):
         """Test assistant_provider selection with gemini."""
         mock_config.assistant_llm_provider = "gemini"
@@ -44,8 +44,8 @@ class TestLLMServiceInit:
         assert service.provider_label == "Gemini"
         assert service.summarizer_backend is service.assistant_backend
 
-    @patch("soyebot.services.llm_service.GeminiService")
-    @patch("soyebot.services.llm_service.OpenAIService")
+    @patch("persbot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.OpenAIService")
     def test_init_with_openai_provider(self, mock_openai, mock_gemini, mock_config):
         """Test assistant_provider selection with openai."""
         mock_config.assistant_llm_provider = "openai"
@@ -56,8 +56,8 @@ class TestLLMServiceInit:
         assert service.assistant_backend is mock_backend
         assert service.provider_label == "OpenAI"
 
-    @patch("soyebot.services.llm_service.GeminiService")
-    @patch("soyebot.services.llm_service.ZAIService")
+    @patch("persbot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.ZAIService")
     def test_init_with_zai_provider(self, mock_zai, mock_gemini, mock_config):
         """Test assistant_provider selection with zai."""
         mock_config.assistant_llm_provider = "zai"
@@ -68,8 +68,8 @@ class TestLLMServiceInit:
         assert service.assistant_backend is mock_backend
         assert service.provider_label == "Z.AI"
 
-    @patch("soyebot.services.llm_service.GeminiService")
-    @patch("soyebot.services.llm_service.OpenAIService")
+    @patch("persbot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.OpenAIService")
     def test_summarizer_provider_different(self, mock_openai, mock_gemini, mock_config):
         """Test summarizer_provider selection different from assistant."""
         mock_config.assistant_llm_provider = "gemini"
@@ -84,7 +84,7 @@ class TestLLMServiceInit:
         assert service.summarizer_backend is mock_openai_backend
         assert service.summarizer_backend is not service.assistant_backend
 
-    @patch("soyebot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.GeminiService")
     def test_default_provider_fallback(self, mock_gemini, mock_config):
         """Test default provider fallback when not specified."""
         mock_config.assistant_llm_provider = None
@@ -96,7 +96,7 @@ class TestLLMServiceInit:
         assert service.assistant_backend is mock_backend
         assert service.summarizer_backend is mock_backend
 
-    @patch("soyebot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.GeminiService")
     def test_prompt_service_initialization(self, mock_gemini, mock_config):
         """Test prompt_service initialization."""
         mock_gemini.return_value = Mock()
@@ -104,7 +104,7 @@ class TestLLMServiceInit:
 
         assert isinstance(service.prompt_service, PromptService)
 
-    @patch("soyebot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.GeminiService")
     def test_image_usage_service_initialization(self, mock_gemini, mock_config):
         """Test image_usage_service initialization."""
         mock_gemini.return_value = Mock()
@@ -112,7 +112,7 @@ class TestLLMServiceInit:
 
         assert isinstance(service.image_usage_service, ImageUsageService)
 
-    @patch("soyebot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.GeminiService")
     def test_model_usage_service_initialization(self, mock_gemini, mock_config):
         """Test model_usage_service initialization."""
         mock_gemini.return_value = Mock()
@@ -120,7 +120,7 @@ class TestLLMServiceInit:
 
         assert isinstance(service.model_usage_service, ModelUsageService)
 
-    @patch("soyebot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.GeminiService")
     def test_aux_backends_cache_initialization(self, mock_gemini, mock_config):
         """Test _aux_backends cache initialization."""
         mock_gemini.return_value = Mock()
@@ -220,7 +220,7 @@ class TestGetBackendForModel:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance with mocked model_usage_service."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -319,7 +319,7 @@ class TestCreateChatSessionForAlias:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance with mocked model_usage_service."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -539,14 +539,14 @@ class TestGeneratePromptFromConcept:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
     @pytest.mark.asyncio
     async def test_creating_meta_model_with_meta_prompt(self, llm_service):
         """Test creating meta model with META_PROMPT."""
-        from soyebot.prompts import META_PROMPT
+        from persbot.prompts import META_PROMPT
 
         mock_model = Mock()
         mock_model.generate_content = AsyncMock(return_value="Generated prompt")
@@ -643,7 +643,7 @@ class TestGenerateChatResponse:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -911,7 +911,7 @@ class TestExtractMessageMetadata:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -998,7 +998,7 @@ class TestCountImagesInMessage:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -1084,7 +1084,7 @@ class TestCheckImageUsageLimit:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -1112,7 +1112,7 @@ class TestCheckImageUsageLimit:
         """Test NO_CHECK_PERMISSION bypass."""
         mock_config.no_check_permission = False
 
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             service.config.no_check_permission = True
 
@@ -1191,7 +1191,7 @@ class TestRecordImageUsageIfNeeded:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -1223,7 +1223,7 @@ class TestRecordImageUsageIfNeeded:
         """Test NO_CHECK_PERMISSION bypass."""
         mock_config.no_check_permission = False
 
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             service.config.no_check_permission = True
 
@@ -1284,7 +1284,7 @@ class TestPrepareResponseWithNotification:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -1352,7 +1352,7 @@ class TestGetUserRoleName:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -1381,7 +1381,7 @@ class TestGetAssistantRoleName:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -1413,7 +1413,7 @@ class TestUpdateParameters:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -1456,7 +1456,7 @@ class TestUpdateParameters:
         mock_config.assistant_llm_provider = "gemini"
         mock_config.summarizer_llm_provider = "openai"
 
-        with patch("soyebot.services.llm_service.ModelUsageService"):
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             service.assistant_backend.reload_parameters = Mock()
             service.summarizer_backend.reload_parameters = Mock()
@@ -1514,7 +1514,7 @@ class TestProviderSwitching:
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),

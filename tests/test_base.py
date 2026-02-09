@@ -8,7 +8,7 @@ import discord
 import pytest
 from PIL import Image
 
-from soyebot.services.base import BaseLLMService, ChatMessage
+from persbot.services.base import BaseLLMService, ChatMessage
 
 # =============================================================================
 # Concrete Test Implementation of BaseLLMService

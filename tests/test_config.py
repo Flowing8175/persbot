@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from soyebot.config import (
+from persbot.config import (
     DEFAULT_GEMINI_ASSISTANT_MODEL,
     DEFAULT_GEMINI_SUMMARY_MODEL,
     DEFAULT_OPENAI_ASSISTANT_MODEL,

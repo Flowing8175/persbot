@@ -1,4 +1,4 @@
-"""Comprehensive tests for soyebot/utils.py."""
+"""Comprehensive tests for persbot/utils.py."""
 
 import sys
 from pathlib import Path
@@ -11,7 +11,7 @@ from discord.ui import View
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from soyebot.utils import (
+from persbot.utils import (
     DiscordUI,
     extract_message_content,
     parse_korean_time,

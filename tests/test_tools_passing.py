@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, Mock, call, patch
 
 import pytest
 
-from soyebot.services.llm_service import LLMService
-from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
-from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter
+from persbot.services.llm_service import LLMService
+from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
+from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter
 
 
 # Helper to create test tools
@@ -34,7 +34,7 @@ class TestToolsPassingToAssistantModel:
     @pytest.mark.asyncio
     async def test_tools_passed_to_assistant_backend(self):
         """Test that tools are passed to assistant backend generate_chat_response."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -65,7 +65,7 @@ class TestToolsPassingToAssistantModel:
     @pytest.mark.asyncio
     async def test_tools_passed_to_summarizer_backend_when_flag_set(self):
         """Test that tools are passed to summarizer backend when use_summarizer_backend is True."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -95,7 +95,7 @@ class TestToolsPassingToAssistantModel:
     @pytest.mark.asyncio
     async def test_no_tools_when_none_passed(self):
         """Test that None is passed when no tools are provided."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -126,7 +126,7 @@ class TestToolsPassingToCustomModels:
     @pytest.mark.asyncio
     async def test_tools_passed_to_custom_model_backend(self):
         """Test that tools are passed when calling a custom model."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "custom-model": Mock(provider="gemini"),
@@ -257,7 +257,7 @@ class TestToolsInGeminiService:
     @pytest.fixture
     def gemini_service(self, gemini_service_config):
         """Create a GeminiService instance."""
-        with patch("soyebot.services.gemini_service.genai.Client") as mock_client:
+        with patch("persbot.services.gemini_service.genai.Client") as mock_client:
             mock_client.return_value = Mock()
 
             service = GeminiService(
@@ -329,7 +329,7 @@ class TestToolsInGenerateChatResponse:
     @pytest.mark.asyncio
     async def test_tools_list_not_empty_when_passed(self):
         """Test that tools list is not empty when passed to the service."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -369,7 +369,7 @@ class TestToolsInGenerateChatResponse:
     @pytest.mark.asyncio
     async def test_tools_list_empty_when_none_passed(self):
         """Test that tools list is None when not provided."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -428,7 +428,7 @@ class TestToolsFlowFromLLMServiceToGemini:
         tool = create_test_tool("search_tool", "Search tool")
 
         # Step 1: Create LLMService
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),
@@ -460,7 +460,7 @@ class TestToolsFlowFromLLMServiceToGemini:
     @pytest.mark.asyncio
     async def test_complete_flow_with_tools(self):
         """Test the complete flow of tools from LLMService to Gemini."""
-        with patch("soyebot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
                 "gemini-2.5-flash": Mock(provider="gemini"),

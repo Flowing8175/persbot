@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from soyebot.tools.api_tools.image_tools import generate_image
-from soyebot.tools.api_tools.search_tools import web_search
-from soyebot.tools.api_tools.time_tools import get_time
-from soyebot.tools.api_tools.weather_tools import get_weather
+from persbot.tools.api_tools.image_tools import generate_image
+from persbot.tools.api_tools.search_tools import web_search
+from persbot.tools.api_tools.time_tools import get_time
+from persbot.tools.api_tools.weather_tools import get_weather
 
 
 class TestSearchTools:
@@ -267,9 +267,9 @@ class TestImageTools:
         assert "empty" in result.error.lower()
 
     @pytest.mark.asyncio
-    @patch("soyebot.tools.api_tools.image_tools.OpenAI")
-    @patch("soyebot.tools.api_tools.image_tools.load_config")
-    @patch("soyebot.tools.api_tools.image_tools.aiohttp.ClientSession")
+    @patch("persbot.tools.api_tools.image_tools.OpenAI")
+    @patch("persbot.tools.api_tools.image_tools.load_config")
+    @patch("persbot.tools.api_tools.image_tools.aiohttp.ClientSession")
     async def test_generate_image_success(self, mock_session, mock_load_config, mock_openai):
         """Test successful image generation with mocked API."""
         # Mock config
@@ -313,7 +313,7 @@ class TestImageTools:
     @patch("tests.test_tools_api.generate_image")
     async def test_generate_image_api_error_401(self, mock_generate_image):
         """Test image generation with 401 error."""
-        from soyebot.tools.base import ToolResult
+        from persbot.tools.base import ToolResult
 
         # Mock generate_image to return 401 error result
         mock_generate_image.return_value = ToolResult(
@@ -331,7 +331,7 @@ class TestImageTools:
     @patch("tests.test_tools_api.generate_image")
     async def test_generate_image_rate_limit_429(self, mock_generate_image):
         """Test image generation with 429 rate limit error."""
-        from soyebot.tools.base import ToolResult
+        from persbot.tools.base import ToolResult
 
         # Mock generate_image to return rate limit error result
         mock_generate_image.return_value = ToolResult(
@@ -346,8 +346,8 @@ class TestImageTools:
         assert "rate limit" in result.error.lower()
 
     @pytest.mark.asyncio
-    @patch("soyebot.tools.api_tools.image_tools.OpenAI")
-    @patch("soyebot.tools.api_tools.image_tools.load_config")
+    @patch("persbot.tools.api_tools.image_tools.OpenAI")
+    @patch("persbot.tools.api_tools.image_tools.load_config")
     async def test_generate_image_content_filtered(self, mock_load_config, mock_openai):
         """Test image generation with content filter violation."""
         # Mock config
@@ -376,9 +376,9 @@ class TestImageTools:
         assert "content filter" in result.error.lower()
 
     @pytest.mark.asyncio
-    @patch("soyebot.tools.api_tools.image_tools.OpenAI")
-    @patch("soyebot.tools.api_tools.image_tools.load_config")
-    @patch("soyebot.tools.api_tools.image_tools.aiohttp.ClientSession")
+    @patch("persbot.tools.api_tools.image_tools.OpenAI")
+    @patch("persbot.tools.api_tools.image_tools.load_config")
+    @patch("persbot.tools.api_tools.image_tools.aiohttp.ClientSession")
     async def test_generate_image_download_failure(
         self, mock_session, mock_load_config, mock_openai
     ):

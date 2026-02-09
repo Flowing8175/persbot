@@ -1,9 +1,0 @@
-discord.py==2.3.2
-google-genai==1.50.1
-openai==1.59.6
-python-dotenv==1.0.0
-sqlalchemy==2.0.23
-alembic==1.13.1
-sentence-transformers==2.2.2
-numpy==1.24.3
-aiofiles

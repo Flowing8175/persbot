@@ -1,5 +1,5 @@
 [project]
-name = "soyebot"
+name = "persbot"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -48,10 +48,10 @@ ignore_missing_imports = true
 warn_return_any = true
 warn_unused_configs = true
 [[tool.mypy.overrides]]
-module = "soyebot.services.model_usage_service"
+module = "persbot.services.model_usage_service"
 ignore_missing_imports = false
 [[tool.mypy.overrides]]
-module = "soyebot.services.prompt_service"
+module = "persbot.services.prompt_service"
 ignore_missing_imports = false
 
 [dependency-groups]

@@ -62,7 +62,7 @@ def mock_discord_config():
 @pytest.fixture
 def mock_app_config(mock_discord_config):
     """Create a mock AppConfig for testing."""
-    from soyebot.config import AppConfig
+    from persbot.config import AppConfig
 
     with patch.dict(os.environ, mock_discord_config, clear=True):
         config = AppConfig(discord_token=mock_discord_config["DISCORD_TOKEN"])
@@ -398,7 +398,7 @@ def mock_gemini_cache_methods():
         with patch.object(Mock, "__setattr__", safe_setattr):
             with (
                 patch(
-                    "soyebot.services.gemini_service.GeminiService._get_gemini_cache",
+                    "persbot.services.gemini_service.GeminiService._get_gemini_cache",
                     return_value=(None, None),
                 ),
                 patch("asyncio.create_task", return_value=Mock()),
@@ -506,7 +506,7 @@ def sample_long_text():
 @pytest.fixture
 def sample_message_history():
     """Sample chat message history."""
-    from soyebot.services.base import ChatMessage
+    from persbot.services.base import ChatMessage
 
     return [
         ChatMessage(role="user", content="Hello", author_id=123456789),

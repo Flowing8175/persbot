@@ -1,4 +1,4 @@
-"""Comprehensive tests for soyebot/services/usage_service.py (ImageUsageService)."""
+"""Comprehensive tests for persbot/services/usage_service.py (ImageUsageService)."""
 
 import asyncio
 import json
@@ -13,7 +13,7 @@ import pytest_asyncio
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from soyebot.services.usage_service import ImageUsageService
+from persbot.services.usage_service import ImageUsageService
 
 # =============================================================================
 # Tests for ImageUsageService.__init__()

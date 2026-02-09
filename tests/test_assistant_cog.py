@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 from discord.ext import commands
 
-from soyebot.bot.cogs.assistant import AssistantCog
-from soyebot.bot.session import ResolvedSession
-from soyebot.services.base import ChatMessage
+from persbot.bot.cogs.assistant import AssistantCog
+from persbot.bot.session import ResolvedSession
+from persbot.services.base import ChatMessage
 
 
 class TestAssistantCogInitialization:
@@ -283,7 +283,7 @@ class TestRetryCommand:
         ctx.defer = AsyncMock()
 
         # Mock create_chat_reply to return a response
-        with patch("soyebot.bot.cogs.assistant.create_chat_reply") as mock_create_reply:
+        with patch("persbot.bot.cogs.assistant.create_chat_reply") as mock_create_reply:
             mock_create_reply.return_value = ChatReply(
                 text="New response",
                 session_key="channel:111222333",
@@ -1423,7 +1423,7 @@ class TestRegenerateResponse:
         ctx.message = mock_message
         ctx.interaction = None
 
-        with patch("soyebot.bot.cogs.assistant.create_chat_reply") as mock_create_reply:
+        with patch("persbot.bot.cogs.assistant.create_chat_reply") as mock_create_reply:
             mock_create_reply.return_value = ChatReply(
                 text="Regenerated response",
                 session_key="channel:123",

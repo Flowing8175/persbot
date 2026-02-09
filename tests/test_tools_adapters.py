@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
-from soyebot.tools.adapters.openai_adapter import OpenAIToolAdapter
-from soyebot.tools.adapters.zai_adapter import ZAIToolAdapter
-from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter
+from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
+from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
+from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
+from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter
 
 
 class SampleTools:
