@@ -315,7 +315,7 @@ def register_image_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(
+        registry.register(
         ToolDefinition(
             name="generate_image",
             description="Generate an image using AI based on a text description. Use this when the user asks for an image, drawing, or visual content.",
@@ -329,6 +329,6 @@ def register_image_tools(registry):
                 ),
             ],
             handler=generate_image,
-            rate_limit=30,
+            rate_limit=0,
         )
     )
