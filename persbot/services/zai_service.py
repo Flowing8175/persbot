@@ -7,6 +7,7 @@ Supports both Standard API and Coding Plan API endpoints:
 Enable Coding Plan API by setting ZAI_CODING_PLAN=true in environment.
 """
 
+import asyncio
 import base64
 import logging
 from collections import deque
@@ -371,8 +372,14 @@ class ZAIService(BaseLLMService):
         discord_message: Union[discord.Message, list[discord.Message]],
         model_name: Optional[str] = None,
         tools: Optional[Any] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> Optional[Tuple[str, Any]]:
         """Generate chat response."""
+        # Check cancellation event before starting API call
+        if cancel_event and cancel_event.is_set():
+            logger.info("API call aborted due to cancellation signal")
+            raise asyncio.CancelledError("LLM API call aborted by user")
+
         self._log_raw_request(user_message, chat_session)
 
         if isinstance(discord_message, list):
@@ -438,6 +445,7 @@ class ZAIService(BaseLLMService):
         tool_rounds,
         tools=None,
         discord_message=None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
         """Send tool results back to model and get continuation response.
 
@@ -446,10 +454,16 @@ class ZAIService(BaseLLMService):
             tool_rounds: List of (response_obj, tool_results) tuples.
             tools: Original tool definitions (will be converted to Z.AI format).
             discord_message: Discord message for error notifications.
+            cancel_event: Optional event to check for abort signals.
 
         Returns:
             Tuple of (response_text, response_obj) or None.
         """
+        # Check cancellation event before starting API call
+        if cancel_event and cancel_event.is_set():
+            logger.info("Tool results API call aborted due to cancellation signal")
+            raise asyncio.CancelledError("LLM API call aborted by user")
+
         converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None
 
         result = await self.execute_with_retry(
