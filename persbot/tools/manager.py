@@ -165,6 +165,10 @@ class ToolManager:
                 "error": result.error if not result.success else None,
             }
 
+        # Preserve image data if present in metadata
+        if result.success and result.metadata.get("image_bytes"):
+            formatted["image_bytes"] = result.metadata["image_bytes"]
+
         return formatted
 
     def set_tool_enabled(self, tool_name: str, enabled: bool) -> bool:

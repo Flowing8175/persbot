@@ -170,15 +170,9 @@ async def create_chat_reply(
 
                 # Collect any generated images to send after LLM response
                 for result_item in results:
-                    result_data = result_item.get("result")
-                    if (
-                        hasattr(result_data, "success")
-                        and result_data.success
-                        and hasattr(result_data, "metadata")
-                    ):
-                        image_bytes = result_data.metadata.get("image_bytes")
-                        if image_bytes:
-                            generated_images.append(image_bytes)
+                    image_bytes = result_item.get("image_bytes")
+                    if image_bytes:
+                        generated_images.append(image_bytes)
 
                 # Send tool results back to LLM and get continuation
                 # Create a new round with (response_obj, tool_results)
