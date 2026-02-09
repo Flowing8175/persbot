@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import discord
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +28,10 @@ async def get_channel_info(
         channel_id = discord_context.channel.id
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     if channel_id is None:
-        return ToolResult(
-            success=False, error="Channel ID not provided and no context available"
-        )
+        return ToolResult(success=False, error="Channel ID not provided and no context available")
 
     try:
         channel = discord_context.guild.get_channel(channel_id)
@@ -82,14 +78,10 @@ async def get_channel_history(
         channel_id = discord_context.channel.id
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     if channel_id is None:
-        return ToolResult(
-            success=False, error="Channel ID not provided and no context available"
-        )
+        return ToolResult(success=False, error="Channel ID not provided and no context available")
 
     try:
         channel = discord_context.guild.get_channel(channel_id)
@@ -97,9 +89,7 @@ async def get_channel_history(
             return ToolResult(success=False, error=f"Channel {channel_id} not found")
 
         if not hasattr(channel, "history"):
-            return ToolResult(
-                success=False, error="Channel does not support message history"
-            )
+            return ToolResult(success=False, error="Channel does not support message history")
 
         # Build history kwargs
         kwargs = {"limit": min(limit, 100)}  # Cap at 100 for safety
@@ -119,9 +109,7 @@ async def get_channel_history(
                 }
             )
 
-        return ToolResult(
-            success=True, data={"messages": messages, "count": len(messages)}
-        )
+        return ToolResult(success=True, data={"messages": messages, "count": len(messages)})
 
     except Exception as e:
         logger.error("Error getting channel history: %s", e, exc_info=True)
@@ -148,14 +136,10 @@ async def get_message(
         channel_id = discord_context.channel.id
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     if channel_id is None:
-        return ToolResult(
-            success=False, error="Channel ID not provided and no context available"
-        )
+        return ToolResult(success=False, error="Channel ID not provided and no context available")
 
     try:
         channel = discord_context.guild.get_channel(channel_id)
@@ -163,9 +147,7 @@ async def get_message(
             return ToolResult(success=False, error=f"Channel {channel_id} not found")
 
         if not hasattr(channel, "fetch_message"):
-            return ToolResult(
-                success=False, error="Channel does not support fetching messages"
-            )
+            return ToolResult(success=False, error="Channel does not support fetching messages")
 
         msg = await channel.fetch_message(message_id)
 
@@ -178,22 +160,26 @@ async def get_message(
             "timestamp": msg.created_at.isoformat(),
             "edited_timestamp": msg.edited_at.isoformat() if msg.edited_at else None,
             "has_attachments": len(msg.attachments) > 0,
-            "attachments": [
+            "attachments": (
+                [
+                    {
+                        "filename": a.filename,
+                        "url": a.url,
+                        "content_type": a.content_type,
+                    }
+                    for a in msg.attachments
+                ]
+                if msg.attachments
+                else []
+            ),
+            "reference": (
                 {
-                    "filename": a.filename,
-                    "url": a.url,
-                    "content_type": a.content_type,
+                    "message_id": str(msg.reference.message_id),
+                    "channel_id": str(msg.reference.channel_id),
                 }
-                for a in msg.attachments
-            ]
-            if msg.attachments
-            else [],
-            "reference": {
-                "message_id": str(msg.reference.message_id),
-                "channel_id": str(msg.reference.channel_id),
-            }
-            if msg.reference
-            else None,
+                if msg.reference
+                else None
+            ),
         }
 
         return ToolResult(success=True, data=message_data)
@@ -225,14 +211,10 @@ async def list_channels(
         guild_id = discord_context.guild.id
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     if guild_id is None:
-        return ToolResult(
-            success=False, error="Guild ID not provided and no context available"
-        )
+        return ToolResult(success=False, error="Guild ID not provided and no context available")
 
     try:
         # Use the guild from context if it matches, otherwise try to get from client
@@ -263,9 +245,7 @@ async def list_channels(
         # Sort by position
         channels.sort(key=lambda x: x.get("position", 0))
 
-        return ToolResult(
-            success=True, data={"channels": channels, "count": len(channels)}
-        )
+        return ToolResult(success=True, data={"channels": channels, "count": len(channels)})
 
     except Exception as e:
         logger.error("Error listing channels: %s", e, exc_info=True)

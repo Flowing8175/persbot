@@ -1,9 +1,11 @@
 """Comprehensive tests for MessageBuffer class."""
 
-import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock, MagicMock
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, Mock
+
+import pytest
+
 from soyebot.bot.buffer import MessageBuffer
 
 
@@ -115,9 +117,7 @@ class TestAddMessage:
         assert stored.author.id == 123456789
 
     @pytest.mark.asyncio
-    async def test_callback_scheduling(
-        self, message_buffer, mock_message_factory, mock_callback
-    ):
+    async def test_callback_scheduling(self, message_buffer, mock_message_factory, mock_callback):
         """Test that processing task is scheduled after adding message."""
         msg = mock_message_factory("msg1", channel_id=111222333)
 
@@ -128,9 +128,7 @@ class TestAddMessage:
         assert message_buffer.tasks[111222333] is not None
 
     @pytest.mark.asyncio
-    async def test_resets_existing_timer(
-        self, message_buffer, mock_message_factory, mock_callback
-    ):
+    async def test_resets_existing_timer(self, message_buffer, mock_message_factory, mock_callback):
         """Test that adding message cancels and restarts timer."""
         msg1 = mock_message_factory("msg1", channel_id=111222333)
         msg2 = mock_message_factory("msg2", channel_id=111222333)
@@ -265,9 +263,7 @@ class TestHandleTyping:
         assert end_time - start_time >= 0.3
 
     @pytest.mark.asyncio
-    async def test_not_extending_without_active_batch(
-        self, message_buffer, mock_callback
-    ):
+    async def test_not_extending_without_active_batch(self, message_buffer, mock_callback):
         """Test that typing doesn't create task without messages."""
         # No messages added, just typing
         message_buffer.handle_typing(111222333, mock_callback)
@@ -361,9 +357,7 @@ class TestChannelIsolation:
         assert 222333444 in message_buffer.buffers
         assert len(message_buffer.buffers[111222333]) == 1
         assert len(message_buffer.buffers[222333444]) == 1
-        assert (
-            message_buffer.buffers[111222333][0] != message_buffer.buffers[222333444][0]
-        )
+        assert message_buffer.buffers[111222333][0] != message_buffer.buffers[222333444][0]
 
     @pytest.mark.asyncio
     async def test_typing_in_one_channel_doesnt_affect_another(
@@ -418,9 +412,7 @@ class TestEdgeCases:
     """Tests for error handling and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_duplicate_messages(
-        self, message_buffer, mock_message_factory, mock_callback
-    ):
+    async def test_duplicate_messages(self, message_buffer, mock_message_factory, mock_callback):
         """Test handling duplicate message objects."""
         msg = mock_message_factory("msg1", channel_id=111222333)
 
@@ -491,9 +483,7 @@ class TestEdgeCases:
         tasks = []
         for channel_id in [111222333, 222333444, 333444555]:
             for i in range(3):
-                msg = mock_message_factory(
-                    f"msg_{channel_id}_{i}", channel_id=channel_id
-                )
+                msg = mock_message_factory(f"msg_{channel_id}_{i}", channel_id=channel_id)
                 tasks.append(message_buffer.add_message(channel_id, msg, mock_callback))
 
         # Run all additions concurrently
@@ -528,9 +518,7 @@ class TestEdgeCases:
         assert 111222333 not in message_buffer.tasks
 
     @pytest.mark.asyncio
-    async def test_callback_exception_handling(
-        self, message_buffer, mock_message_factory
-    ):
+    async def test_callback_exception_handling(self, message_buffer, mock_message_factory):
         """Test that exceptions in callback are handled gracefully."""
 
         # Create a callback that raises an exception

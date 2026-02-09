@@ -1,27 +1,26 @@
 """Comprehensive tests for OpenAIService."""
 
+import asyncio
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import Mock, AsyncMock, MagicMock, patch, call
-from datetime import datetime, timezone, timedelta
-import asyncio
 
 # Import the module for coverage tracking
 from soyebot.services import openai_service  # noqa: F401
 
 openai_service  # Use the module to ensure it's imported
 
+from soyebot.services.base import ChatMessage
 from soyebot.services.openai_service import (
-    OpenAIService,
-    BaseChatSession,
     BaseOpenAISession,
-    ResponseChatSession,
     ChatCompletionSession,
+    OpenAIService,
+    ResponseChatSession,
     _ChatCompletionModel,
     _ResponseModel,
 )
-from soyebot.services.base import ChatMessage
-
 
 # ============================================================================
 # Test Fixtures
@@ -237,135 +236,12 @@ class TestModelCreation:
 
 
 # ============================================================================
-# Test BaseChatSession
-# ============================================================================
-
-
-class TestBaseChatSession:
-    """Test BaseChatSession functionality."""
-
-    def test_initialization(self, mock_openai_client):
-        """Test BaseChatSession initialization."""
-        session = BaseChatSession(
-            client=mock_openai_client,
-            model_name="gpt-4o",
-            system_instruction="System instruction",
-            temperature=1.0,
-            top_p=1.0,
-            max_messages=7,
-            service_tier="flex",
-        )
-
-        assert session._model_name == "gpt-4o"
-        assert session._system_instruction == "System instruction"
-        assert session._temperature == 1.0
-        assert session._top_p == 1.0
-        assert session._max_messages == 7
-        assert session._service_tier == "flex"
-
-    def test_history_property(self, mock_openai_client):
-        """Test history property."""
-        session = BaseChatSession(
-            client=mock_openai_client,
-            model_name="gpt-4o",
-            system_instruction="System instruction",
-            temperature=1.0,
-            top_p=1.0,
-            max_messages=7,
-            service_tier="flex",
-        )
-
-        assert isinstance(session.history, list)
-        assert len(session.history) == 0
-
-    def test_history_setter(self, mock_openai_client):
-        """Test history setter."""
-        session = BaseChatSession(
-            client=mock_openai_client,
-            model_name="gpt-4o",
-            system_instruction="System instruction",
-            temperature=1.0,
-            top_p=1.0,
-            max_messages=7,
-            service_tier="flex",
-        )
-
-        new_history = [
-            ChatMessage(role="user", content="Hello", author_id=123),
-            ChatMessage(role="assistant", content="Hi!", author_id=None),
-        ]
-        session.history = new_history
-
-        assert len(session.history) == 2
-        assert session.history[0].content == "Hello"
-
-    def test_create_user_message(self, mock_openai_client):
-        """Test _create_user_message."""
-        session = BaseChatSession(
-            client=mock_openai_client,
-            model_name="gpt-4o",
-            system_instruction="System instruction",
-            temperature=1.0,
-            top_p=1.0,
-            max_messages=7,
-            service_tier="flex",
-        )
-
-        user_msg = session._create_user_message(
-            "Hello bot", 123456, author_name="TestUser", message_ids=["123"]
-        )
-
-        assert user_msg.role == "user"
-        assert user_msg.content == "Hello bot"
-        assert user_msg.author_id == 123456
-        assert user_msg.author_name == "TestUser"
-        assert user_msg.message_ids == ["123"]
-
-    def test_create_user_message_with_images(self, mock_openai_client):
-        """Test _create_user_message with images."""
-        session = BaseChatSession(
-            client=mock_openai_client,
-            model_name="gpt-4o",
-            system_instruction="System instruction",
-            temperature=1.0,
-            top_p=1.0,
-            max_messages=7,
-            service_tier="flex",
-        )
-
-        image_data = b"\x89PNG\r\n\x1a\n"
-        user_msg = session._create_user_message("Look at this", 123456, images=[image_data])
-
-        assert user_msg.role == "user"
-        assert len(user_msg.images) == 1
-
-    def test_encode_image_to_url(self, mock_openai_client):
-        """Test _encode_image_to_url."""
-        session = BaseChatSession(
-            client=mock_openai_client,
-            model_name="gpt-4o",
-            system_instruction="System instruction",
-            temperature=1.0,
-            top_p=1.0,
-            max_messages=7,
-            service_tier="flex",
-        )
-
-        image_data = b"\x89PNG\r\n\x1a\n"
-        result = session._encode_image_to_url(image_data)
-
-        assert result["type"] == "image_url"
-        assert "image_url" in result
-        assert result["image_url"]["url"].startswith("data:image/png;base64,")
-
-
-# ============================================================================
 # Test BaseOpenAISession
 # ============================================================================
 
 
 class TestBaseOpenAISession:
-    """Test BaseOpenAISession functionality (duplicate of BaseChatSession)."""
+    """Test BaseOpenAISession functionality."""
 
     def test_initialization(self, mock_openai_client):
         """Test BaseOpenAISession initialization."""
@@ -402,6 +278,90 @@ class TestBaseOpenAISession:
 
         assert isinstance(session.history, list)
         assert len(session.history) == 0
+
+    def test_history_setter(self, mock_openai_client):
+        """Test history setter."""
+        session = BaseOpenAISession(
+            client=mock_openai_client,
+            model_name="gpt-4o",
+            system_instruction="System instruction",
+            temperature=1.0,
+            top_p=1.0,
+            max_messages=7,
+            service_tier="flex",
+            text_extractor=None,
+        )
+
+        new_history = [
+            ChatMessage(role="user", content="Hello", author_id=123),
+            ChatMessage(role="assistant", content="Hi!", author_id=None),
+        ]
+        session.history = new_history
+
+        assert len(session.history) == 2
+        assert session.history[0].content == "Hello"
+
+    def test_create_user_message(self, mock_openai_client):
+        """Test _create_user_message."""
+        session = BaseOpenAISession(
+            client=mock_openai_client,
+            model_name="gpt-4o",
+            system_instruction="System instruction",
+            temperature=1.0,
+            top_p=1.0,
+            max_messages=7,
+            service_tier="flex",
+            text_extractor=None,
+        )
+
+        user_msg = session._create_user_message(
+            "Hello bot", 123456, author_name="TestUser", message_ids=["123"]
+        )
+
+        assert user_msg.role == "user"
+        assert user_msg.content == "Hello bot"
+        assert user_msg.author_id == 123456
+        assert user_msg.author_name == "TestUser"
+        assert user_msg.message_ids == ["123"]
+
+    def test_create_user_message_with_images(self, mock_openai_client):
+        """Test _create_user_message with images."""
+        session = BaseOpenAISession(
+            client=mock_openai_client,
+            model_name="gpt-4o",
+            system_instruction="System instruction",
+            temperature=1.0,
+            top_p=1.0,
+            max_messages=7,
+            service_tier="flex",
+            text_extractor=None,
+        )
+
+        image_data = b"\x89PNG\r\n\x1a\n"
+        user_msg = session._create_user_message("Look at this", 123456, images=[image_data])
+
+        assert user_msg.role == "user"
+        assert len(user_msg.images) == 1
+
+    def test_encode_image_to_url(self, mock_openai_client):
+        """Test _encode_image_to_url."""
+        session = BaseOpenAISession(
+            client=mock_openai_client,
+            model_name="gpt-4o",
+            system_instruction="System instruction",
+            temperature=1.0,
+            top_p=1.0,
+            max_messages=7,
+            service_tier="flex",
+            text_extractor=None,
+        )
+
+        image_data = b"\x89PNG\r\n\x1a\n"
+        result = session._encode_image_to_url(image_data)
+
+        assert result["type"] == "image_url"
+        assert "image_url" in result
+        assert result["image_url"]["url"].startswith("data:image/png;base64,")
 
 
 # ============================================================================
@@ -1129,7 +1089,7 @@ class TestHistoryManagement:
 
     def test_append_history(self, mock_openai_client):
         """Test _append_history adds message to history."""
-        session = BaseChatSession(
+        session = BaseOpenAISession(
             client=mock_openai_client,
             model_name="gpt-4o",
             system_instruction="System instruction",
@@ -1137,6 +1097,7 @@ class TestHistoryManagement:
             top_p=1.0,
             max_messages=7,
             service_tier="flex",
+            text_extractor=None,
         )
 
         session._append_history("user", "Hello", author_id=123)
@@ -1146,7 +1107,7 @@ class TestHistoryManagement:
 
     def test_append_history_skips_empty(self, mock_openai_client):
         """Test _append_history skips empty content."""
-        session = BaseChatSession(
+        session = BaseOpenAISession(
             client=mock_openai_client,
             model_name="gpt-4o",
             system_instruction="System instruction",
@@ -1154,6 +1115,7 @@ class TestHistoryManagement:
             top_p=1.0,
             max_messages=7,
             service_tier="flex",
+            text_extractor=None,
         )
 
         session._append_history("user", "", author_id=123)
@@ -1162,7 +1124,7 @@ class TestHistoryManagement:
 
     def test_history_maxlen(self, mock_openai_client):
         """Test history respects maxlen."""
-        session = BaseChatSession(
+        session = BaseOpenAISession(
             client=mock_openai_client,
             model_name="gpt-4o",
             system_instruction="System instruction",
@@ -1170,6 +1132,7 @@ class TestHistoryManagement:
             top_p=1.0,
             max_messages=3,
             service_tier="flex",
+            text_extractor=None,
         )
 
         # Add more messages than maxlen

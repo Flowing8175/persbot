@@ -7,8 +7,8 @@ This module provides tools for high-immersion persona bot functionality includin
 - External content inspection
 """
 
-from soyebot.tools.persona_tools.memory_tools import register_memory_tools
 from soyebot.tools.persona_tools.media_tools import register_media_tools
+from soyebot.tools.persona_tools.memory_tools import register_memory_tools
 from soyebot.tools.persona_tools.routine_tools import register_routine_tools
 from soyebot.tools.persona_tools.web_tools import register_web_tools
 

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Set
 import discord
 
 from soyebot.config import AppConfig
-from soyebot.tools.base import ToolDefinition, ToolResult, ToolCategory
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolResult
 from soyebot.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -96,9 +96,7 @@ class ToolExecutor:
         # Execute the tool
         return await self._execute_with_timeout(tool, parameters)
 
-    def _check_permissions(
-        self, tool: ToolDefinition, message: discord.Message
-    ) -> bool:
+    def _check_permissions(self, tool: ToolDefinition, message: discord.Message) -> bool:
         """Check if the user has required permissions for the tool.
 
         Args:
@@ -245,9 +243,7 @@ class ToolExecutor:
 
         return await asyncio.gather(*tasks)
 
-    def get_metrics(
-        self, tool_name: Optional[str] = None
-    ) -> Dict[str, ExecutionMetrics]:
+    def get_metrics(self, tool_name: Optional[str] = None) -> Dict[str, ExecutionMetrics]:
         """Get execution metrics for tools.
 
         Args:
@@ -269,9 +265,7 @@ class ToolExecutor:
                     If None, clears all rate limits.
         """
         if user_id:
-            keys_to_remove = [
-                k for k in self._rate_limits if k.startswith(f"{user_id}:")
-            ]
+            keys_to_remove = [k for k in self._rate_limits if k.startswith(f"{user_id}:")]
             for key in keys_to_remove:
                 del self._rate_limits[key]
         else:

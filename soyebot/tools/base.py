@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional, List, Dict
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     from google.genai import types as genai_types

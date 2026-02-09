@@ -1,13 +1,14 @@
 """Integration tests for tool system end-to-end workflow."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from soyebot.tools import ToolManager
 from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
-from soyebot.tools.registry import ToolRegistry
 from soyebot.tools.executor import ToolExecutor
+from soyebot.tools.registry import ToolRegistry
 
 
 class TestToolManager:
@@ -184,10 +185,7 @@ class TestToolManager:
         """Test executing time tool for multiple timezones."""
         timezones = ["UTC", "Asia/Seoul", "America/New_York", "Europe/London"]
 
-        tool_calls = [
-            {"name": "get_time", "parameters": {"timezone_str": tz}}
-            for tz in timezones
-        ]
+        tool_calls = [{"name": "get_time", "parameters": {"timezone_str": tz}} for tz in timezones]
 
         results = await tool_manager.execute_tools(tool_calls, None)
 
@@ -208,6 +206,7 @@ class TestToolRegistration:
 
     def test_register_custom_tool(self, registry):
         """Test registering a custom tool."""
+
         async def custom_handler(param1: str) -> str:
             return f"Custom: {param1}"
 
@@ -232,6 +231,7 @@ class TestToolRegistration:
     @pytest.mark.asyncio
     async def test_execute_custom_tool(self, registry):
         """Test executing a custom tool through executor."""
+
         async def custom_handler(param1: str) -> str:
             return f"Custom: {param1}"
 
@@ -289,6 +289,7 @@ class TestToolErrorHandling:
         # Timeout tool
         async def timeout_handler():
             import asyncio
+
             await asyncio.sleep(15)
 
         registry.register(
@@ -331,7 +332,11 @@ class TestToolErrorHandling:
         assert result.success is False
         # Check for timeout-related error message (be flexible with formatting)
         error_lower = result.error.lower()
-        assert "timeout" in error_lower or "timed out" in error_lower or "tool execution" in error_lower
+        assert (
+            "timeout" in error_lower
+            or "timed out" in error_lower
+            or "tool execution" in error_lower
+        )
 
 
 class TestToolParameters:
@@ -340,6 +345,7 @@ class TestToolParameters:
     @pytest.mark.asyncio
     async def test_tool_with_optional_parameters(self):
         """Test tool execution with optional parameters."""
+
         async def optional_handler(required: str, optional: int = 10):
             return f"{required}, {optional}"
 
@@ -378,6 +384,7 @@ class TestToolParameters:
     @pytest.mark.asyncio
     async def test_tool_with_enum_parameters(self):
         """Test tool execution with enum parameters."""
+
         async def enum_handler(choice: str):
             return f"You chose: {choice}"
 
@@ -425,6 +432,7 @@ class TestToolResults:
     @pytest.mark.asyncio
     async def test_handler_returning_tool_result(self):
         """Test handler that returns ToolResult directly."""
+
         async def result_handler(message: str):
             return ToolResult(
                 success=True,

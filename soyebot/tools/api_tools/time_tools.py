@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ TIMEZONE_MAPPINGS = {
 
 async def get_time(
     timezone_str: Optional[str] = None,
-    **kwargs  # Accept extra kwargs for compatibility with executor
+    **kwargs,  # Accept extra kwargs for compatibility with executor
 ) -> ToolResult:
     """Get the current time in a specific timezone.
 
@@ -51,6 +51,7 @@ async def get_time(
         elif "/" not in tz_str.upper():
             # Try to find a matching timezone
             import pytz
+
             for tz_name in pytz.all_timezones:
                 if tz_str in tz_name.lower():
                     tz_str = tz_name
@@ -144,17 +145,19 @@ def register_time_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="get_time",
-        description="Get the current time and date for any timezone or city worldwide. Returns the local time, date, day of week, and timezone information.",
-        category=ToolCategory.API_TIME,
-        parameters=[
-            ToolParameter(
-                name="timezone",
-                type="string",
-                description="The timezone name (e.g., 'Asia/Seoul', 'America/New_York') or city name (e.g., 'Seoul', 'Tokyo', 'London'). Defaults to UTC.",
-                required=False,
-            ),
-        ],
-        handler=get_time,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_time",
+            description="Get the current time and date for any timezone or city worldwide. Returns the local time, date, day of week, and timezone information.",
+            category=ToolCategory.API_TIME,
+            parameters=[
+                ToolParameter(
+                    name="timezone",
+                    type="string",
+                    description="The timezone name (e.g., 'Asia/Seoul', 'America/New_York') or city name (e.g., 'Seoul', 'Tokyo', 'London'). Defaults to UTC.",
+                    required=False,
+                ),
+            ],
+            handler=get_time,
+        )
+    )

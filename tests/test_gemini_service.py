@@ -1,24 +1,24 @@
 """Comprehensive tests for GeminiService."""
 
-import pytest
-import pytest_asyncio
-from unittest.mock import Mock, AsyncMock, MagicMock, patch, call
-from datetime import datetime, timezone, timedelta
 import asyncio
 import hashlib
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
+import pytest
+import pytest_asyncio
+
+from soyebot.services.base import ChatMessage
 from soyebot.services.gemini_service import (
+    DEFAULT_CACHE_MIN_TOKENS,
+    DEFAULT_CACHE_TTL_MINUTES,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TOP_P,
     GeminiService,
     _CachedModel,
     _ChatSession,
     extract_clean_text,
-    DEFAULT_TEMPERATURE,
-    DEFAULT_TOP_P,
-    DEFAULT_CACHE_MIN_TOKENS,
-    DEFAULT_CACHE_TTL_MINUTES,
 )
-from soyebot.services.base import ChatMessage
-
 
 # ============================================================================
 # Test Fixtures

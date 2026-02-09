@@ -1,18 +1,18 @@
 """Tests for SessionManager."""
 
-import pytest
 from collections import OrderedDict
-from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock, AsyncMock, MagicMock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import pytest
 
 from soyebot.bot.session import (
-    SessionManager,
     ChatSession,
-    SessionContext,
     ResolvedSession,
+    SessionContext,
+    SessionManager,
 )
 from soyebot.services.base import ChatMessage
-
 
 # =============================================================================
 # 1. ChatSession - Test dataclass
@@ -296,9 +296,7 @@ class TestSessionManagerInit:
         assert isinstance(manager.channel_prompts, dict)
         assert len(manager.channel_prompts) == 0
 
-    def test_empty_channel_model_preferences_dict(
-        self, mock_app_config, mock_llm_service
-    ):
+    def test_empty_channel_model_preferences_dict(self, mock_app_config, mock_llm_service):
         """Test that channel_model_preferences dict is initialized as empty."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         assert isinstance(manager.channel_model_preferences, dict)
@@ -562,9 +560,7 @@ class TestSetSessionModel:
         # Check session context model_alias was updated
         assert manager.session_contexts[session_key].model_alias == "gemini-2.5-pro"
 
-    def test_model_preference_without_existing_session(
-        self, mock_app_config, mock_llm_service
-    ):
+    def test_model_preference_without_existing_session(self, mock_app_config, mock_llm_service):
         """Test setting preference when no session exists yet."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         channel_id = 111
@@ -644,9 +640,7 @@ class TestGetOrCreate:
         assert chat is not None
 
     @pytest.mark.asyncio
-    async def test_model_mismatch_triggers_recreation(
-        self, mock_app_config, mock_llm_service
-    ):
+    async def test_model_mismatch_triggers_recreation(self, mock_app_config, mock_llm_service):
         """Test that model mismatch triggers session recreation."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         session_key = "channel:111"
@@ -713,9 +707,7 @@ class TestResolveTargetModelAlias:
     """Tests for _resolve_target_model_alias method."""
 
     @patch("asyncio.create_task")
-    def test_session_context_priority(
-        self, mock_create_task, mock_app_config, mock_llm_service
-    ):
+    def test_session_context_priority(self, mock_create_task, mock_app_config, mock_llm_service):
         """Test that session context model_alias has priority."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         session_key = "channel:111"
@@ -739,9 +731,7 @@ class TestResolveTargetModelAlias:
         assert target == "gemini-2.5-pro"
 
     @patch("asyncio.create_task")
-    def test_channel_preference_priority(
-        self, mock_create_task, mock_app_config, mock_llm_service
-    ):
+    def test_channel_preference_priority(self, mock_create_task, mock_app_config, mock_llm_service):
         """Test that channel preference is used when no session context model."""
         manager = SessionManager(mock_app_config, mock_llm_service)
         session_key = "channel:111"
@@ -764,9 +754,7 @@ class TestResolveTargetModelAlias:
         assert target == "gemini-2.5-pro"
 
     @patch("asyncio.create_task")
-    def test_default_model_fallback(
-        self, mock_create_task, mock_app_config, mock_llm_service
-    ):
+    def test_default_model_fallback(self, mock_create_task, mock_app_config, mock_llm_service):
         """Test falling back to default model."""
         from soyebot.services.model_usage_service import ModelDefinition
 
@@ -863,9 +851,7 @@ class TestCheckSessionModelCompatibility:
             model_alias="gemini-2.5-flash",
         )
 
-        result = manager._check_session_model_compatibility(
-            session, session_key, "gemini-2.5-pro"
-        )
+        result = manager._check_session_model_compatibility(session, session_key, "gemini-2.5-pro")
 
         assert result is False
 
@@ -1297,9 +1283,7 @@ class TestResolveSession:
         assert resolved.cleaned_message == resolved.cleaned_message.strip()
 
     @pytest.mark.asyncio
-    async def test_reference_message_id_handling(
-        self, mock_app_config, mock_llm_service
-    ):
+    async def test_reference_message_id_handling(self, mock_app_config, mock_llm_service):
         """Test that reference_message_id is ignored."""
         manager = SessionManager(mock_app_config, mock_llm_service)
 
@@ -1647,9 +1631,7 @@ class TestSplitHistoryByIndices:
 
         indices_to_remove = {2, 3}
 
-        new_history, removed = manager._split_history_by_indices(
-            history, indices_to_remove
-        )
+        new_history, removed = manager._split_history_by_indices(history, indices_to_remove)
 
         assert len(new_history) == 2
         assert len(removed) == 2
@@ -1671,9 +1653,7 @@ class TestSplitHistoryByIndices:
 
         indices_to_remove = {2, 3}
 
-        new_history, removed = manager._split_history_by_indices(
-            history, indices_to_remove
-        )
+        new_history, removed = manager._split_history_by_indices(history, indices_to_remove)
 
         assert msg1 in new_history
         assert msg2 in new_history
@@ -1688,9 +1668,7 @@ class TestSplitHistoryByIndices:
 
         indices_to_remove = {1, 3}
 
-        new_history, removed = manager._split_history_by_indices(
-            history, indices_to_remove
-        )
+        new_history, removed = manager._split_history_by_indices(history, indices_to_remove)
 
         assert len(new_history) == 3
         assert len(removed) == 2

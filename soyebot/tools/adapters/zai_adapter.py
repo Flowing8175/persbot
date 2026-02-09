@@ -48,11 +48,7 @@ class ZAIToolAdapter:
             if hasattr(response, "choices") and response.choices:
                 for choice in response.choices:
                     message = getattr(choice, "message", None)
-                    if (
-                        message
-                        and hasattr(message, "tool_calls")
-                        and message.tool_calls
-                    ):
+                    if message and hasattr(message, "tool_calls") and message.tool_calls:
                         for tool_call in message.tool_calls:
                             fc_data = {
                                 "id": tool_call.id,
@@ -82,9 +78,7 @@ class ZAIToolAdapter:
         return function_calls
 
     @staticmethod
-    def format_function_result(
-        tool_name: str, result: Any, call_id: str
-    ) -> Dict[str, Any]:
+    def format_function_result(tool_name: str, result: Any, call_id: str) -> Dict[str, Any]:
         """Format a function result for sending back to Z.AI.
 
         Args:
@@ -138,9 +132,7 @@ class ZAIToolAdapter:
                     # For non-binary data, convert to string but limit length
                     content = str(result_data)
                     # Truncate very long strings to avoid prompt length limits
-                    MAX_CONTENT_LENGTH = (
-                        10000  # Z.AI has ~20000 char limit, keep buffer
-                    )
+                    MAX_CONTENT_LENGTH = 10000  # Z.AI has ~20000 char limit, keep buffer
                     if len(content) > MAX_CONTENT_LENGTH:
                         content = content[:MAX_CONTENT_LENGTH] + "... [truncated]"
                 else:

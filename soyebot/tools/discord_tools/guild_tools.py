@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import discord
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,7 @@ async def get_guild_info(
         guild_id = discord_context.guild.id
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -89,9 +87,7 @@ async def get_guild_roles(
         guild_id = discord_context.guild.id
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -113,19 +109,21 @@ async def get_guild_roles(
                 "mentionable": role.mentionable,
                 "hoist": role.hoist,
                 "is_default": role.is_default(),
-                "tags": {
-                    "bot_id": str(role.tags.bot_id)
-                    if role.tags and role.tags.bot_id
-                    else None,
-                    "integration_id": str(role.tags.integration_id)
-                    if role.tags and role.tags.integration_id
-                    else None,
-                    "premium_subscriber": role.tags.is_premium_subscriber()
+                "tags": (
+                    {
+                        "bot_id": str(role.tags.bot_id) if role.tags and role.tags.bot_id else None,
+                        "integration_id": (
+                            str(role.tags.integration_id)
+                            if role.tags and role.tags.integration_id
+                            else None
+                        ),
+                        "premium_subscriber": (
+                            role.tags.is_premium_subscriber() if role.tags else False
+                        ),
+                    }
                     if role.tags
-                    else False,
-                }
-                if role.tags
-                else None,
+                    else None
+                ),
             }
             roles.append(role_info)
 
@@ -157,9 +155,7 @@ async def get_guild_emojis(
         guild_id = discord_context.guild.id
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None

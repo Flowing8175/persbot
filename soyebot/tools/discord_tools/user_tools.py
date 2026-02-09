@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import discord
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +28,10 @@ async def get_user_info(
         user_id = discord_context.author.id
 
     if user_id is None:
-        return ToolResult(
-            success=False, error="User ID must be provided or available from context"
-        )
+        return ToolResult(success=False, error="User ID must be provided or available from context")
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     try:
         # Get bot client from message state
@@ -95,9 +91,7 @@ async def get_member_info(
         guild_id = discord_context.guild.id
 
     if user_id is None:
-        return ToolResult(
-            success=False, error="User ID must be provided or available from context"
-        )
+        return ToolResult(success=False, error="User ID must be provided or available from context")
 
     if guild_id is None:
         return ToolResult(
@@ -105,9 +99,7 @@ async def get_member_info(
         )
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -134,14 +126,10 @@ async def get_member_info(
             "display_name": member.display_name,
             "bot": member.bot,
             "joined_at": member.joined_at.isoformat() if member.joined_at else None,
-            "premium_since": member.premium_since.isoformat()
-            if member.premium_since
-            else None,
+            "premium_since": member.premium_since.isoformat() if member.premium_since else None,
             "pending": member.pending,
             "avatar_url": member.avatar.url if member.avatar else None,
-            "guild_avatar_url": member.guild_avatar.url
-            if member.guild_avatar
-            else None,
+            "guild_avatar_url": member.guild_avatar.url if member.guild_avatar else None,
             "is_owner": guild.owner_id == member.id,
         }
 
@@ -176,9 +164,7 @@ async def get_member_roles(
         guild_id = discord_context.guild.id
 
     if user_id is None:
-        return ToolResult(
-            success=False, error="User ID must be provided or available from context"
-        )
+        return ToolResult(success=False, error="User ID must be provided or available from context")
 
     if guild_id is None:
         return ToolResult(
@@ -186,9 +172,7 @@ async def get_member_roles(
         )
 
     if not discord_context or not discord_context.guild:
-        return ToolResult(
-            success=False, error="Discord context not available or not in a guild"
-        )
+        return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     try:
         guild = discord_context.guild if discord_context.guild.id == guild_id else None

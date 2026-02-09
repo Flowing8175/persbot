@@ -5,11 +5,10 @@ import hashlib
 import logging
 import time
 
-from openai import OpenAI
-from openai import AuthenticationError, RateLimitError, APIStatusError
+from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
 from soyebot.config import load_config
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +85,8 @@ async def generate_image(
         )
 
         # Call OpenAI client to generate image via OpenRouter
-        api_response = client.chat.completions.create(
+        api_response = await asyncio.to_thread(
+            client.chat.completions.create,
             model=config.openrouter_image_model,
             messages=[{"role": "user", "content": enhanced_prompt}],
             modalities=["image"],
@@ -106,11 +106,7 @@ async def generate_image(
             )
 
         message = api_response.choices[0].message
-        if (
-            not hasattr(message, "images")
-            or not message.images
-            or len(message.images) == 0
-        ):
+        if not hasattr(message, "images") or not message.images or len(message.images) == 0:
             logger.error(
                 "No images in response message (prompt_hash=%s, length=%d)",
                 prompt_hash,

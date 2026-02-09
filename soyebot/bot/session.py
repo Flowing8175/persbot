@@ -1,16 +1,16 @@
 """Chat session management for SoyeBot."""
 
-import logging
 import asyncio
+import logging
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Tuple, Dict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional, Tuple
 
 from soyebot.config import AppConfig
+from soyebot.prompts import BOT_PERSONA_PROMPT
 from soyebot.services.llm_service import LLMService
 from soyebot.services.model_usage_service import ModelUsageService
-from soyebot.prompts import BOT_PERSONA_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +63,8 @@ class SessionManager:
         self.llm_service = llm_service
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
-        self.channel_prompts: Dict[
-            int, str
-        ] = {}  # channel_id -> prompt_content override
-        self.channel_model_preferences: Dict[
-            int, str
-        ] = {}  # channel_id -> model_alias override
+        self.channel_prompts: Dict[int, str] = {}  # channel_id -> prompt_content override
+        self.channel_model_preferences: Dict[int, str] = {}  # channel_id -> model_alias override
 
         # Start periodic session cleanup task
         if config.session_inactive_minutes > 0:
@@ -131,9 +127,7 @@ class SessionManager:
         # on the next interaction.
         if session_key in self.session_contexts:
             self.session_contexts[session_key].model_alias = model_alias
-            logger.info(
-                f"Updated session context {session_key} preference to {model_alias}"
-            )
+            logger.info(f"Updated session context {session_key} preference to {model_alias}")
 
     async def get_or_create(
         self,
@@ -193,7 +187,9 @@ class SessionManager:
         config_model = self.config.assistant_model_name
         for alias, definition in self.llm_service.model_usage_service.MODEL_DEFINITIONS.items():
             if definition.api_model_name == config_model:
-                logger.debug(f"Derived default model alias '{alias}' from config model '{config_model}'")
+                logger.debug(
+                    f"Derived default model alias '{alias}' from config model '{config_model}'"
+                )
                 return alias
 
         # Fallback to class default if no match found
@@ -246,9 +242,7 @@ class SessionManager:
         )
 
         system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
-        chat = self.llm_service.create_chat_session_for_alias(
-            model_alias, system_prompt
-        )
+        chat = self.llm_service.create_chat_session_for_alias(model_alias, system_prompt)
         chat.model_alias = model_alias
 
         self.sessions[session_key] = ChatSession(
@@ -273,9 +267,7 @@ class SessionManager:
 
         return chat, session_key
 
-    def set_channel_prompt(
-        self, channel_id: int, prompt_content: Optional[str]
-    ) -> None:
+    def set_channel_prompt(self, channel_id: int, prompt_content: Optional[str]) -> None:
         """Set a custom system prompt for a specific channel."""
         if prompt_content:
             self.channel_prompts[channel_id] = prompt_content
@@ -350,9 +342,7 @@ class SessionManager:
             if not indices_to_remove:
                 return []
 
-            new_history, removed = self._split_history_by_indices(
-                history, indices_to_remove
-            )
+            new_history, removed = self._split_history_by_indices(history, indices_to_remove)
             session.chat.history = new_history
 
             logger.info(

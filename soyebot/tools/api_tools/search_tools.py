@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from ddgs import DDGS
 from ddgs.exceptions import RatelimitException
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +51,13 @@ async def web_search(
                     "count": len(results[:num_results]),
                 },
             )
-    except RatelimitException as e:
-        logger.warning("DuckDuckGo rate limit hit for query '%s': %s", query, e)
+    except RatelimitException:
         return ToolResult(
             success=False,
             error="Rate limit exceeded. DuckDuckGo search is temporarily unavailable due to too many requests. Please try again in a few minutes.",
         )
-    except Exception as e:
-        logger.error("DuckDuckGo search failed for query '%s': %s", query, e)
+    except Exception:
+        pass
 
     # Fallback: Return a message about search limitations
     return ToolResult(

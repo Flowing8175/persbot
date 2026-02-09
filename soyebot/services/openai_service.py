@@ -1,11 +1,11 @@
 """OpenAI API service for SoyeBot."""
 
+import base64
 import json
 import logging
-import base64
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Optional, Tuple, Union, List, Dict
+from typing import Any, Deque, Dict, List, Optional, Tuple, Union
 
 import discord
 from openai import OpenAI, RateLimitError
@@ -13,14 +13,14 @@ from openai import OpenAI, RateLimitError
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
 from soyebot.services.prompt_service import PromptService
-from soyebot.utils import get_mime_type
 from soyebot.tools.adapters.openai_adapter import OpenAIToolAdapter
+from soyebot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
 
 
-class BaseChatSession:
-    """Base class for all LLM chat sessions with common functionality."""
+class BaseOpenAISession:
+    """Base class for OpenAI chat sessions."""
 
     def __init__(
         self,
@@ -103,91 +103,7 @@ class BaseChatSession:
         }
 
 
-class BaseOpenAISession:
-    """Base class for OpenAI chat sessions."""
-
-    def __init__(
-        self,
-        client: OpenAI,
-        model_name: str,
-        system_instruction: str,
-        temperature: float,
-        top_p: float,
-        max_messages: int,
-        service_tier: str,
-        text_extractor,
-    ):
-        self._client = client
-        self._model_name = model_name
-        self._system_instruction = system_instruction
-        self._temperature = temperature
-        self._top_p = top_p
-        self._max_messages = max_messages
-        self._service_tier = service_tier
-        self._text_extractor = text_extractor
-        self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
-
-    @property
-    def history(self) -> list[ChatMessage]:
-        """Get list of chat messages in history."""
-        return list(self._history)
-
-    @history.setter
-    def history(self, new_history: list[ChatMessage]) -> None:
-        """Replace the history with a new list."""
-        self._history.clear()
-        self._history.extend(new_history)
-
-    def _append_history(
-        self,
-        role: str,
-        content: str,
-        author_id: Optional[int] = None,
-        author_name: Optional[str] = None,
-        message_ids: list[str] = None,
-    ) -> None:
-        """Append a message to history if content is not empty."""
-        if not content:
-            return
-        self._history.append(
-            ChatMessage(
-                role=role,
-                content=content,
-                author_id=author_id,
-                author_name=author_name,
-                message_ids=message_ids or [],
-            )
-        )
-
-    def _create_user_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-    ) -> ChatMessage:
-        """Create a ChatMessage for user input."""
-        return ChatMessage(
-            role="user",
-            content=user_message,
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids or [],
-            images=images or [],
-        )
-
-    def _encode_image_to_url(self, img_bytes: bytes) -> dict:
-        """Convert image bytes to OpenAI image_url format."""
-        b64_str = base64.b64encode(img_bytes).decode("utf-8")
-        mime_type = get_mime_type(img_bytes)
-        return {
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
-        }
-
-
-class ResponseChatSession(BaseChatSession):
+class ResponseChatSession(BaseOpenAISession):
     """Response API-backed chat session with a bounded context window."""
 
     def _build_input_payload(self) -> list:
@@ -250,9 +166,7 @@ class ResponseChatSession(BaseChatSession):
             )
 
         # Append user message to payload
-        current_payload.append(
-            {"type": "message", "role": "user", "content": content_list}
-        )
+        current_payload.append({"type": "message", "role": "user", "content": content_list})
 
         api_kwargs = {
             "model": self._model_name,
@@ -273,7 +187,7 @@ class ResponseChatSession(BaseChatSession):
         return user_msg, model_msg, response
 
 
-class ChatCompletionSession(BaseChatSession):
+class ChatCompletionSession(BaseOpenAISession):
     """Chat Completion API-backed chat session for fine-tuned models."""
 
     def send_message(
@@ -333,9 +247,7 @@ class ChatCompletionSession(BaseChatSession):
                 api_history.append({"role": msg.role, "content": msg.content})
         return api_history
 
-    def _build_user_content(
-        self, user_message: str, images: Optional[list[bytes]]
-    ) -> dict:
+    def _build_user_content(self, user_message: str, images: Optional[list[bytes]]) -> dict:
         """Build user message content for API."""
         if images:
             content_list = []
@@ -378,20 +290,24 @@ class ChatCompletionSession(BaseChatSession):
             tool_calls_data = []
             if assistant_msg.tool_calls:
                 for tc in assistant_msg.tool_calls:
-                    tool_calls_data.append({
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    })
+                    tool_calls_data.append(
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                    )
 
-            messages.append({
-                "role": "assistant",
-                "content": assistant_msg.content,
-                "tool_calls": tool_calls_data,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_msg.content,
+                    "tool_calls": tool_calls_data,
+                }
+            )
 
             # Add tool result messages
             messages.extend(OpenAIToolAdapter.create_tool_messages(results))
@@ -503,9 +419,7 @@ class OpenAIService(BaseLLMService):
             api_key=config.openai_api_key,
             timeout=config.api_request_timeout,
         )
-        self._assistant_cache: dict[
-            int, Union[_ResponseModel, _ChatCompletionModel]
-        ] = {}
+        self._assistant_cache: dict[int, Union[_ResponseModel, _ChatCompletionModel]] = {}
         self._max_messages = 7
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
@@ -553,9 +467,7 @@ class OpenAIService(BaseLLMService):
         return self._assistant_cache[key]
 
     def create_assistant_model(self, system_instruction: str):
-        return self._get_or_create_assistant(
-            self._assistant_model_name, system_instruction
-        )
+        return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def reload_parameters(self) -> None:
         """Reload parameters by clearing the assistant cache."""
@@ -598,9 +510,7 @@ class OpenAIService(BaseLLMService):
                     truncated = display_content[:100].replace("\n", " ")
                     formatted.append(f"{role} (author:{author_label}) {truncated}")
                 if formatted:
-                    logger.debug(
-                        "[RAW REQUEST] Recent history:\n%s", "\n".join(formatted)
-                    )
+                    logger.debug("[RAW REQUEST] Recent history:\n%s", "\n".join(formatted))
         except Exception:
             logger.exception("[RAW REQUEST] Error logging raw request")
 
@@ -783,9 +693,7 @@ class OpenAIService(BaseLLMService):
         converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None
 
         result = await self.execute_with_retry(
-            lambda: chat_session.send_tool_results(
-                tool_rounds, tools=converted_tools
-            ),
+            lambda: chat_session.send_tool_results(tool_rounds, tools=converted_tools),
             "tool 결과 전송",
             return_full_response=True,
             discord_message=discord_message,

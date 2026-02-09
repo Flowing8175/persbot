@@ -48,25 +48,27 @@ class GeminiToolAdapter:
         function_calls = []
 
         try:
-            if hasattr(response, 'candidates') and response.candidates:
+            if hasattr(response, "candidates") and response.candidates:
                 for candidate in response.candidates:
-                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
                         for part in candidate.content.parts:
                             # Check for function_call attribute
-                            if hasattr(part, 'function_call') and part.function_call:
+                            if hasattr(part, "function_call") and part.function_call:
                                 fc = part.function_call
                                 call_data = {
-                                    'name': fc.name,
-                                    'parameters': dict(fc.args) if hasattr(fc, 'args') else {},
+                                    "name": fc.name,
+                                    "parameters": dict(fc.args) if hasattr(fc, "args") else {},
                                 }
                                 function_calls.append(call_data)
                             # Also check for functionResponses (results from previous calls)
-                            elif hasattr(part, 'function_response') and part.function_response:
+                            elif hasattr(part, "function_response") and part.function_response:
                                 # This is a response, not a call - skip
                                 pass
 
         except Exception as e:
-            logger.error("Error extracting function calls from Gemini response: %s", e, exc_info=True)
+            logger.error(
+                "Error extracting function calls from Gemini response: %s", e, exc_info=True
+            )
 
         return function_calls
 
@@ -91,8 +93,7 @@ class GeminiToolAdapter:
 
         return genai_types.Part(
             function_response=genai_types.FunctionResponse(
-                name=tool_name,
-                response={"result": result_str}
+                name=tool_name, response={"result": result_str}
             )
         )
 
@@ -109,9 +110,9 @@ class GeminiToolAdapter:
         parts = []
 
         for result_item in results:
-            tool_name = result_item.get('name')
-            result_data = result_item.get('result')
-            error = result_item.get('error')
+            tool_name = result_item.get("name")
+            result_data = result_item.get("result")
+            error = result_item.get("error")
 
             if error:
                 response_data = {"error": error}
@@ -121,8 +122,7 @@ class GeminiToolAdapter:
             parts.append(
                 genai_types.Part(
                     function_response=genai_types.FunctionResponse(
-                        name=tool_name,
-                        response=response_data
+                        name=tool_name, response=response_data
                     )
                 )
             )

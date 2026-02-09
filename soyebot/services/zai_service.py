@@ -11,17 +11,17 @@ import base64
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Optional, Tuple, Union, List, Dict
+from typing import Any, Deque, Dict, List, Optional, Tuple, Union
 
 import discord
 from openai import OpenAI, RateLimitError
 
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
-from soyebot.services.prompt_service import PromptService
 from soyebot.services.openai_service import BaseChatSession
-from soyebot.utils import get_mime_type
+from soyebot.services.prompt_service import PromptService
 from soyebot.tools.adapters.zai_adapter import ZAIToolAdapter
+from soyebot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
 
@@ -130,10 +130,12 @@ class ZAIChatSession(BaseChatSession):
                 for img_bytes in msg.images:
                     mime_type = get_mime_type(img_bytes)
                     b64_str = base64.b64encode(img_bytes).decode("utf-8")
-                    content_blocks.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
-                    })
+                    content_blocks.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
+                        }
+                    )
                 messages.append({"role": msg.role, "content": content_blocks})
             else:
                 messages.append({"role": msg.role, "content": msg.content})
@@ -148,20 +150,24 @@ class ZAIChatSession(BaseChatSession):
             tool_calls_data = []
             if assistant_msg.tool_calls:
                 for tc in assistant_msg.tool_calls:
-                    tool_calls_data.append({
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    })
+                    tool_calls_data.append(
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                    )
 
-            messages.append({
-                "role": "assistant",
-                "content": assistant_msg.content,
-                "tool_calls": tool_calls_data,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_msg.content,
+                    "tool_calls": tool_calls_data,
+                }
+            )
 
             # Add tool result messages
             messages.extend(ZAIToolAdapter.create_tool_messages(results))
@@ -239,17 +245,13 @@ class ZAIService(BaseLLMService):
 
     def create_assistant_model(self, system_instruction: str, use_cache: bool = True):
         """Create a chat session with the given system instruction."""
-        return self._get_or_create_assistant(
-            self._assistant_model_name, system_instruction
-        )
+        return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def reload_parameters(self) -> None:
         """Reload parameters by clearing assistant cache."""
         self._assistant_cache.clear()
         api_type = "Coding Plan" if self.config.zai_coding_plan else "Standard"
-        logger.info(
-            "Z.AI %s API assistant cache cleared to apply new parameters.", api_type
-        )
+        logger.info("Z.AI %s API assistant cache cleared to apply new parameters.", api_type)
 
     def get_user_role_name(self) -> str:
         """Return role name for user messages."""
@@ -283,9 +285,7 @@ class ZAIService(BaseLLMService):
             return
 
         try:
-            logger.debug(
-                "[RAW ZAI REQUEST] User message preview: %r", user_message[:200]
-            )
+            logger.debug("[RAW ZAI REQUEST] User message preview: %r", user_message[:200])
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
                 formatted = []
@@ -316,9 +316,7 @@ class ZAIService(BaseLLMService):
         try:
             logger.debug("[RAW ZAI RESPONSE %s] %s", attempt, response_obj)
         except Exception:
-            logger.exception(
-                "[RAW ZAI RESPONSE %s] Error logging raw response", attempt
-            )
+            logger.exception("[RAW ZAI RESPONSE %s] Error logging raw response", attempt)
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text content from response object."""
@@ -455,9 +453,7 @@ class ZAIService(BaseLLMService):
         converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None
 
         result = await self.execute_with_retry(
-            lambda: chat_session.send_tool_results(
-                tool_rounds, tools=converted_tools
-            ),
+            lambda: chat_session.send_tool_results(tool_rounds, tools=converted_tools),
             "tool 결과 전송",
             return_full_response=True,
             discord_message=discord_message,

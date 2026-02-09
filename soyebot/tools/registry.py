@@ -1,9 +1,9 @@
 """Tool registry for managing available tools."""
 
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
-from soyebot.tools.base import ToolDefinition, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +89,7 @@ class ToolRegistry:
         Returns:
             Dictionary mapping tool names to their enabled definitions.
         """
-        return {
-            name: tool
-            for name, tool in self._tools.items()
-            if tool.enabled
-        }
+        return {name: tool for name, tool in self._tools.items() if tool.enabled}
 
     def get_enabled_by_category(self, category: ToolCategory) -> List[ToolDefinition]:
         """Get all enabled tools in a specific category.
@@ -104,10 +100,7 @@ class ToolRegistry:
         Returns:
             List of enabled tool definitions in the category.
         """
-        return [
-            tool for tool in self.get_by_category(category)
-            if tool.enabled
-        ]
+        return [tool for tool in self.get_by_category(category) if tool.enabled]
 
     def set_tool_enabled(self, tool_name: str, enabled: bool) -> bool:
         """Enable or disable a tool.

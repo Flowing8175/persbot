@@ -1,17 +1,18 @@
 """Comprehensive tests for LLMService."""
 
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+
+import discord
 import pytest
 import pytest_asyncio
-from unittest.mock import Mock, AsyncMock, MagicMock, patch, call
-import discord
 
-from soyebot.services.llm_service import LLMService
 from soyebot.services.gemini_service import GeminiService
+from soyebot.services.llm_service import LLMService
+from soyebot.services.model_usage_service import ModelUsageService
 from soyebot.services.openai_service import OpenAIService
-from soyebot.services.zai_service import ZAIService
 from soyebot.services.prompt_service import PromptService
 from soyebot.services.usage_service import ImageUsageService
-from soyebot.services.model_usage_service import ModelUsageService
+from soyebot.services.zai_service import ZAIService
 
 
 class TestLLMServiceInit:

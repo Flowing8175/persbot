@@ -1,11 +1,12 @@
 """Comprehensive tests for tool passing through different service layers."""
 
+from unittest.mock import AsyncMock, Mock, call, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch, call
 
 from soyebot.services.llm_service import LLMService
 from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter
 
 
 # Helper to create test tools
@@ -113,9 +114,7 @@ class TestToolsPassingToAssistantModel:
             ) as mock_gen:
                 llm_service = LLMService(Mock())
 
-                await llm_service.generate_chat_response(
-                    Mock(), "User message", None
-                )
+                await llm_service.generate_chat_response(Mock(), "User message", None)
 
                 # Verify tools were passed as None
                 assert True  # Test structure validated
@@ -389,9 +388,7 @@ class TestToolsInGenerateChatResponse:
             ) as mock_gen:
                 llm_service = LLMService(Mock())
 
-                await llm_service.generate_chat_response(
-                    None, "User message", None
-                )
+                await llm_service.generate_chat_response(None, "User message", None)
 
                 # Verify tools were passed as None
                 assert mock_gen.called
@@ -479,7 +476,9 @@ class TestToolsFlowFromLLMServiceToGemini:
             test_tools = [create_test_tool("search_tool", "Search tool")]
 
             # Mock the entire flow
-            with patch.object(llm_service, "get_backend_for_model", return_value=llm_service.assistant_backend):
+            with patch.object(
+                llm_service, "get_backend_for_model", return_value=llm_service.assistant_backend
+            ):
                 with patch.object(
                     llm_service.assistant_backend,
                     "generate_chat_response",

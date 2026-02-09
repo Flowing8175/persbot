@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 from bs4 import BeautifulSoup
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +74,12 @@ async def _inspect_web_page(url: str) -> ToolResult:
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as response:
+            async with session.get(
+                url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)
+            ) as response:
                 if response.status != 200:
                     return ToolResult(
-                        success=False,
-                        error=f"HTTP {response.status}: Failed to fetch page content"
+                        success=False, error=f"HTTP {response.status}: Failed to fetch page content"
                     )
 
                 html = await response.text()
@@ -98,16 +99,18 @@ async def _inspect_web_page(url: str) -> ToolResult:
         # Get main content
         # Try to find main content areas
         main_content = (
-            soup.find("main") or
-            soup.find("article") or
-            soup.find("div", {"class": re.compile(r"content|article|post", re.I)}) or
-            soup.body
+            soup.find("main")
+            or soup.find("article")
+            or soup.find("div", {"class": re.compile(r"content|article|post", re.I)})
+            or soup.body
         )
 
         if main_content:
             # Extract text paragraphs
             paragraphs = main_content.find_all("p")
-            text_content = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
+            text_content = " ".join(
+                [p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)]
+            )
         else:
             text_content = soup.get_text(separator=" ", strip=True)
 
@@ -133,7 +136,7 @@ async def _inspect_web_page(url: str) -> ToolResult:
                 "meta_description": meta_description,
                 "content_length": len(text_content),
                 "type": "web_page",
-            }
+            },
         )
 
     except aiohttp.ClientError as e:
@@ -155,7 +158,9 @@ async def _inspect_youtube_content(url: str, video_id: str) -> ToolResult:
         ToolResult with YouTube video information.
     """
     # Try to get video info via YouTube's oEmbed endpoint (no API key needed)
-    oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+    oembed_url = (
+        f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+    )
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -171,7 +176,7 @@ async def _inspect_youtube_content(url: str, video_id: str) -> ToolResult:
                             "description": f"Video by {data.get('author_name', 'Unknown')}",
                             "type": "youtube_video",
                             "video_id": video_id,
-                        }
+                        },
                     )
 
     except Exception as e:
@@ -186,7 +191,7 @@ async def _inspect_youtube_content(url: str, video_id: str) -> ToolResult:
             "description": "Could not fetch video details. This appears to be a YouTube video.",
             "type": "youtube_video",
             "video_id": video_id,
-        }
+        },
     )
 
 
@@ -218,18 +223,20 @@ def register_web_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="inspect_external_content",
-        description="Inspect and analyze content from an external URL. Extracts the page title and main text content, summarizing for AI processing. Supports web pages and YouTube videos.",
-        category=ToolCategory.PERSONA_WEB,
-        parameters=[
-            ToolParameter(
-                name="url",
-                type="string",
-                description="The URL to inspect and analyze (must start with http:// or https://).",
-                required=True,
-            ),
-        ],
-        handler=inspect_external_content,
-        rate_limit=15,  # 15 seconds between requests to avoid rate limiting
-    ))
+    registry.register(
+        ToolDefinition(
+            name="inspect_external_content",
+            description="Inspect and analyze content from an external URL. Extracts the page title and main text content, summarizing for AI processing. Supports web pages and YouTube videos.",
+            category=ToolCategory.PERSONA_WEB,
+            parameters=[
+                ToolParameter(
+                    name="url",
+                    type="string",
+                    description="The URL to inspect and analyze (must start with http:// or https://).",
+                    required=True,
+                ),
+            ],
+            handler=inspect_external_content,
+            rate_limit=15,  # 15 seconds between requests to avoid rate limiting
+        )
+    )

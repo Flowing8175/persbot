@@ -43,11 +43,11 @@ class ModelSelectorView(discord.ui.View):
                     label=alias,
                     description=desc,
                     default=(alias == current_model),
-                    emoji="🤖"
-                    if definition.provider == "gemini"
-                    else "⚡"
-                    if definition.provider == "zai"
-                    else "🧠",
+                    emoji=(
+                        "🤖"
+                        if definition.provider == "gemini"
+                        else "⚡" if definition.provider == "zai" else "🧠"
+                    ),
                 )
             )
 
@@ -122,14 +122,10 @@ class ModelSelectorCog(commands.Cog):
             if ctx_alias:
                 current_alias = ctx_alias
         elif ctx.channel.id in self.session_manager.channel_model_preferences:
-            current_alias = self.session_manager.channel_model_preferences[
-                ctx.channel.id
-            ]
+            current_alias = self.session_manager.channel_model_preferences[ctx.channel.id]
 
         # Pass ctx.message as original_message
-        view = ModelSelectorView(
-            self.session_manager, current_alias, original_message=ctx.message
-        )
+        view = ModelSelectorView(self.session_manager, current_alias, original_message=ctx.message)
         await send_discord_message(
             ctx,
             f"현재 모델: **{current_alias}**\n변경할 모델을 선택해 주세요.",

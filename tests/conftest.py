@@ -1,8 +1,9 @@
 """Pytest configuration and shared fixtures for SoyeBot testing."""
 
 # Import Mock first before using it
-from unittest.mock import Mock, Mock as MockClass
 import sys
+from unittest.mock import Mock
+from unittest.mock import Mock as MockClass
 
 # Mock external dependencies before ANY imports - must be at top level
 # Create mock for google.genai.errors
@@ -29,16 +30,17 @@ mock_pil.Image.Resampling.LANCZOS = 1
 sys.modules["PIL"] = mock_pil
 sys.modules["PIL.Image"] = mock_pil.Image
 
+import asyncio
+import os
+import tempfile
+from collections import OrderedDict
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 import pytest_asyncio
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
-from collections import OrderedDict
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from dataclasses import dataclass
-import tempfile
-import asyncio
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 

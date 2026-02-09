@@ -1,9 +1,9 @@
+import datetime
 import json
 import logging
 import os
-import datetime
-from typing import Dict, Optional, Tuple, Any
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, Optional, Tuple
 
 import aiofiles
 
@@ -99,9 +99,7 @@ class ModelUsageService:
     def _check_daily_reset(self):
         """Reset usage if the date has changed (KST Midnight)."""
         # KST is UTC+9
-        now_kst = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
-            hours=9
-        )
+        now_kst = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)
         today_str = now_kst.strftime("%Y-%m-%d")
 
         if self.usage_data.get("date") != today_str:

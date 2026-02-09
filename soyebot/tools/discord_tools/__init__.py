@@ -5,8 +5,8 @@ making any modifications (read-only operations).
 """
 
 from soyebot.tools.discord_tools.channel_tools import register_channel_tools
-from soyebot.tools.discord_tools.user_tools import register_user_tools
 from soyebot.tools.discord_tools.guild_tools import register_guild_tools
+from soyebot.tools.discord_tools.user_tools import register_user_tools
 
 __all__ = [
     "register_channel_tools",

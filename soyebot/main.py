@@ -1,22 +1,23 @@
 """Main entry point for the SoyeBot Discord bot."""
 
-import discord
-from discord.ext import commands
 import asyncio
 import logging
-import sys
 import os
+import sys
+
+import discord
+from discord.ext import commands
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
+from bot.cogs.assistant import AssistantCog
+from bot.cogs.model_selector import ModelSelectorCog
+from bot.cogs.persona import PersonaCog
+from bot.cogs.summarizer import SummarizerCog
+from bot.session import SessionManager
 from config import load_config
 from services.llm_service import LLMService
-from bot.session import SessionManager
-from bot.cogs.summarizer import SummarizerCog
-from bot.cogs.assistant import AssistantCog
-from bot.cogs.persona import PersonaCog
-from bot.cogs.model_selector import ModelSelectorCog
 from services.prompt_service import PromptService
 from tools.manager import ToolManager
 
@@ -69,9 +70,7 @@ async def main(config):
     intents.guilds = True
     intents.message_content = True
 
-    bot = commands.Bot(
-        command_prefix=config.command_prefix, intents=intents, help_command=None
-    )
+    bot = commands.Bot(command_prefix=config.command_prefix, intents=intents, help_command=None)
 
     # Initialize services
     llm_service = LLMService(config)
@@ -87,22 +86,16 @@ async def main(config):
         )
 
         if config.auto_reply_channel_ids:
-            logger.info(
-                "channel registered to reply: %s", list(config.auto_reply_channel_ids)
-            )
+            logger.info("channel registered to reply: %s", list(config.auto_reply_channel_ids))
         else:
             logger.info("channel registered to reply: []")
 
         # Initialize cogs
         await bot.add_cog(SummarizerCog(bot, config, llm_service))
         await bot.add_cog(
-            AssistantCog(
-                bot, config, llm_service, session_manager, prompt_service, tool_manager
-            )
+            AssistantCog(bot, config, llm_service, session_manager, prompt_service, tool_manager)
         )
-        await bot.add_cog(
-            PersonaCog(bot, config, llm_service, session_manager, prompt_service)
-        )
+        await bot.add_cog(PersonaCog(bot, config, llm_service, session_manager, prompt_service))
         await bot.add_cog(ModelSelectorCog(bot, session_manager))
         if auto_channel_cog_cls:
             await bot.add_cog(

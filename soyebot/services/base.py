@@ -1,18 +1,18 @@
 """Base LLM Service for SoyeBot."""
 
 import asyncio
+import io
 import logging
 import time
-import io
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Union, List, Tuple, Dict
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
 from PIL import Image
 
 from soyebot.config import AppConfig
-from soyebot.utils import GENERIC_ERROR_MESSAGE, ERROR_API_TIMEOUT, ERROR_RATE_LIMIT
+from soyebot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChatMessage:
     """Represents a single message in the chat history."""
+
     role: str
     content: str
     author_id: Optional[int] = None
@@ -29,6 +30,7 @@ class ChatMessage:
     parts: Optional[list[dict[str, str]]] = None
     # For storing image data (bytes)
     images: List[bytes] = field(default_factory=list)
+
 
 class BaseLLMService(ABC):
     """Abstract base class for LLM services handling retries, logging, and common behavior."""
@@ -145,17 +147,19 @@ class BaseLLMService(ABC):
                     new_width = int(width * ratio)
                     new_height = int(height * ratio)
 
-                    logger.info(f"Downscaling image {filename} from {width}x{height} to {new_width}x{new_height}")
+                    logger.info(
+                        f"Downscaling image {filename} from {width}x{height} to {new_width}x{new_height}"
+                    )
 
                     img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
                 # Convert to JPEG (compatible and efficient)
                 output_buffer = io.BytesIO()
                 # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
 
-                img.save(output_buffer, format='JPEG', quality=85)
+                img.save(output_buffer, format="JPEG", quality=85)
                 return output_buffer.getvalue()
         except Exception as img_err:
             logger.error(f"Failed to process image {filename}: {img_err}")
@@ -169,7 +173,7 @@ class BaseLLMService(ABC):
             return images
 
         for attachment in message.attachments:
-            if attachment.content_type and attachment.content_type.startswith('image/'):
+            if attachment.content_type and attachment.content_type.startswith("image/"):
                 try:
                     image_data = await attachment.read()
 
@@ -184,13 +188,17 @@ class BaseLLMService(ABC):
 
         return images
 
-    async def _execute_model_call(self, model_call: Callable[[], Union[Any, Awaitable[Any]]]) -> Any:
+    async def _execute_model_call(
+        self, model_call: Callable[[], Union[Any, Awaitable[Any]]]
+    ) -> Any:
         """Execute a model call, handling both sync and async functions."""
         if asyncio.iscoroutinefunction(model_call):
             return await model_call()
         return await asyncio.to_thread(model_call)
 
-    async def _wait_with_countdown(self, delay: float, discord_message: Optional[discord.Message]) -> None:
+    async def _wait_with_countdown(
+        self, delay: float, discord_message: Optional[discord.Message]
+    ) -> None:
         """Wait for a specified delay with a countdown message in Discord."""
         if delay <= 0:
             return
@@ -206,18 +214,16 @@ class BaseLLMService(ABC):
                     mention_author=False,
                 )
             except discord.HTTPException:
-                 logger.warning("Failed to send rate limit message.")
+                logger.warning("Failed to send rate limit message.")
 
         while remaining > 0:
             if remaining % 10 == 0 or remaining <= 3:
-                countdown_message = (
-                    f"⏳ 소예봇 뇌 과부하! {remaining}초만 기다려 주세요."
-                )
+                countdown_message = f"⏳ 소예봇 뇌 과부하! {remaining}초만 기다려 주세요."
                 if sent_message:
                     try:
                         await sent_message.edit(content=countdown_message)
                     except discord.HTTPException:
-                         pass # Ignore edit errors
+                        pass  # Ignore edit errors
                 logger.info(countdown_message)
             await asyncio.sleep(1)
             remaining -= 1
@@ -258,7 +264,12 @@ class BaseLLMService(ABC):
 
             except asyncio.TimeoutError:
                 last_error = asyncio.TimeoutError()
-                logger.warning("%s API 타임아웃 (%s/%s)", self.__class__.__name__, attempt, self.config.api_max_retries)
+                logger.warning(
+                    "%s API 타임아웃 (%s/%s)",
+                    self.__class__.__name__,
+                    attempt,
+                    self.config.api_max_retries,
+                )
 
                 # Check for fallback on timeout? Usually timeout is temp, but maybe.
                 # For now just retry.
@@ -286,8 +297,7 @@ class BaseLLMService(ABC):
                             # Execute fallback once without retry loop for simplicity, or we could recurse
                             # Assuming fallback is "lighter" and less likely to fail or different quota
                             response = await asyncio.wait_for(
-                                self._execute_model_call(fallback_call),
-                                timeout=current_timeout
+                                self._execute_model_call(fallback_call), timeout=current_timeout
                             )
                             self._log_raw_response(response, attempt)
                             if return_full_response:
@@ -302,7 +312,10 @@ class BaseLLMService(ABC):
                     continue
 
                 if self._is_fatal_error(e):
-                    logger.warning("%s encountered a fatal error. Re-throwing to allow recovery.", self.__class__.__name__)
+                    logger.warning(
+                        "%s encountered a fatal error. Re-throwing to allow recovery.",
+                        self.__class__.__name__,
+                    )
                     raise e
 
                 if attempt >= self.config.api_max_retries:
@@ -310,7 +323,7 @@ class BaseLLMService(ABC):
 
                 # Exponential backoff
                 backoff = min(
-                    self.config.api_retry_backoff_base ** attempt,
+                    self.config.api_retry_backoff_base**attempt,
                     self.config.api_retry_backoff_max,
                 )
                 logger.info("에러 발생, %.1f초 후 재시도", backoff)
@@ -318,8 +331,8 @@ class BaseLLMService(ABC):
 
         msg_content = GENERIC_ERROR_MESSAGE
         if isinstance(last_error, asyncio.TimeoutError):
-             logger.error("❌ 에러: API 요청 시간 초과")
-             msg_content = ERROR_API_TIMEOUT
+            logger.error("❌ 에러: API 요청 시간 초과")
+            msg_content = ERROR_API_TIMEOUT
         else:
             logger.error(
                 "❌ 에러: 최대 재시도 횟수(%s)를 초과했습니다. (%s)",

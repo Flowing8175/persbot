@@ -1,29 +1,30 @@
 """Comprehensive tests for AppConfig configuration loading and validation."""
 
-import os
-import pytest
 import logging
-from unittest.mock import patch
+import os
 import sys
+from unittest.mock import patch
+
+import pytest
 
 from soyebot.config import (
-    AppConfig,
-    load_config,
-    _normalize_provider,
-    _validate_provider,
-    _first_nonempty_env,
-    _parse_float_env,
-    _parse_int_env,
-    _parse_thinking_budget,
-    _parse_auto_channel_ids,
-    _resolve_model_name,
-    _resolve_log_level,
     DEFAULT_GEMINI_ASSISTANT_MODEL,
     DEFAULT_GEMINI_SUMMARY_MODEL,
     DEFAULT_OPENAI_ASSISTANT_MODEL,
     DEFAULT_OPENAI_SUMMARY_MODEL,
     DEFAULT_ZAI_ASSISTANT_MODEL,
     DEFAULT_ZAI_SUMMARY_MODEL,
+    AppConfig,
+    _first_nonempty_env,
+    _normalize_provider,
+    _parse_auto_channel_ids,
+    _parse_float_env,
+    _parse_int_env,
+    _parse_thinking_budget,
+    _resolve_log_level,
+    _resolve_model_name,
+    _validate_provider,
+    load_config,
 )
 
 
@@ -204,9 +205,7 @@ class TestParseAutoChannelIds:
         """Test parsing with invalid IDs filters them out."""
         with patch.dict(os.environ, {"AUTO_REPLY_CHANNEL_IDS": "123,invalid,456"}):
             assert _parse_auto_channel_ids() == (123, 456)
-            assert any(
-                "AUTO_REPLY_CHANNEL_IDS" in record.message for record in caplog.records
-            )
+            assert any("AUTO_REPLY_CHANNEL_IDS" in record.message for record in caplog.records)
 
     def test_parse_auto_channel_ids_missing(self):
         """Test returns empty tuple when variable missing."""
@@ -220,67 +219,42 @@ class TestResolveModelName:
     def test_resolve_model_name_gemini_assistant(self):
         """Test resolving Gemini assistant model name."""
         with patch.dict(os.environ, {}, clear=True):
-            assert (
-                _resolve_model_name("gemini", role="assistant")
-                == DEFAULT_GEMINI_ASSISTANT_MODEL
-            )
+            assert _resolve_model_name("gemini", role="assistant") == DEFAULT_GEMINI_ASSISTANT_MODEL
 
     def test_resolve_model_name_gemini_summary(self):
         """Test resolving Gemini summary model name."""
         with patch.dict(os.environ, {}, clear=True):
-            assert (
-                _resolve_model_name("gemini", role="summary")
-                == DEFAULT_GEMINI_SUMMARY_MODEL
-            )
+            assert _resolve_model_name("gemini", role="summary") == DEFAULT_GEMINI_SUMMARY_MODEL
 
     def test_resolve_model_name_openai_assistant(self):
         """Test resolving OpenAI assistant model name."""
         with patch.dict(os.environ, {}, clear=True):
-            assert (
-                _resolve_model_name("openai", role="assistant")
-                == DEFAULT_OPENAI_ASSISTANT_MODEL
-            )
+            assert _resolve_model_name("openai", role="assistant") == DEFAULT_OPENAI_ASSISTANT_MODEL
 
     def test_resolve_model_name_openai_summary(self):
         """Test resolving OpenAI summary model name."""
         with patch.dict(os.environ, {}, clear=True):
-            assert (
-                _resolve_model_name("openai", role="summary")
-                == DEFAULT_OPENAI_SUMMARY_MODEL
-            )
+            assert _resolve_model_name("openai", role="summary") == DEFAULT_OPENAI_SUMMARY_MODEL
 
     def test_resolve_model_name_zai_assistant(self):
         """Test resolving ZAI assistant model name."""
         with patch.dict(os.environ, {}, clear=True):
-            assert (
-                _resolve_model_name("zai", role="assistant")
-                == DEFAULT_ZAI_ASSISTANT_MODEL
-            )
+            assert _resolve_model_name("zai", role="assistant") == DEFAULT_ZAI_ASSISTANT_MODEL
 
     def test_resolve_model_name_zai_summary(self):
         """Test resolving ZAI summary model name."""
         with patch.dict(os.environ, {}, clear=True):
-            assert (
-                _resolve_model_name("zai", role="summary") == DEFAULT_ZAI_SUMMARY_MODEL
-            )
+            assert _resolve_model_name("zai", role="summary") == DEFAULT_ZAI_SUMMARY_MODEL
 
     def test_resolve_model_name_gemini_override(self):
         """Test overriding Gemini model name with env var."""
-        with patch.dict(
-            os.environ, {"GEMINI_ASSISTANT_MODEL_NAME": "custom-gemini-model"}
-        ):
-            assert (
-                _resolve_model_name("gemini", role="assistant") == "custom-gemini-model"
-            )
+        with patch.dict(os.environ, {"GEMINI_ASSISTANT_MODEL_NAME": "custom-gemini-model"}):
+            assert _resolve_model_name("gemini", role="assistant") == "custom-gemini-model"
 
     def test_resolve_model_name_openai_override(self):
         """Test overriding OpenAI model name with env var."""
-        with patch.dict(
-            os.environ, {"OPENAI_SUMMARY_MODEL_NAME": "custom-openai-model"}
-        ):
-            assert (
-                _resolve_model_name("openai", role="summary") == "custom-openai-model"
-            )
+        with patch.dict(os.environ, {"OPENAI_SUMMARY_MODEL_NAME": "custom-openai-model"}):
+            assert _resolve_model_name("openai", role="summary") == "custom-openai-model"
 
     def test_resolve_model_name_zai_override(self):
         """Test overriding ZAI model name with env var."""
@@ -402,9 +376,7 @@ class TestLoadConfigMissingRequired:
             with patch.object(sys, "exit") as mock_exit:
                 load_config()
                 mock_exit.assert_called_once_with(1)
-                assert any(
-                    "DISCORD_TOKEN" in record.message for record in caplog.records
-                )
+                assert any("DISCORD_TOKEN" in record.message for record in caplog.records)
 
     def test_load_config_missing_gemini_key(self, caplog):
         """Test loading config without GEMINI_API_KEY when using Gemini exits."""
@@ -415,9 +387,7 @@ class TestLoadConfigMissingRequired:
             with patch.object(sys, "exit") as mock_exit:
                 load_config()
                 mock_exit.assert_called_once_with(1)
-                assert any(
-                    "GEMINI_API_KEY" in record.message for record in caplog.records
-                )
+                assert any("GEMINI_API_KEY" in record.message for record in caplog.records)
 
     def test_load_config_missing_openai_key(self, caplog):
         """Test loading config without OPENAI_API_KEY when using OpenAI exits."""
@@ -430,9 +400,7 @@ class TestLoadConfigMissingRequired:
             with patch.object(sys, "exit") as mock_exit:
                 load_config()
                 mock_exit.assert_called_once_with(1)
-                assert any(
-                    "OPENAI_API_KEY" in record.message for record in caplog.records
-                )
+                assert any("OPENAI_API_KEY" in record.message for record in caplog.records)
 
     def test_load_config_missing_zai_key(self, caplog):
         """Test loading config without ZAI_API_KEY when using ZAI exits."""

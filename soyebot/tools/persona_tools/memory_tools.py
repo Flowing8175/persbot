@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +72,7 @@ async def search_episodic_memory(
             )
 
         # Simple keyword-based matching (prototype - will be replaced with vector search)
-        relevant_memories = _filter_memories_by_keywords(
-            memories, user_id, query, limit
-        )
+        relevant_memories = _filter_memories_by_keywords(memories, user_id, query, limit)
 
         if not relevant_memories:
             return ToolResult(

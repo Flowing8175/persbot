@@ -1,24 +1,25 @@
 """Tests for Discord read-only tools."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from soyebot.tools.discord_tools.channel_tools import (
-    get_channel_info,
     get_channel_history,
+    get_channel_info,
     get_message,
     list_channels,
 )
-from soyebot.tools.discord_tools.user_tools import (
-    get_user_info,
-    get_member_info,
-    get_member_roles,
-)
 from soyebot.tools.discord_tools.guild_tools import (
+    get_guild_emojis,
     get_guild_info,
     get_guild_roles,
-    get_guild_emojis,
+)
+from soyebot.tools.discord_tools.user_tools import (
+    get_member_info,
+    get_member_roles,
+    get_user_info,
 )
 
 
@@ -168,9 +169,7 @@ class TestChannelTools:
 
         mock_guild.channels = [text_channel, voice_channel]
 
-        result = await list_channels(
-            mock_guild.id, discord_context=mock_discord_context
-        )
+        result = await list_channels(mock_guild.id, discord_context=mock_discord_context)
 
         assert result.success is True
         data = result.data
@@ -224,10 +223,7 @@ class TestChannelTools:
 
         # Should handle gracefully with clear error message
         assert result.success is False
-        assert (
-            "not available" in result.error.lower()
-            or "not in a guild" in result.error.lower()
-        )
+        assert "not available" in result.error.lower() or "not in a guild" in result.error.lower()
 
 
 class TestUserTools:

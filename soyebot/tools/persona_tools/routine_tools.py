@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,8 @@ async def get_routine_schedule(
         if day:
             # Filter by specific day
             day_schedule = [
-                entry for entry in schedule.get("schedule", [])
+                entry
+                for entry in schedule.get("schedule", [])
                 if day.lower() in [d.lower() for d in entry.get("days", ["Everyday"])]
             ]
             return ToolResult(
@@ -137,7 +138,7 @@ async def get_routine_schedule(
                 data={
                     "day": day,
                     "schedule": day_schedule,
-                }
+                },
             )
         else:
             # Return full schedule
@@ -147,7 +148,7 @@ async def get_routine_schedule(
                     "persona_name": schedule.get("persona_name", "Unknown"),
                     "schedule": schedule.get("schedule", []),
                     "notes": schedule.get("notes", ""),
-                }
+                },
             )
 
     except Exception as e:
@@ -283,26 +284,38 @@ def register_routine_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="check_virtual_routine_status",
-        description="Check the persona's current virtual routine status based on time of day. Returns availability (Available/Busy/Sleeping), current activity, and recommended response style.",
-        category=ToolCategory.PERSONA_ROUTINE,
-        parameters=[],
-        handler=check_virtual_routine_status,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="check_virtual_routine_status",
+            description="Check the persona's current virtual routine status based on time of day. Returns availability (Available/Busy/Sleeping), current activity, and recommended response style.",
+            category=ToolCategory.PERSONA_ROUTINE,
+            parameters=[],
+            handler=check_virtual_routine_status,
+        )
+    )
 
-    registry.register(ToolDefinition(
-        name="get_routine_schedule",
-        description="Get the persona's full daily routine schedule or filter by specific day. Useful for understanding the persona's typical daily patterns.",
-        category=ToolCategory.PERSONA_ROUTINE,
-        parameters=[
-            ToolParameter(
-                name="day",
-                type="string",
-                description="Optional specific day of week (Monday, Tuesday, etc.) to filter by. If not provided, returns full schedule.",
-                required=False,
-                enum=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-            ),
-        ],
-        handler=get_routine_schedule,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_routine_schedule",
+            description="Get the persona's full daily routine schedule or filter by specific day. Useful for understanding the persona's typical daily patterns.",
+            category=ToolCategory.PERSONA_ROUTINE,
+            parameters=[
+                ToolParameter(
+                    name="day",
+                    type="string",
+                    description="Optional specific day of week (Monday, Tuesday, etc.) to filter by. If not provided, returns full schedule.",
+                    required=False,
+                    enum=[
+                        "Monday",
+                        "Tuesday",
+                        "Wednesday",
+                        "Thursday",
+                        "Friday",
+                        "Saturday",
+                        "Sunday",
+                    ],
+                ),
+            ],
+            handler=get_routine_schedule,
+        )
+    )

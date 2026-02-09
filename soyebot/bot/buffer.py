@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Dict, List, Callable, Any, Optional
+from typing import Any, Callable, Dict, List, Optional
+
 import discord
 
 logger = logging.getLogger(__name__)
@@ -64,9 +65,7 @@ class MessageBuffer:
             self._process_buffer(channel_id, self.default_delay, callback)
         )
 
-    def handle_typing(
-        self, channel_id: int, callback: Callable[[List[discord.Message]], Any]
-    ):
+    def handle_typing(self, channel_id: int, callback: Callable[[List[discord.Message]], Any]):
         """
         Called when a typing event is detected in the channel.
         If a buffer exists and we are waiting, extend the wait time to `typing_timeout`.

@@ -7,12 +7,12 @@ from typing import Any, Dict, List, Optional
 import discord
 
 from soyebot.config import AppConfig
-from soyebot.tools.registry import ToolRegistry
-from soyebot.tools.executor import ToolExecutor
-from soyebot.tools.discord_tools import register_all_discord_tools
 from soyebot.tools.api_tools import register_all_api_tools
-from soyebot.tools.persona_tools import register_all_persona_tools
 from soyebot.tools.base import ToolCategory, ToolDefinition
+from soyebot.tools.discord_tools import register_all_discord_tools
+from soyebot.tools.executor import ToolExecutor
+from soyebot.tools.persona_tools import register_all_persona_tools
+from soyebot.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -95,14 +95,10 @@ class ToolManager:
         tool = self.registry.get(tool_name)
         if tool and tool.category == ToolCategory.API_SEARCH:
             if "search_api_key" not in parameters:
-                parameters["search_api_key"] = getattr(
-                    self.config, "search_api_key", None
-                )
+                parameters["search_api_key"] = getattr(self.config, "search_api_key", None)
         if tool and tool.category == ToolCategory.API_WEATHER:
             if "weather_api_key" not in parameters:
-                parameters["weather_api_key"] = getattr(
-                    self.config, "weather_api_key", None
-                )
+                parameters["weather_api_key"] = getattr(self.config, "weather_api_key", None)
 
         return await self.executor.execute_tool(tool_name, parameters, discord_context)
 
@@ -121,9 +117,7 @@ class ToolManager:
             List of tool execution results formatted for the AI provider.
         """
         # Execute all tools in parallel using asyncio.gather
-        tasks = [
-            self._execute_and_format_tool(call, discord_context) for call in tool_calls
-        ]
+        tasks = [self._execute_and_format_tool(call, discord_context) for call in tool_calls]
 
         results = await asyncio.gather(*tasks, return_exceptions=False)
         return results

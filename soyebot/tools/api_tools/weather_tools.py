@@ -4,7 +4,8 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -126,26 +127,28 @@ def register_weather_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="get_weather",
-        description="Get current weather information for any location worldwide. Returns temperature, humidity, wind conditions, and weather description.",
-        category=ToolCategory.API_WEATHER,
-        parameters=[
-            ToolParameter(
-                name="location",
-                type="string",
-                description="The location name (e.g., 'Seoul', 'New York', 'Tokyo', 'London')",
-                required=True,
-            ),
-            ToolParameter(
-                name="units",
-                type="string",
-                description="Unit system - 'metric' for Celsius or 'imperial' for Fahrenheit",
-                required=False,
-                default="metric",
-                enum=["metric", "imperial"],
-            ),
-        ],
-        handler=get_weather,
-        rate_limit=60,  # 60 seconds between weather lookups
-    ))
+    registry.register(
+        ToolDefinition(
+            name="get_weather",
+            description="Get current weather information for any location worldwide. Returns temperature, humidity, wind conditions, and weather description.",
+            category=ToolCategory.API_WEATHER,
+            parameters=[
+                ToolParameter(
+                    name="location",
+                    type="string",
+                    description="The location name (e.g., 'Seoul', 'New York', 'Tokyo', 'London')",
+                    required=True,
+                ),
+                ToolParameter(
+                    name="units",
+                    type="string",
+                    description="Unit system - 'metric' for Celsius or 'imperial' for Fahrenheit",
+                    required=False,
+                    default="metric",
+                    enum=["metric", "imperial"],
+                ),
+            ],
+            handler=get_weather,
+            rate_limit=60,  # 60 seconds between weather lookups
+        )
+    )

@@ -1,14 +1,14 @@
 """Comprehensive tests for BaseLLMService."""
 
-import pytest
 import asyncio
 import io
-from unittest.mock import Mock, AsyncMock, MagicMock, patch
-from PIL import Image
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import discord
+import pytest
+from PIL import Image
 
 from soyebot.services.base import BaseLLMService, ChatMessage
-
 
 # =============================================================================
 # Concrete Test Implementation of BaseLLMService
@@ -245,15 +245,11 @@ class TestExecuteWithRetry:
         model_call = Mock(return_value=test_service._response_obj)
 
         # Test with return_full_response=True
-        result_full = await test_service.execute_with_retry(
-            model_call, return_full_response=True
-        )
+        result_full = await test_service.execute_with_retry(model_call, return_full_response=True)
         assert result_full == test_service._response_obj
 
         # Test with return_full_response=False (default)
-        result_text = await test_service.execute_with_retry(
-            model_call, return_full_response=False
-        )
+        result_text = await test_service.execute_with_retry(model_call, return_full_response=False)
         assert result_text == "Test response"
 
     async def test_timeout_handling(self, test_service):
@@ -282,9 +278,7 @@ class TestExecuteWithRetry:
         result = await test_service.execute_with_retry(slow_call, timeout=0.1)
         assert result is None
 
-    async def test_rate_limit_with_countdown(
-        self, test_service, mock_discord_message_with_reply
-    ):
+    async def test_rate_limit_with_countdown(self, test_service, mock_discord_message_with_reply):
         """Test rate limit handling with countdown."""
         test_service._rate_limit_errors = [RateLimitError]
         delay = 2.0
@@ -346,9 +340,7 @@ class TestRateLimitHandling:
         """Test _wait_with_countdown edits countdown message."""
         delay = 3
         with patch("asyncio.sleep"):
-            await test_service._wait_with_countdown(
-                delay, mock_discord_message_with_reply
-            )
+            await test_service._wait_with_countdown(delay, mock_discord_message_with_reply)
 
         reply_msg = await mock_discord_message_with_reply.reply()
         reply_msg.edit.assert_called()
@@ -360,9 +352,7 @@ class TestRateLimitHandling:
         """Test _wait_with_countdown deletes countdown message after completion."""
         delay = 2
         with patch("asyncio.sleep"):
-            await test_service._wait_with_countdown(
-                delay, mock_discord_message_with_reply
-            )
+            await test_service._wait_with_countdown(delay, mock_discord_message_with_reply)
 
         reply_msg = await mock_discord_message_with_reply.reply()
         reply_msg.delete.assert_called_once()
@@ -395,9 +385,7 @@ class TestRateLimitHandling:
 class TestImageProcessing:
     """Test suite for image extraction and processing."""
 
-    async def test_extract_images_no_attachments(
-        self, test_service, mock_discord_message
-    ):
+    async def test_extract_images_no_attachments(self, test_service, mock_discord_message):
         """Test _extract_images_from_message with no attachments."""
         images = await test_service._extract_images_from_message(mock_discord_message)
         assert images == []
@@ -447,9 +435,7 @@ class TestImageProcessing:
         mock_attachment.read.assert_called_once()
         mock_non_image_attachment.read.assert_not_called()
 
-    async def test_extract_images_handles_read_errors(
-        self, test_service, mock_discord_message
-    ):
+    async def test_extract_images_handles_read_errors(self, test_service, mock_discord_message):
         """Test _extract_images_from_message handles read errors gracefully."""
         failing_attachment = Mock()
         failing_attachment.filename = "failing.png"
@@ -461,9 +447,7 @@ class TestImageProcessing:
         assert images == []
         # Should continue without raising exception
 
-    async def test_extract_images_content_type_detection(
-        self, test_service, mock_discord_message
-    ):
+    async def test_extract_images_content_type_detection(self, test_service, mock_discord_message):
         """Test content_type detection for various image formats."""
         formats = ["image/png", "image/jpeg", "image/gif", "image/webp"]
         attachments = []
@@ -843,9 +827,7 @@ class TestErrorHandling:
             # Fallback should be attempted and succeed
             assert result == "fallback success"
 
-    async def test_fallback_failure_continues_normal_flow(
-        self, test_service, mock_config
-    ):
+    async def test_fallback_failure_continues_normal_flow(self, test_service, mock_config):
         """Test fallback failure continues with normal retry logic."""
         test_service._rate_limit_errors = [RateLimitError]
         attempt_count = [0]
@@ -866,9 +848,7 @@ class TestErrorHandling:
             # Should eventually succeed with primary after fallback fails
             assert result == "primary success"
 
-    async def test_error_message_sent_to_discord(
-        self, test_service, mock_discord_message
-    ):
+    async def test_error_message_sent_to_discord(self, test_service, mock_discord_message):
         """Test error message is sent to Discord on failure."""
 
         async def always_fails():
@@ -881,9 +861,7 @@ class TestErrorHandling:
             assert result is None
             mock_discord_message.reply.assert_called()
 
-    async def test_discord_error_silently_handled(
-        self, test_service, mock_discord_message
-    ):
+    async def test_discord_error_silently_handled(self, test_service, mock_discord_message):
         """Test Discord send errors are silently handled."""
 
         async def always_fails():
@@ -941,9 +919,7 @@ class TestEdgeCases:
             await test_service._wait_with_countdown(999999.0, None)
             # Should handle gracefully
 
-    async def test_maximum_backoff_cap_with_large_attempts(
-        self, test_service, mock_config
-    ):
+    async def test_maximum_backoff_cap_with_large_attempts(self, test_service, mock_config):
         """Test maximum backoff cap with many retry attempts."""
         mock_config.api_retry_backoff_max = 100.0
         mock_config.api_max_retries = 10

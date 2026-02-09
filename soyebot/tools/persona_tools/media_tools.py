@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ async def generate_situational_snapshot(
         return ToolResult(
             success=True,
             data=structured_data,
-            metadata={"prompt_type": "image_generation", "format": "structured"}
+            metadata={"prompt_type": "image_generation", "format": "structured"},
         )
 
     except Exception as e:
@@ -146,11 +146,12 @@ async def describe_scene_atmosphere(
     }
 
     atmosphere = atmosphere_prompts.get(
-        mood.lower(),
-        f"{mood} atmosphere with appropriate lighting and mood elements"
+        mood.lower(), f"{mood} atmosphere with appropriate lighting and mood elements"
     )
 
-    description = f"Scene Atmosphere Description:\nSetting: {setting}\nMood: {mood}\nAtmosphere: {atmosphere}"
+    description = (
+        f"Scene Atmosphere Description:\nSetting: {setting}\nMood: {mood}\nAtmosphere: {atmosphere}"
+    )
 
     return ToolResult(
         success=True,
@@ -158,7 +159,7 @@ async def describe_scene_atmosphere(
             "mood": mood,
             "setting": setting,
             "atmosphere_description": description,
-        }
+        },
     )
 
 
@@ -168,58 +169,62 @@ def register_media_tools(registry):
     Args:
         registry: ToolRegistry instance to register tools with.
     """
-    registry.register(ToolDefinition(
-        name="generate_situational_snapshot",
-        description="Generate a detailed image generation prompt based on the persona's current situation (time, location, mood, activity). Returns a structured prompt for visualizing the persona's state.",
-        category=ToolCategory.PERSONA_MEDIA,
-        parameters=[
-            ToolParameter(
-                name="time_of_day",
-                type="string",
-                description="Current time of day (morning, afternoon, evening, night). If not provided, inferred from actual time.",
-                required=False,
-                enum=["morning", "afternoon", "evening", "night"],
-            ),
-            ToolParameter(
-                name="location",
-                type="string",
-                description="Current location (e.g., room, desk, cafe, outdoors). Default: cozy room.",
-                required=False,
-            ),
-            ToolParameter(
-                name="mood",
-                type="string",
-                description="Current emotional state (e.g., happy, tired, focused, relaxed). Default: calm.",
-                required=False,
-            ),
-            ToolParameter(
-                name="activity",
-                type="string",
-                description="Current activity (e.g., working, reading, gaming, resting). Default: relaxing.",
-                required=False,
-            ),
-        ],
-        handler=generate_situational_snapshot,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="generate_situational_snapshot",
+            description="Generate a detailed image generation prompt based on the persona's current situation (time, location, mood, activity). Returns a structured prompt for visualizing the persona's state.",
+            category=ToolCategory.PERSONA_MEDIA,
+            parameters=[
+                ToolParameter(
+                    name="time_of_day",
+                    type="string",
+                    description="Current time of day (morning, afternoon, evening, night). If not provided, inferred from actual time.",
+                    required=False,
+                    enum=["morning", "afternoon", "evening", "night"],
+                ),
+                ToolParameter(
+                    name="location",
+                    type="string",
+                    description="Current location (e.g., room, desk, cafe, outdoors). Default: cozy room.",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="mood",
+                    type="string",
+                    description="Current emotional state (e.g., happy, tired, focused, relaxed). Default: calm.",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="activity",
+                    type="string",
+                    description="Current activity (e.g., working, reading, gaming, resting). Default: relaxing.",
+                    required=False,
+                ),
+            ],
+            handler=generate_situational_snapshot,
+        )
+    )
 
-    registry.register(ToolDefinition(
-        name="describe_scene_atmosphere",
-        description="Generate a detailed description of scene atmosphere for roleplay contexts. Useful for setting the mood and visual tone.",
-        category=ToolCategory.PERSONA_MEDIA,
-        parameters=[
-            ToolParameter(
-                name="mood",
-                type="string",
-                description="The emotional atmosphere (cozy, tense, romantic, mysterious, peaceful, energetic).",
-                required=True,
-                enum=["cozy", "tense", "romantic", "mysterious", "peaceful", "energetic"],
-            ),
-            ToolParameter(
-                name="setting",
-                type="string",
-                description="The physical setting (bedroom, cafe, park, office, etc.).",
-                required=True,
-            ),
-        ],
-        handler=describe_scene_atmosphere,
-    ))
+    registry.register(
+        ToolDefinition(
+            name="describe_scene_atmosphere",
+            description="Generate a detailed description of scene atmosphere for roleplay contexts. Useful for setting the mood and visual tone.",
+            category=ToolCategory.PERSONA_MEDIA,
+            parameters=[
+                ToolParameter(
+                    name="mood",
+                    type="string",
+                    description="The emotional atmosphere (cozy, tense, romantic, mysterious, peaceful, energetic).",
+                    required=True,
+                    enum=["cozy", "tense", "romantic", "mysterious", "peaceful", "energetic"],
+                ),
+                ToolParameter(
+                    name="setting",
+                    type="string",
+                    description="The physical setting (bedroom, cafe, park, office, etc.).",
+                    required=True,
+                ),
+            ],
+            handler=describe_scene_atmosphere,
+        )
+    )

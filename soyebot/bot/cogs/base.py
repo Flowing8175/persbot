@@ -1,21 +1,27 @@
 """Base Cog for Chat-based interactions."""
 
-import logging
 import asyncio
+import logging
 from abc import abstractmethod
-from typing import Optional, List
+from typing import List, Optional
 
 import discord
 from discord.ext import commands
 
 from soyebot.bot.buffer import MessageBuffer
+from soyebot.bot.chat_handler import (
+    ChatReply,
+    create_chat_reply,
+    resolve_session_for_message,
+    send_split_response,
+)
 from soyebot.bot.session import SessionManager
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
-from soyebot.bot.chat_handler import ChatReply, create_chat_reply, resolve_session_for_message, send_split_response
 from soyebot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
 
 logger = logging.getLogger(__name__)
+
 
 class BaseChatCog(commands.Cog):
     """Abstract base cog containing shared logic for message buffering and processing."""
@@ -63,7 +69,12 @@ class BaseChatCog(commands.Cog):
             if not full_text:
                 return
 
-            logger.info("Processing batch of %d messages from %s: %s", len(messages), primary_message.author.name, full_text[:100])
+            logger.info(
+                "Processing batch of %d messages from %s: %s",
+                len(messages),
+                primary_message.author.name,
+                full_text[:100],
+            )
 
             async with primary_message.channel.typing():
                 resolution = await resolve_session_for_message(
@@ -108,7 +119,7 @@ class BaseChatCog(commands.Cog):
         for msg in messages:
             content = extract_message_content(msg)
             if content:
-                 combined_content.append(content)
+                combined_content.append(content)
         return "\n".join(combined_content)
 
     async def _handle_error(self, message: discord.Message, error: Exception):
@@ -120,9 +131,7 @@ class BaseChatCog(commands.Cog):
         if channel_id in self.sending_tasks and not self.sending_tasks[channel_id].done():
             self.sending_tasks[channel_id].cancel()
 
-        task = asyncio.create_task(
-            send_split_response(channel, reply, self.session_manager)
-        )
+        task = asyncio.create_task(send_split_response(channel, reply, self.session_manager))
         self.sending_tasks[channel_id] = task
 
         def _cleanup(t):
@@ -131,30 +140,38 @@ class BaseChatCog(commands.Cog):
 
         task.add_done_callback(_cleanup)
 
-    def _cancel_active_tasks(self, channel_id: int, author_name: str, message_type: str = "new message"):
+    def _cancel_active_tasks(
+        self, channel_id: int, author_name: str, message_type: str = "new message"
+    ):
         """Cancel sending and processing tasks for a channel."""
         if self.config.break_cut_mode and channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
-                logger.info(f"{message_type} from {author_name} interrupted sending in channel {channel_id}")
+                logger.info(
+                    f"{message_type} from {author_name} interrupted sending in channel {channel_id}"
+                )
                 task.cancel()
 
         messages_to_prepend = []
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.info(f"{message_type} from {author_name} interrupted processing in channel {channel_id}. Merging messages.")
+                logger.info(
+                    f"{message_type} from {author_name} interrupted processing in channel {channel_id}. Merging messages."
+                )
                 messages_to_prepend = self.active_batches.get(channel_id, [])
                 task.cancel()
 
         return messages_to_prepend
 
     @commands.Cog.listener()
-    async def on_typing(self, channel: discord.abc.Messageable, user: discord.abc.User, when: float):
+    async def on_typing(
+        self, channel: discord.abc.Messageable, user: discord.abc.User, when: float
+    ):
         if user.bot:
             return
 
-        if hasattr(channel, 'id'):
+        if hasattr(channel, "id"):
             # Check filtering in subclass if needed, but BaseCog assumes if we are listening, we care.
             # But we should probably check if it's an interesting channel in the subclass listener
             # or rely on the buffer check (buffer handles non-existent keys gracefully).

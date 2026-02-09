@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass, field
-from typing import Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Union
 
 import discord
 
-import asyncio
-import logging
-from soyebot.bot.session import SessionManager, ResolvedSession
+from soyebot.bot.session import ResolvedSession, SessionManager
 from soyebot.services.llm_service import LLMService
 from soyebot.utils import smart_split
 
@@ -53,9 +53,7 @@ async def resolve_session_for_message(
         # If not resolved or deleted, try to fetch it
         if ref_msg is None or isinstance(ref_msg, discord.DeletedReferencedMessage):
             try:
-                ref_msg = await message.channel.fetch_message(
-                    message.reference.message_id
-                )
+                ref_msg = await message.channel.fetch_message(message.reference.message_id)
             except (discord.NotFound, discord.HTTPException):
                 ref_msg = None
 
@@ -191,9 +189,7 @@ async def create_chat_reply(
                 )
 
                 if not continuation:
-                    logger.warning(
-                        "Tool results sent but no continuation received from LLM"
-                    )
+                    logger.warning("Tool results sent but no continuation received from LLM")
                     break
 
                 # Update response_text and response_obj from continuation
@@ -268,9 +264,7 @@ async def send_split_response(
                 sent_msg = await channel.send(line)
 
                 # Link message to session
-                session_manager.link_message_to_session(
-                    str(sent_msg.id), reply.session_key
-                )
+                session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
 
         # Send any generated images as attachments
         if reply.images:
@@ -278,15 +272,11 @@ async def send_split_response(
 
             for img_bytes in reply.images:
                 async with channel.typing():
-                    img_file = discord.File(
-                        io.BytesIO(img_bytes), filename="generated_image.png"
-                    )
+                    img_file = discord.File(io.BytesIO(img_bytes), filename="generated_image.png")
                     img_msg = await channel.send(file=img_file)
 
                     # Link image message to session
-                    session_manager.link_message_to_session(
-                        str(img_msg.id), reply.session_key
-                    )
+                    session_manager.link_message_to_session(str(img_msg.id), reply.session_key)
 
     except asyncio.CancelledError:
         logger.info(f"Sending interrupted for channel {channel.id}.")

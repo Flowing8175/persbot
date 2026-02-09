@@ -1,18 +1,19 @@
 """Tests for core tool infrastructure (base, registry, executor)."""
 
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from soyebot.tools.base import (
+    ToolCategory,
     ToolDefinition,
     ToolParameter,
     ToolResult,
-    ToolCategory,
 )
+from soyebot.tools.executor import ExecutionMetrics, ToolExecutor
 from soyebot.tools.registry import ToolRegistry
-from soyebot.tools.executor import ToolExecutor, ExecutionMetrics
 
 
 class TestToolParameter:
@@ -80,6 +81,7 @@ class TestToolDefinition:
     @pytest.mark.asyncio
     async def test_tool_execution(self):
         """Test executing a tool."""
+
         async def dummy_handler(arg1: str, arg2: int = 10):
             return f"Result: {arg1}, {arg2}"
 
@@ -112,6 +114,7 @@ class TestToolDefinition:
     @pytest.mark.asyncio
     async def test_tool_execution_with_defaults(self):
         """Test executing a tool with default parameters."""
+
         async def dummy_handler(arg1: str, arg2: int = 10):
             return f"Result: {arg1}, {arg2}"
 
@@ -137,6 +140,7 @@ class TestToolDefinition:
     @pytest.mark.asyncio
     async def test_tool_execution_error(self):
         """Test tool execution with error."""
+
         async def failing_handler():
             raise ValueError("Test error")
 
@@ -550,6 +554,7 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_tool_timeout(self, mock_config):
         """Test tool execution timeout."""
+
         async def slow_handler():
             await asyncio.sleep(15)  # Longer than timeout
 

@@ -1,20 +1,19 @@
 """Auto-reply Cog for channels configured via environment variables."""
 
+import asyncio
+import json
 import logging
 import time
-import json
 from pathlib import Path
 from typing import Optional
-
-import asyncio
 
 import aiofiles
 import discord
 from discord.ext import commands
 
 from soyebot.bot.chat_handler import ChatReply, create_chat_reply, send_split_response
-from soyebot.bot.session import SessionManager
 from soyebot.bot.cogs.base import BaseChatCog
+from soyebot.bot.session import SessionManager
 from soyebot.config import AppConfig
 from soyebot.services.llm_service import LLMService
 from soyebot.utils import (
@@ -54,17 +53,13 @@ class AutoChannelCog(BaseChatCog):
         self.dynamic_channel_ids = set()
         if self.json_file_path.exists():
             try:
-                async with aiofiles.open(
-                    self.json_file_path, "r", encoding="utf-8"
-                ) as f:
+                async with aiofiles.open(self.json_file_path, "r", encoding="utf-8") as f:
                     content = await f.read()
                     data = json.loads(content)
                     if isinstance(data, list):
                         self.dynamic_channel_ids = set(data)
             except Exception as e:
-                logger.error(
-                    f"Failed to load auto channels from {self.json_file_path}: {e}"
-                )
+                logger.error(f"Failed to load auto channels from {self.json_file_path}: {e}")
 
         # Merge environment config with dynamic config
         combined = self.env_channel_ids | self.dynamic_channel_ids
@@ -130,9 +125,7 @@ class AutoChannelCog(BaseChatCog):
             return
 
         if channel_id not in self.dynamic_channel_ids:
-            await ctx.reply(
-                "⚠️ 이 채널은 자동 응답 채널이 아닙니다.", mention_author=False
-            )
+            await ctx.reply("⚠️ 이 채널은 자동 응답 채널이 아닙니다.", mention_author=False)
             return
 
         self.dynamic_channel_ids.remove(channel_id)
@@ -148,9 +141,7 @@ class AutoChannelCog(BaseChatCog):
         if not self.config.break_cut_mode:
             sent_messages = await send_discord_message(message.channel, reply.text)
             for sent_msg in sent_messages:
-                self.session_manager.link_message_to_session(
-                    str(sent_msg.id), reply.session_key
-                )
+                self.session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
             return
 
         # If Break-Cut Mode is ON, use shared helper
@@ -177,20 +168,14 @@ class AutoChannelCog(BaseChatCog):
         if message.content and message.content.lstrip().startswith("\\"):
             return
 
-        messages_to_prepend = self._cancel_active_tasks(
-            message.channel.id, message.author.name
-        )
+        messages_to_prepend = self._cancel_active_tasks(message.channel.id, message.author.name)
 
-        await self.message_buffer.add_message(
-            message.channel.id, message, self._process_batch
-        )
+        await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
 
         if messages_to_prepend:
             # Ensure the list exists before prepending
             if message.channel.id in self.message_buffer.buffers:
-                self.message_buffer.buffers[message.channel.id][0:0] = (
-                    messages_to_prepend
-                )
+                self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
 
     @commands.Cog.listener()
     async def on_typing(
@@ -211,9 +196,7 @@ class AutoChannelCog(BaseChatCog):
             self.message_buffer.handle_typing(channel.id, self._process_batch)
 
     @commands.command(name="@", aliases=["undo"])
-    async def undo_command(
-        self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"
-    ):
+    async def undo_command(self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"):
         """Deletes the last N user/assistant message pairs from the chat history."""
         if ctx.channel.id not in self.config.auto_reply_channel_ids:
             return
@@ -265,9 +248,7 @@ class AutoChannelCog(BaseChatCog):
         except ValueError:
             return None
 
-    async def _cancel_pending_tasks(
-        self, ctx, channel_id: int, num_to_undo: int
-    ) -> tuple:
+    async def _cancel_pending_tasks(self, ctx, channel_id: int, num_to_undo: int) -> tuple:
         """Cancel pending tasks and return (was_cancelled, remaining_undo_count)."""
         undo_performed = False
 
@@ -275,9 +256,7 @@ class AutoChannelCog(BaseChatCog):
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.info(
-                    "Undo interrupted active processing in #%s", ctx.channel.name
-                )
+                logger.info("Undo interrupted active processing in #%s", ctx.channel.name)
                 task.cancel()
 
                 # Delete pending messages
@@ -313,8 +292,7 @@ class AutoChannelCog(BaseChatCog):
             )
 
         is_admin = (
-            isinstance(ctx.author, discord.Member)
-            and ctx.author.guild_permissions.manage_guild
+            isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.manage_guild
         )
         # Bypass permission check if NO_CHECK_PERMISSION is set
         if self.config.no_check_permission:
@@ -342,9 +320,7 @@ class AutoChannelCog(BaseChatCog):
             ]
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _try_delete_channel_message(
-        self, channel, message_id: str, role: str
-    ) -> None:
+    async def _try_delete_channel_message(self, channel, message_id: str, role: str) -> None:
         """Try to delete a message by ID, logging any errors."""
         try:
             msg = await channel.fetch_message(int(message_id))

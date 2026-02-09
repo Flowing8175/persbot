@@ -1,24 +1,23 @@
 """Comprehensive tests for soyebot/utils.py."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-import discord
-from discord import Embed
-from discord.ui import View
-
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import discord
+import pytest
+from discord import Embed
+from discord.ui import View
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from soyebot.utils import (
-    smart_split,
-    send_discord_message,
+    DiscordUI,
     extract_message_content,
     parse_korean_time,
-    DiscordUI,
+    send_discord_message,
+    smart_split,
 )
-
 
 # =============================================================================
 # Tests for smart_split()
@@ -295,9 +294,7 @@ class TestSendDiscordMessage:
 
         # Simulate discord.NotFound with "Unknown message" error
         target.reply = AsyncMock(
-            side_effect=discord.NotFound(
-                MagicMock(status=400), "Unknown message"
-            )
+            side_effect=discord.NotFound(MagicMock(status=400), "Unknown message")
         )
         target.channel.send = AsyncMock(return_value=mock_channel_msg)
 
@@ -315,9 +312,7 @@ class TestSendDiscordMessage:
         # Simulate a different NotFound error (not "Unknown message")
         # The function logs the error and returns empty list, it doesn't propagate
         target.reply = AsyncMock(
-            side_effect=discord.NotFound(
-                MagicMock(status=404), "Some other error"
-            )
+            side_effect=discord.NotFound(MagicMock(status=404), "Some other error")
         )
 
         result = await send_discord_message(target, "Reply text")
@@ -503,9 +498,7 @@ class TestDiscordUI:
         channel.name = "test-channel"
         mock_response = MagicMock()
         mock_response.status = 403
-        channel.send = AsyncMock(
-            side_effect=discord.Forbidden(mock_response, "Forbidden")
-        )
+        channel.send = AsyncMock(side_effect=discord.Forbidden(mock_response, "Forbidden"))
 
         result = await DiscordUI.safe_send(channel, "Test message")
         assert result is None
@@ -525,9 +518,7 @@ class TestDiscordUI:
         channel.name = "test-channel"
         mock_response = MagicMock()
         mock_response.status = 500
-        channel.send = AsyncMock(
-            side_effect=discord.HTTPException(mock_response, "HTTP error")
-        )
+        channel.send = AsyncMock(side_effect=discord.HTTPException(mock_response, "HTTP error"))
 
         result = await DiscordUI.safe_send(channel, "Test message")
         assert result is None

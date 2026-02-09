@@ -1,18 +1,19 @@
 """LLM service selector for SoyeBot."""
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
+import discord
 
 from soyebot.config import AppConfig
+from soyebot.prompts import META_PROMPT
 from soyebot.services.base import BaseLLMService
 from soyebot.services.gemini_service import GeminiService
+from soyebot.services.model_usage_service import ModelUsageService
 from soyebot.services.openai_service import OpenAIService
-from soyebot.services.zai_service import ZAIService
 from soyebot.services.prompt_service import PromptService
 from soyebot.services.usage_service import ImageUsageService
-from soyebot.services.model_usage_service import ModelUsageService
-from soyebot.prompts import META_PROMPT
-import discord
+from soyebot.services.zai_service import ZAIService
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,9 @@ class LLMService:
         self.assistant_backend = self._create_backend(
             assistant_provider,
             assistant_model_name=config.assistant_model_name,
-            summary_model_name=config.summarizer_model_name
-            if assistant_provider == summarizer_provider
-            else None,
+            summary_model_name=(
+                config.summarizer_model_name if assistant_provider == summarizer_provider else None
+            ),
         )
 
         if assistant_provider == summarizer_provider:
@@ -52,9 +53,7 @@ class LLMService:
         provider_label = (
             "OpenAI"
             if assistant_provider == "openai"
-            else "Z.AI"
-            if assistant_provider == "zai"
-            else "Gemini"
+            else "Z.AI" if assistant_provider == "zai" else "Gemini"
         )
         self.provider_label = provider_label
         logger.info(
@@ -104,9 +103,7 @@ class LLMService:
         current_provider = (
             "openai"
             if isinstance(self.assistant_backend, OpenAIService)
-            else "zai"
-            if isinstance(self.assistant_backend, ZAIService)
-            else "gemini"
+            else "zai" if isinstance(self.assistant_backend, ZAIService) else "gemini"
         )
 
         if target_provider == current_provider:

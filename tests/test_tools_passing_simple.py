@@ -1,10 +1,11 @@
 """Simpler tests for tool passing verification."""
 
+from unittest.mock import AsyncMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock
 
 from soyebot.tools.adapters.gemini_adapter import GeminiToolAdapter
-from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory
+from soyebot.tools.base import ToolCategory, ToolDefinition, ToolParameter
 
 
 def create_test_tool(name="test_tool", description="Test tool"):
@@ -30,9 +31,10 @@ class TestToolsPassingVerification:
 
     def test_llm_service_generate_chat_response_signature(self):
         """Test that LLMService.generate_chat_response accepts tools parameter."""
-        from soyebot.services.llm_service import LLMService
-        from typing import Optional, List, Any
         import inspect
+        from typing import Any, List, Optional
+
+        from soyebot.services.llm_service import LLMService
 
         # Get the signature of generate_chat_response method
         sig = inspect.signature(LLMService.generate_chat_response)
@@ -45,9 +47,10 @@ class TestToolsPassingVerification:
 
     def test_gemini_service_generate_chat_response_signature(self):
         """Test that GeminiService.generate_chat_response accepts tools parameter."""
-        from soyebot.services.gemini_service import GeminiService
-        from typing import Optional, Any
         import inspect
+        from typing import Any, Optional
+
+        from soyebot.services.gemini_service import GeminiService
 
         # Get the signature of generate_chat_response method
         sig = inspect.signature(GeminiService.generate_chat_response)
@@ -105,7 +108,11 @@ class TestToolsPassingVerification:
             parameters=[
                 ToolParameter(name="city", type="string", description="City name", required=True),
                 ToolParameter(
-                    name="units", type="string", description="Units", required=False, default="metric"
+                    name="units",
+                    type="string",
+                    description="Units",
+                    required=False,
+                    default="metric",
                 ),
             ],
             handler=AsyncMock(),
@@ -132,8 +139,9 @@ class TestToolsFlowAnalysis:
 
     def test_llm_service_flow(self):
         """Analyze how LLMService passes tools to backend."""
-        from soyebot.services.llm_service import LLMService
         import inspect
+
+        from soyebot.services.llm_service import LLMService
 
         # Check generate_chat_response implementation
         source = inspect.getsource(LLMService.generate_chat_response)
@@ -143,8 +151,9 @@ class TestToolsFlowAnalysis:
 
     def test_gemini_service_flow(self):
         """Analyze how GeminiService processes tools."""
-        from soyebot.services.gemini_service import GeminiService
         import inspect
+
+        from soyebot.services.gemini_service import GeminiService
 
         # Check generate_chat_response implementation
         source = inspect.getsource(GeminiService.generate_chat_response)
@@ -160,15 +169,16 @@ class TestToolsFlowAnalysis:
 
     def test_tool_parameter_propagation(self):
         """Test that tools parameter is correctly propagated through the chain."""
-        from soyebot.services.llm_service import LLMService
         import inspect
+
+        from soyebot.services.llm_service import LLMService
 
         # Get the code that calls the backend
         source = inspect.getsource(LLMService.generate_chat_response)
 
         # Find where backend.generate_chat_response is called
         # Look for the pattern where tools would be passed
-        lines = source.split('\n')
+        lines = source.split("\n")
         found_backend_call = False
 
         for line in lines:
@@ -179,7 +189,9 @@ class TestToolsFlowAnalysis:
                     break
 
         # At minimum, verify backend is called and tools parameter is used in the method
-        assert found_backend_call, "Backend.generate_chat_response should be called in generate_chat_response"
+        assert (
+            found_backend_call
+        ), "Backend.generate_chat_response should be called in generate_chat_response"
 
 
 class TestToolsPassingScenarios:
@@ -187,16 +199,19 @@ class TestToolsPassingScenarios:
 
     def test_assistant_model_receives_tools(self):
         """Verify assistant model path accepts and forwards tools."""
-        from soyebot.services.gemini_service import GeminiService
         import inspect
+
+        from soyebot.services.gemini_service import GeminiService
 
         source = inspect.getsource(GeminiService.generate_chat_response)
 
         # Check that tools are processed
         # Lines around tool conversion
         relevant_lines = [
-            line for line in source.split('\n')
-            if 'tools' in line.lower() and ('final_tools' in line.lower() or 'convert' in line.lower())
+            line
+            for line in source.split("\n")
+            if "tools" in line.lower()
+            and ("final_tools" in line.lower() or "convert" in line.lower())
         ]
 
         # Should have tool processing
@@ -204,8 +219,9 @@ class TestToolsPassingScenarios:
 
     def test_summarizer_model_receives_tools(self):
         """Verify summarizer model path accepts and forwards tools."""
-        from soyebot.services.gemini_service import GeminiService
         import inspect
+
+        from soyebot.services.gemini_service import GeminiService
 
         # Check the summarize_text method
         source = inspect.getsource(GeminiService.summarize_text)
@@ -216,14 +232,15 @@ class TestToolsPassingScenarios:
 
     def test_custom_model_receives_tools(self):
         """Verify custom model selection passes tools."""
-        from soyebot.services.llm_service import LLMService
         import inspect
+
+        from soyebot.services.llm_service import LLMService
 
         # Check get_backend_for_model and flow
         source = inspect.getsource(LLMService.generate_chat_response)
 
         # Verify tools are passed regardless of model
-        lines = [line for line in source.split('\n') if 'tools' in line.lower()]
+        lines = [line for line in source.split("\n") if "tools" in line.lower()]
 
         # Should pass tools to active backend
         assert len(lines) > 0, "Tools parameter should be used throughout the flow"

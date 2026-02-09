@@ -1,10 +1,10 @@
 """Help Cog for SoyeBot - displays comprehensive bot functionality."""
 
-import discord
-from discord.ext import commands
 import logging
 
+import discord
 from config import AppConfig
+from discord.ext import commands
 from utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
@@ -16,10 +16,16 @@ class HelpCog(commands.Cog):
     def __init__(self, bot: commands.Bot, config: AppConfig):
         self.bot = bot
         self.config = config
-        provider = getattr(config, 'assistant_llm_provider', 'gemini')
-        self.ai_provider_label = "OpenAI API" if str(provider).lower() == 'openai' else "Google Gemini API"
+        provider = getattr(config, "assistant_llm_provider", "gemini")
+        self.ai_provider_label = (
+            "OpenAI API" if str(provider).lower() == "openai" else "Google Gemini API"
+        )
 
-    @commands.hybrid_command(name='help', aliases=['도움말', 'h'], description="봇의 전체 기능을 설명하는 도움말을 표시합니다.")
+    @commands.hybrid_command(
+        name="help",
+        aliases=["도움말", "h"],
+        description="봇의 전체 기능을 설명하는 도움말을 표시합니다.",
+    )
     @discord.app_commands.describe(subcommand="도움말을 볼 특정 기능 (예: 요약, ai)")
     async def show_help(self, ctx: commands.Context, subcommand: str = None):
         """봇의 전체 기능을 설명하는 도움말을 표시합니다.
@@ -29,7 +35,7 @@ class HelpCog(commands.Cog):
         """
         try:
             if subcommand:
-                 subcommand = subcommand.lower().strip()
+                subcommand = subcommand.lower().strip()
 
             # Display specific help for requested feature
             if subcommand:
@@ -46,12 +52,12 @@ class HelpCog(commands.Cog):
             embed.add_field(
                 name="💬 AI 어시스턴트 기능",
                 value="봇을 멘션(@mention)하면 AI가 대화합니다.\n"
-                      "• 자연스러운 대화\n"
-                      "• 각 @mention마다 새로운 대화 시작 (메모리 최적화)\n"
-                      "• 복잡한 질문 처리\n"
-                      "• `!초기화`로 현재 채널 대화 맥락 초기화\n\n"
-                      "**사용법:** `@SoyeBot 안녕! 오늘 날씨 어때?`\n"
-                      "**참고:** 이전 대화 내역은 유지되지 않습니다 (1GB RAM 최적화)",
+                "• 자연스러운 대화\n"
+                "• 각 @mention마다 새로운 대화 시작 (메모리 최적화)\n"
+                "• 복잡한 질문 처리\n"
+                "• `!초기화`로 현재 채널 대화 맥락 초기화\n\n"
+                "**사용법:** `@SoyeBot 안녕! 오늘 날씨 어때?`\n"
+                "**참고:** 이전 대화 내역은 유지되지 않습니다 (1GB RAM 최적화)",
                 inline=False,
             )
 
@@ -59,13 +65,13 @@ class HelpCog(commands.Cog):
             embed.add_field(
                 name="📊 요약 명령어",
                 value="**`!요약`** - 최근 30분 요약\n"
-                      "예: `!요약`\n\n"
-                      "**`!요약 <시간>`** - 지정된 시간만큼 요약\n"
-                      "예: `!요약 20분`, `!요약 1시간`\n\n"
-                      "**`!요약 <메시지ID> 이후`** - 메시지 ID 이후부터 최대 길이까지 요약\n"
-                      "예: `!요약 1234567890 이후`\n\n"
-                      "**`!요약 <메시지ID> <이후|이전> <시간>`** - 시간 범위 요약\n"
-                      "예: `!요약 1234567890 이후 30분`, `!요약 1234567890 이전 1시간`",
+                "예: `!요약`\n\n"
+                "**`!요약 <시간>`** - 지정된 시간만큼 요약\n"
+                "예: `!요약 20분`, `!요약 1시간`\n\n"
+                "**`!요약 <메시지ID> 이후`** - 메시지 ID 이후부터 최대 길이까지 요약\n"
+                "예: `!요약 1234567890 이후`\n\n"
+                "**`!요약 <메시지ID> <이후|이전> <시간>`** - 시간 범위 요약\n"
+                "예: `!요약 1234567890 이후 30분`, `!요약 1234567890 이전 1시간`",
                 inline=False,
             )
 
@@ -73,7 +79,7 @@ class HelpCog(commands.Cog):
             embed.add_field(
                 name="✨ 고급 기능",
                 value="**고정 프롬프트 페르소나:** 캐릭터 일관성을 유지합니다\n"
-                      "**상호작용 분석:** 사용자 기본 통계를 추적합니다",
+                "**상호작용 분석:** 사용자 기본 통계를 추적합니다",
                 inline=False,
             )
 
@@ -81,8 +87,8 @@ class HelpCog(commands.Cog):
             embed.add_field(
                 name="💡 팁",
                 value="• 명령어는 대소문자를 구분하지 않습니다\n"
-                      "• 많은 명령어가 별칭(alias)을 지원합니다\n"
-                      "• @mention 대화는 항상 새로운 세션으로 처리됩니다",
+                "• 많은 명령어가 별칭(alias)을 지원합니다\n"
+                "• @mention 대화는 항상 새로운 세션으로 처리됩니다",
                 inline=False,
             )
 
@@ -90,8 +96,8 @@ class HelpCog(commands.Cog):
             embed.add_field(
                 name="🔧 시스템 정보",
                 value=f"봇 상태: 🟢 온라인\n"
-                      f"프레임워크: Discord.py\n"
-                      f"AI 엔진: {self.ai_provider_label}",
+                f"프레임워크: Discord.py\n"
+                f"AI 엔진: {self.ai_provider_label}",
                 inline=False,
             )
 
@@ -117,9 +123,9 @@ class HelpCog(commands.Cog):
             feature: Feature name (요약, ai, etc.)
         """
         feature_helps = {
-            '요약': {
-                'title': '📊 요약 명령어',
-                'content': (
+            "요약": {
+                "title": "📊 요약 명령어",
+                "content": (
                     "**`!요약`** - 최근 30분 요약\n"
                     "예: `!요약`\n\n"
                     "**`!요약 <시간>`** - 지정된 시간만큼 요약\n"
@@ -132,11 +138,11 @@ class HelpCog(commands.Cog):
                     "**`!요약 <메시지ID> 이전 <시간>`** - 메시지 ID 이전 지정된 시간만큼 요약\n"
                     "예: `!요약 1234567890 이전 1시간`"
                 ),
-                'color': discord.Color.gold(),
+                "color": discord.Color.gold(),
             },
-            'ai': {
-                'title': '💬 AI 어시스턴트 기능',
-                'content': (
+            "ai": {
+                "title": "💬 AI 어시스턴트 기능",
+                "content": (
                     "봇을 멘션(@mention)하면 AI가 대화합니다.\n\n"
                     "**기능:**\n"
                     "• 자연스러운 대화\n"
@@ -148,22 +154,22 @@ class HelpCog(commands.Cog):
                     "• 각 멘션은 독립 세션입니다\n"
                     "• 자연스러운 한국어로 대화할 수 있습니다"
                 ),
-                'color': discord.Color.purple(),
+                "color": discord.Color.purple(),
             },
         }
 
         if feature in feature_helps:
             info = feature_helps[feature]
             embed = discord.Embed(
-                title=info['title'],
-                description=info['content'],
-                color=info['color'],
+                title=info["title"],
+                description=info["content"],
+                color=info["color"],
             )
             embed.set_footer(text="더 궁금한 점은 !도움말 전체로 전체 도움말을 확인하세요.")
             await ctx.reply(embed=embed, mention_author=False)
         else:
             # Unknown feature, show available options
-            available = ', '.join(feature_helps.keys())
+            available = ", ".join(feature_helps.keys())
             embed = discord.Embed(
                 title="❓ 알 수 없는 기능",
                 description=f"인식할 수 없는 기능입니다.\n\n**사용 가능한 옵션:**\n{available}",
@@ -171,7 +177,9 @@ class HelpCog(commands.Cog):
             )
             await ctx.reply(embed=embed, mention_author=False)
 
-    @commands.hybrid_command(name='features', aliases=['기능', 'f'], description="봇의 주요 기능을 간단히 설명합니다.")
+    @commands.hybrid_command(
+        name="features", aliases=["기능", "f"], description="봇의 주요 기능을 간단히 설명합니다."
+    )
     async def show_features(self, ctx: commands.Context):
         """봇의 주요 기능을 간단히 설명합니다.
 

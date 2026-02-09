@@ -1,14 +1,13 @@
 """Tests for the Assistant Cog."""
 
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import pytest
 from discord.ext import commands
 
 from soyebot.bot.cogs.assistant import AssistantCog
-from soyebot.bot.chat_handler import ChatReply
 from soyebot.bot.session import ResolvedSession
 from soyebot.services.base import ChatMessage
 

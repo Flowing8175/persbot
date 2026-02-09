@@ -1,14 +1,15 @@
 """Tests for external API tools (search, weather, time)."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime, timezone
 import json
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
 
-from soyebot.tools.api_tools.search_tools import web_search
-from soyebot.tools.api_tools.weather_tools import get_weather
-from soyebot.tools.api_tools.time_tools import get_time
+import pytest
+
 from soyebot.tools.api_tools.image_tools import generate_image
+from soyebot.tools.api_tools.search_tools import web_search
+from soyebot.tools.api_tools.time_tools import get_time
+from soyebot.tools.api_tools.weather_tools import get_weather
 
 
 class TestSearchTools:
@@ -269,9 +270,7 @@ class TestImageTools:
     @patch("soyebot.tools.api_tools.image_tools.OpenAI")
     @patch("soyebot.tools.api_tools.image_tools.load_config")
     @patch("soyebot.tools.api_tools.image_tools.aiohttp.ClientSession")
-    async def test_generate_image_success(
-        self, mock_session, mock_load_config, mock_openai
-    ):
+    async def test_generate_image_success(self, mock_session, mock_load_config, mock_openai):
         """Test successful image generation with mocked API."""
         # Mock config
         mock_config = Mock()
@@ -298,9 +297,7 @@ class TestImageTools:
         mock_session_context = AsyncMock()
         mock_session_context.__aenter__.return_value = mock_session_context
         mock_session_context.get = Mock(
-            return_value=AsyncMock(
-                __aenter__=AsyncMock(return_value=mock_aiohttp_response)
-            )
+            return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_aiohttp_response))
         )
         mock_session.return_value = mock_session_context
 
@@ -410,9 +407,7 @@ class TestImageTools:
         mock_session_context = AsyncMock()
         mock_session_context.__aenter__.return_value = mock_session_context
         mock_session_context.get = Mock(
-            return_value=AsyncMock(
-                __aenter__=AsyncMock(return_value=mock_aiohttp_response)
-            )
+            return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_aiohttp_response))
         )
         mock_session.return_value = mock_session_context
 

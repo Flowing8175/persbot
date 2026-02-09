@@ -43,11 +43,7 @@ class OpenAIToolAdapter:
             if hasattr(response, "choices") and response.choices:
                 for choice in response.choices:
                     message = getattr(choice, "message", None)
-                    if (
-                        message
-                        and hasattr(message, "tool_calls")
-                        and message.tool_calls
-                    ):
+                    if message and hasattr(message, "tool_calls") and message.tool_calls:
                         for tool_call in message.tool_calls:
                             fc_data = {
                                 "id": tool_call.id,
@@ -77,9 +73,7 @@ class OpenAIToolAdapter:
         return function_calls
 
     @staticmethod
-    def format_function_result(
-        tool_name: str, result: Any, call_id: str
-    ) -> Dict[str, Any]:
+    def format_function_result(tool_name: str, result: Any, call_id: str) -> Dict[str, Any]:
         """Format a function result for sending back to OpenAI.
 
         Args:

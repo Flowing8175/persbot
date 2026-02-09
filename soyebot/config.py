@@ -6,7 +6,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 from dotenv import load_dotenv
 
 # --- Load Environment & Default Configuration ---
@@ -16,13 +15,9 @@ from dotenv import load_dotenv
 _dotenv_path = Path(__file__).resolve().parent.parent / ".env"
 if _dotenv_path.exists():
     _ = load_dotenv(_dotenv_path)
-    logging.getLogger(__name__).debug(
-        "Loaded environment variables from %s", _dotenv_path
-    )
+    logging.getLogger(__name__).debug("Loaded environment variables from %s", _dotenv_path)
 else:
-    logging.getLogger(__name__).debug(
-        "No .env file found; relying on existing environment"
-    )
+    logging.getLogger(__name__).debug("No .env file found; relying on existing environment")
 
 
 def _resolve_log_level(raw_level: str) -> int:
@@ -38,9 +33,7 @@ def _resolve_log_level(raw_level: str) -> int:
     if isinstance(level, int) and level > 0:
         return level
 
-    logging.getLogger(__name__).warning(
-        "Unknown LOG_LEVEL '%s'; defaulting to INFO", raw_level
-    )
+    logging.getLogger(__name__).warning("Unknown LOG_LEVEL '%s'; defaulting to INFO", raw_level)
     return logging.INFO
 
 
@@ -154,9 +147,7 @@ def _parse_float_env(name: str, default: float) -> float:
     try:
         return float(value)
     except ValueError:
-        logger.warning(
-            "%s 설정이 숫자가 아닙니다. 기본값 %s을 사용합니다.", name, default
-        )
+        logger.warning("%s 설정이 숫자가 아닙니다. 기본값 %s을 사용합니다.", name, default)
         return default
 
 
@@ -168,9 +159,7 @@ def _parse_int_env(name: str, default: int) -> int:
     try:
         return int(value)
     except ValueError:
-        logger.warning(
-            "%s 설정이 숫자가 아닙니다. 기본값 %s을 사용합니다.", name, default
-        )
+        logger.warning("%s 설정이 숫자가 아닙니다. 기본값 %s을 사용합니다.", name, default)
         return default
 
 
@@ -190,9 +179,7 @@ def _parse_thinking_budget() -> int | None:
     try:
         return int(raw)
     except ValueError:
-        logger.warning(
-            "THINKING_BUDGET 설정이 올바르지 않습니다. 기본값 'off'를 사용합니다."
-        )
+        logger.warning("THINKING_BUDGET 설정이 올바르지 않습니다. 기본값 'off'를 사용합니다.")
         return None
 
 
@@ -213,9 +200,7 @@ def _parse_auto_channel_ids() -> tuple[int, ...]:
             invalid_entries.append(stripped)
 
     if invalid_entries:
-        logger.warning(
-            "AUTO_REPLY_CHANNEL_IDS에 잘못된 값이 있어 무시됨: %s", invalid_entries
-        )
+        logger.warning("AUTO_REPLY_CHANNEL_IDS에 잘못된 값이 있어 무시됨: %s", invalid_entries)
 
     return tuple(valid_ids)
 
@@ -231,33 +216,19 @@ def _resolve_model_name(provider: str, *, role: str) -> str:
     if provider == "openai":
         if role == "assistant":
             return (
-                _first_nonempty_env("OPENAI_ASSISTANT_MODEL_NAME")
-                or DEFAULT_OPENAI_ASSISTANT_MODEL
+                _first_nonempty_env("OPENAI_ASSISTANT_MODEL_NAME") or DEFAULT_OPENAI_ASSISTANT_MODEL
             )
-        return (
-            _first_nonempty_env("OPENAI_SUMMARY_MODEL_NAME")
-            or DEFAULT_OPENAI_SUMMARY_MODEL
-        )
+        return _first_nonempty_env("OPENAI_SUMMARY_MODEL_NAME") or DEFAULT_OPENAI_SUMMARY_MODEL
 
     if provider == "zai":
         if role == "assistant":
-            return (
-                _first_nonempty_env("ZAI_ASSISTANT_MODEL_NAME")
-                or DEFAULT_ZAI_ASSISTANT_MODEL
-            )
-        return (
-            _first_nonempty_env("ZAI_SUMMARY_MODEL_NAME") or DEFAULT_ZAI_SUMMARY_MODEL
-        )
+            return _first_nonempty_env("ZAI_ASSISTANT_MODEL_NAME") or DEFAULT_ZAI_ASSISTANT_MODEL
+        return _first_nonempty_env("ZAI_SUMMARY_MODEL_NAME") or DEFAULT_ZAI_SUMMARY_MODEL
 
     # Gemini
     if role == "assistant":
-        return (
-            _first_nonempty_env("GEMINI_ASSISTANT_MODEL_NAME")
-            or DEFAULT_GEMINI_ASSISTANT_MODEL
-        )
-    return (
-        _first_nonempty_env("GEMINI_SUMMARY_MODEL_NAME") or DEFAULT_GEMINI_SUMMARY_MODEL
-    )
+        return _first_nonempty_env("GEMINI_ASSISTANT_MODEL_NAME") or DEFAULT_GEMINI_ASSISTANT_MODEL
+    return _first_nonempty_env("GEMINI_SUMMARY_MODEL_NAME") or DEFAULT_GEMINI_SUMMARY_MODEL
 
 
 def load_config() -> AppConfig:
@@ -312,10 +283,7 @@ def load_config() -> AppConfig:
         logger.error("에러: DISCORD_TOKEN 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 
-    if (
-        "gemini" in {assistant_llm_provider, summarizer_llm_provider}
-        and not gemini_api_key
-    ):
+    if "gemini" in {assistant_llm_provider, summarizer_llm_provider} and not gemini_api_key:
         logger.error("에러: GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
         sys.exit(1)
 

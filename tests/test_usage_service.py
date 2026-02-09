@@ -1,19 +1,19 @@
 """Comprehensive tests for soyebot/services/usage_service.py (ImageUsageService)."""
 
+import asyncio
+import json
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import pytest
 import pytest_asyncio
-from pathlib import Path
-import json
-import asyncio
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, Mock, AsyncMock, MagicMock
-import sys
-import os
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from soyebot.services.usage_service import ImageUsageService
-
 
 # =============================================================================
 # Tests for ImageUsageService.__init__()
@@ -80,9 +80,9 @@ class TestImageUsageServiceInit:
         """Test initialization cleans up old date entries on load."""
         storage_path = temp_dir / "cleanup_usage.json"
         today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-        yesterday = (
-            datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)
-        ).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
 
         existing_data = {
             yesterday: {"123456789": 5},
@@ -263,9 +263,7 @@ class TestRecordUpload:
         assert service.usage_data[today]["123456789"] == 2
 
     @pytest.mark.asyncio
-    async def test_record_upload_existing_user_increment(
-        self, usage_service_with_temp_storage
-    ):
+    async def test_record_upload_existing_user_increment(self, usage_service_with_temp_storage):
         """Test recording upload increments count for existing user."""
         service = usage_service_with_temp_storage
         today = service._get_today_key()
@@ -276,9 +274,7 @@ class TestRecordUpload:
         assert service.usage_data[today]["123456789"] == 3
 
     @pytest.mark.asyncio
-    async def test_record_upload_multiple_increment(
-        self, usage_service_with_temp_storage
-    ):
+    async def test_record_upload_multiple_increment(self, usage_service_with_temp_storage):
         """Test recording multiple uploads for same user."""
         service = usage_service_with_temp_storage
         today = service._get_today_key()
@@ -320,9 +316,7 @@ class TestRecordUpload:
         assert saved_data[today]["123456789"] == 2
 
     @pytest.mark.asyncio
-    async def test_record_upload_creates_today_entry(
-        self, usage_service_with_temp_storage
-    ):
+    async def test_record_upload_creates_today_entry(self, usage_service_with_temp_storage):
         """Test record_upload creates today entry if not present."""
         service = usage_service_with_temp_storage
         today = service._get_today_key()
@@ -357,14 +351,12 @@ class TestRecordUpload:
         assert service.usage_data[today]["123456789"] == 0
 
     @pytest.mark.asyncio
-    async def test_record_upload_cleanup_old_data(
-        self, usage_service_with_temp_storage
-    ):
+    async def test_record_upload_cleanup_old_data(self, usage_service_with_temp_storage):
         """Test record_upload cleans up old data when creating new day."""
         service = usage_service_with_temp_storage
-        yesterday = (
-            datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)
-        ).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
         today = service._get_today_key()
 
         # Simulate having yesterday's data
@@ -713,9 +705,9 @@ class TestDailyReset:
         storage_path = temp_dir / "test_only_old.json"
         service = ImageUsageService(storage_path=str(storage_path))
         today = service._get_today_key()
-        yesterday = (
-            datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)
-        ).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
         service.usage_data = {
             yesterday: {"111": 5},
             today: {"123456789": 1},
@@ -853,9 +845,9 @@ class TestUserTracking:
         service = ImageUsageService(storage_path=str(storage_path))
 
         # Simulate yesterday's data
-        yesterday = (
-            datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)
-        ).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
         service.usage_data[yesterday] = {"123456789": 3}
 
         # Check usage should be 0 for new day (no today entry)
