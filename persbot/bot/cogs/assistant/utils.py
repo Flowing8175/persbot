@@ -28,9 +28,12 @@ def should_ignore_message(
     # to avoid duplicate replies (one plain, one reply).
     if message.channel.id in config.auto_reply_channel_ids:
         return True
+    # Ignore @everyone/@here mentions
+    if message.mention_everyone:
+        return True
     if not bot_user or not bot_user.mentioned_in(message):
         return True
-    return message.mention_everyone
+    return False
 
 
 async def prepare_batch_context(messages: list[discord.Message]) -> str:
