@@ -242,15 +242,21 @@ class BaseLLMService(ABC):
         discord_message: Optional[discord.Message] = None,
         timeout: Optional[float] = None,
         fallback_call: Optional[Callable[[], Union[Any, Awaitable[Any]]]] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> Optional[Any]:
         """
-        Execute the API call with retries, logging, countdown notifications, and fallback logic.
+        Execute API call with retries, logging, countdown notifications, and fallback logic.
         """
         last_error: Optional[Exception] = None
         current_timeout = timeout if timeout is not None else self.config.api_request_timeout
 
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
+                # Check for cancellation before attempting API call
+                if cancel_event and cancel_event.is_set():
+                    logger.info("API call aborted due to cancellation signal before attempt")
+                    raise asyncio.CancelledError("LLM API call aborted by user")
+
                 response = await asyncio.wait_for(
                     self._execute_model_call(model_call),
                     timeout=current_timeout,

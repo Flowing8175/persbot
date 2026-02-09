@@ -46,6 +46,9 @@ class BaseChatCog(commands.Cog):
         self.processing_tasks: dict[int, asyncio.Task] = {}
         self.active_batches: dict[int, list[discord.Message]] = {}
 
+        # Cancellation signal tracking (per-channel abort events)
+        self.cancellation_signals: dict[int, asyncio.Event] = {}
+
     @abstractmethod
     async def _send_response(self, message: discord.Message, reply: ChatReply):
         """Send the generated reply to the channel. Must be implemented by subclasses."""
@@ -62,6 +65,10 @@ class BaseChatCog(commands.Cog):
         # Register task
         self.active_batches[channel_id] = messages
         self.processing_tasks[channel_id] = asyncio.current_task()
+
+        # Create cancellation event for this channel
+        cancel_event = asyncio.Event()
+        self.cancellation_signals[channel_id] = cancel_event
 
         try:
             full_text = await self._prepare_batch_context(messages)
@@ -81,6 +88,7 @@ class BaseChatCog(commands.Cog):
                     primary_message,
                     full_text,
                     session_manager=self.session_manager,
+                    cancel_event=cancel_event,
                 )
 
                 if not resolution:
@@ -92,10 +100,11 @@ class BaseChatCog(commands.Cog):
                     llm_service=self.llm_service,
                     session_manager=self.session_manager,
                     tool_manager=self.tool_manager,
+                    cancel_event=cancel_event,
                 )
 
                 if reply:
-                    # Use the last message as the anchor for reply/context
+                    # Use last message as the anchor for reply/context
                     anchor_message = messages[-1]
                     await self._send_response(anchor_message, reply)
 
@@ -111,6 +120,7 @@ class BaseChatCog(commands.Cog):
             if self.processing_tasks.get(channel_id) == asyncio.current_task():
                 self.processing_tasks.pop(channel_id, None)
                 self.active_batches.pop(channel_id, None)
+                self.cancellation_signals.pop(channel_id, None)
 
     async def _prepare_batch_context(self, messages: list[discord.Message]) -> str:
         """Prepare the text content for the LLM, including context if needed. Can be overridden."""
@@ -144,6 +154,13 @@ class BaseChatCog(commands.Cog):
         self, channel_id: int, author_name: str, message_type: str = "new message"
     ):
         """Cancel sending and processing tasks for a channel."""
+        # Trigger cancellation signal to abort LLM API calls
+        if channel_id in self.cancellation_signals:
+            logger.info(
+                f"{message_type} from {author_name} triggered abort signal for channel {channel_id}"
+            )
+            self.cancellation_signals[channel_id].set()
+
         if self.config.break_cut_mode and channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():

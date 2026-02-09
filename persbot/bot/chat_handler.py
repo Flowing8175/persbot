@@ -41,6 +41,7 @@ async def resolve_session_for_message(
     content: str,
     *,
     session_manager: SessionManager,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> Optional[ResolvedSession]:
     """Resolve the logical chat session for a Discord message."""
 
@@ -79,6 +80,7 @@ async def resolve_session_for_message(
         # Pass None for reference_message_id to ensure we stick to the channel session
         reference_message_id=None,
         created_at=message.created_at,
+        cancel_event=cancel_event,
     )
     if resolution:
         resolution.is_reply_to_summary = is_reply_to_summary
@@ -92,6 +94,7 @@ async def create_chat_reply(
     llm_service: LLMService,
     session_manager: SessionManager,
     tool_manager: Optional["ToolManager"] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> Optional[ChatReply]:
     """Create or reuse a chat session and fetch an LLM reply."""
 
@@ -130,6 +133,7 @@ async def create_chat_reply(
         message,  # This can be a list of messages if AutoChannelCog passes it, but type hint says discord.Message
         use_summarizer_backend=resolution.is_reply_to_summary,
         tools=tools,
+        cancel_event=cancel_event,
     )
 
     if not response_result:
@@ -186,6 +190,7 @@ async def create_chat_reply(
                     tool_rounds=tool_results_list,
                     tools=tools,
                     discord_message=primary_msg,
+                    cancel_event=cancel_event,
                 )
 
                 if not continuation:

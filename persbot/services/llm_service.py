@@ -1,5 +1,6 @@
 """LLM service selector for SoyeBot."""
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -53,7 +54,9 @@ class LLMService:
         provider_label = (
             "OpenAI"
             if assistant_provider == "openai"
-            else "Z.AI" if assistant_provider == "zai" else "Gemini"
+            else "Z.AI"
+            if assistant_provider == "zai"
+            else "Gemini"
         )
         self.provider_label = provider_label
         logger.info(
@@ -103,7 +106,9 @@ class LLMService:
         current_provider = (
             "openai"
             if isinstance(self.assistant_backend, OpenAIService)
-            else "zai" if isinstance(self.assistant_backend, ZAIService) else "gemini"
+            else "zai"
+            if isinstance(self.assistant_backend, ZAIService)
+            else "gemini"
         )
 
         if target_provider == current_provider:
@@ -235,6 +240,7 @@ class LLMService:
         discord_message,
         use_summarizer_backend: bool = False,
         tools: Optional[List[Any]] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
         # Extract message metadata
         model_alias = getattr(
@@ -281,6 +287,7 @@ class LLMService:
             discord_message,
             model_name=api_model_name,
             tools=tools,
+            cancel_event=cancel_event,
         )
 
         # Record image usage after successful generation
@@ -307,6 +314,7 @@ class LLMService:
         tools=None,
         use_summarizer_backend: bool = False,
         discord_message=None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
         """Send tool results back to the model and get continuation response.
 
@@ -331,6 +339,7 @@ class LLMService:
             tool_rounds,
             tools=tools,
             discord_message=discord_message,
+            cancel_event=cancel_event,
         )
 
     def get_tools_for_backend(self, backend: BaseLLMService, tools: List[Any]) -> Any:

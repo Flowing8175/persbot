@@ -1,5 +1,6 @@
 """Chat session management for Gemini service."""
 
+import asyncio
 from collections import deque
 from typing import Optional
 
@@ -56,7 +57,14 @@ class _ChatSession:
         message_ids: Optional[list[str]] = None,
         images: list[bytes] = None,
         tools: Optional[list] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
+        # Check for cancellation before starting API call
+        if cancel_event and cancel_event.is_set():
+            import asyncio
+
+            raise asyncio.CancelledError("LLM API call aborted by user")
+
         # 1. Build the full content list for this turn (History + Current Message)
         contents = self._get_api_history()
 
@@ -99,20 +107,29 @@ class _ChatSession:
             author_id=None,  # Bot messages have no author
         )
 
-        # Return the new messages and the raw response
+        # Return new messages and the raw response
         return user_msg, model_msg, response
 
-    def send_tool_results(self, tool_rounds, tools=None):
+    def send_tool_results(
+        self, tool_rounds, tools=None, cancel_event: Optional[asyncio.Event] = None
+    ):
         """Send tool execution results back to model and get continuation.
 
         Args:
             tool_rounds: List of (response_obj, tool_results) tuples from each round.
-            tools: Tools to pass for the next API call.
+            tools: Tools to pass for next API call.
+            cancel_event: Optional event to check for abort signals.
 
         Returns:
             Tuple of (model_msg, response_obj).
         """
         from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
+
+        # Check for cancellation before starting API call
+        if cancel_event and cancel_event.is_set():
+            import asyncio
+
+            raise asyncio.CancelledError("LLM API call aborted by user")
 
         # Build contents from history
         contents = self._get_api_history()
