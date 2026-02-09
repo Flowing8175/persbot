@@ -160,14 +160,14 @@ class ToolManager:
             formatted = {
                 "id": call_id,
                 "name": tool_name,
-                "result": result if result.success else None,
+                "result": result.data if result.success else None,
                 "error": result.error if not result.success else None,
             }
         else:
             # Gemini format
             formatted = {
                 "name": tool_name,
-                "result": result if result.success else None,
+                "result": result.data if result.success else None,
                 "error": result.error if not result.success else None,
             }
 
