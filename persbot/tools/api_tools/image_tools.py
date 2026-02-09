@@ -5,6 +5,7 @@ import base64
 import hashlib
 import logging
 import time
+from typing import Optional
 
 import aiohttp
 from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
@@ -17,12 +18,17 @@ logger = logging.getLogger(__name__)
 
 async def generate_image(
     prompt: str,
+    aspect_ratio: str = "1:1",
     **kwargs,
 ) -> ToolResult:
     """Generate an image using OpenRouter image generation API.
 
     Args:
         prompt: The text prompt for image generation.
+        aspect_ratio: Optional aspect ratio for the image. Common values:
+            "1:1" (1024x1024), "16:9" (1344x768), "9:16" (768x1344),
+            "4:3" (1184x864), "3:2" (1248x832), "2:3" (832x1248),
+            "21:9" (1536x672). Defaults to "1:1".
         **kwargs: Additional keyword arguments (unused).
 
     Returns:
@@ -86,13 +92,22 @@ async def generate_image(
             timeout=config.api_request_timeout,
         )
 
+        logger.info(
+            "Generating image with aspect_ratio: %s (prompt_hash=%s)",
+            aspect_ratio,
+            prompt_hash,
+        )
+
+        # Build image config with aspect_ratio
+        image_config = {"aspect_ratio": aspect_ratio}
+
         # Call OpenAI client to generate image via OpenRouter
         api_response = await asyncio.to_thread(
             client.chat.completions.create,
             model=config.openrouter_image_model,
             messages=[{"role": "user", "content": enhanced_prompt}],
             modalities=["image"],
-            extra_body={"image_config": {"aspect_ratio": "1:1"}},
+            extra_body={"image_config": image_config},
         )
 
         # Validate response structure
@@ -326,6 +341,12 @@ def register_image_tools(registry):
                     type="string",
                     description="The text description of image to generate",
                     required=True,
+                ),
+                ToolParameter(
+                    name="aspect_ratio",
+                    type="string",
+                    description='Aspect ratio for the image. Common values: "1:1" (1024x1024), "16:9" (1344x768), "9:16" (768x1344), "4:3" (1184x864), "3:2" (1248x832), "2:3" (832x1248), "21:9" (1536x672). Default is "1:1".',
+                    required=False,
                 ),
             ],
             handler=generate_image,
