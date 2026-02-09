@@ -18,7 +18,7 @@ from openai import OpenAI, RateLimitError
 
 from soyebot.config import AppConfig
 from soyebot.services.base import BaseLLMService, ChatMessage
-from soyebot.services.openai_service import BaseChatSession
+from soyebot.services.openai_service import BaseOpenAISession
 from soyebot.services.prompt_service import PromptService
 from soyebot.tools.adapters.zai_adapter import ZAIToolAdapter
 from soyebot.utils import get_mime_type
