@@ -321,29 +321,6 @@ class GeminiService(BaseLLMService):
         # Start periodic cache cleanup task
         if config.gemini_cache_ttl_minutes > 0:
             asyncio.create_task(self._periodic_cache_cleanup())
-        self._assistant_model_name = assistant_model_name
-        self._summary_model_name = summary_model_name or assistant_model_name
-        self.prompt_service = prompt_service
-
-        # Cache wrapper instances keyed by system instruction hash
-        # Stores tuple: (model_wrapper, expiration_time: Optional[datetime.datetime])
-        self._model_cache: dict[
-            int, Tuple[_CachedModel, Optional[datetime.datetime]]
-        ] = {}
-
-        # Pre-load default models using cache
-        self.summary_model = self._get_or_create_model(
-            self._summary_model_name, self.prompt_service.get_summary_prompt()
-        )
-        self.assistant_model = self._get_or_create_model(
-            self._assistant_model_name,
-            self.prompt_service.get_active_assistant_prompt(),
-        )
-        logger.info(
-            "Gemini 모델 assistant='%s', summary='%s' 로드 완료. (구성 캐시 활성화)",
-            self._assistant_model_name,
-            self._summary_model_name,
-        )
 
     def _get_or_create_model(
         self,
@@ -395,9 +372,8 @@ class GeminiService(BaseLLMService):
         return model
 
     def _get_search_tools(self, model_name: str) -> Optional[list]:
-        """Get Google Search tools for assistant model only."""
-        if model_name != self._assistant_model_name:
-            return None
+        """Get Google Search tools for Gemini models."""
+        # All Gemini models support search tools
         return [genai_types.Tool(google_search=genai_types.GoogleSearch())]
 
     def _resolve_gemini_cache(
