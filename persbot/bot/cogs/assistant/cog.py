@@ -13,7 +13,6 @@ from persbot.services.prompt_service import PromptService
 from persbot.tools.manager import ToolManager
 
 from . import commands as cmd_module
-from . import events as evt_module
 from . import utils
 
 
@@ -32,9 +31,23 @@ class AssistantCog(BaseChatCog):
         super().__init__(bot, config, llm_service, session_manager, tool_manager)
         self.prompt_service = prompt_service
 
-        # Register commands and events from modules
+        # Register commands from module
         cmd_module.register_commands(self)
-        evt_module.register_events(self)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Handle incoming messages and process them if bot is mentioned."""
+        if utils.should_ignore_message(message, self.bot.user, self.config):
+            return
+
+        messages_to_prepend = self._cancel_active_tasks(message.channel.id, message.author.name)
+
+        await self.message_buffer.add_message(message.channel.id, message, self._process_batch)
+
+        if messages_to_prepend:
+            # Ensure the list exists before prepending
+            if message.channel.id in self.message_buffer.buffers:
+                self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
 
     async def _send_response(self, message: discord.Message, reply):
         """Send the generated reply to Discord."""
