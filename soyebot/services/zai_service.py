@@ -26,7 +26,7 @@ from soyebot.utils import get_mime_type
 logger = logging.getLogger(__name__)
 
 
-class ZAIChatSession(BaseChatSession):
+class ZAIChatSession(BaseOpenAISession):
     """Z.AI chat session with history management."""
 
     def send_message(

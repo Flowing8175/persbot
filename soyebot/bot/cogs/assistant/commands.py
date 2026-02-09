@@ -39,7 +39,7 @@ def register_commands(cog):
     aliases=["도움말", "명령어", "h"],
     description="봇의 모든 명령어와 사용법을 안내합니다.",
 )
-async def help_command(self, ctx: commands.Context):
+async def help_command(self, ctx):
     """봇의 모든 명령어와 사용법을 안내합니다."""
     embed = discord.Embed(
         title="🤖 명령어 가이드",
@@ -98,7 +98,7 @@ async def help_command(self, ctx: commands.Context):
     aliases=["재생성", "다시"],
     description="마지막 대화를 되돌리고 응답을 다시 생성합니다.",
 )
-async def retry_command(self, ctx: commands.Context):
+async def retry_command(self, ctx):
     """마지막 대화를 되돌리고 응답을 다시 생성합니다."""
     await ctx.defer()
 
@@ -143,7 +143,7 @@ async def retry_command(self, ctx: commands.Context):
     aliases=["중단", "멈춰"],
     description="진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다.",
 )
-async def abort_command(self, ctx: commands.Context):
+async def abort_command(self, ctx):
     """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
     # Check permissions unless NO_CHECK_PERMISSION is set
     if not self.config.no_check_permission:
@@ -178,7 +178,7 @@ async def abort_command(self, ctx: commands.Context):
     aliases=["reset"],
     description="현재 채널의 대화 세션을 초기화합니다.",
 )
-async def reset_session(self, ctx: commands.Context):
+async def reset_session(self, ctx):
     """현재 채널의 대화 세션을 초기화합니다."""
 
     try:
@@ -196,7 +196,7 @@ async def reset_session(self, ctx: commands.Context):
     name="temp", description="LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0)."
 )
 @app_commands.describe(value="설정할 Temperature 값 (0.0~2.0)")
-async def set_temperature(self, ctx: commands.Context, value: Optional[float] = None):
+async def set_temperature(self, ctx, value: Optional[float] = None):
     """LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0)."""
     # Check permissions unless NO_CHECK_PERMISSION is set
     if not self.config.no_check_permission:
@@ -232,7 +232,7 @@ async def set_temperature(self, ctx: commands.Context, value: Optional[float] = 
 
 @commands.hybrid_command(name="topp", description="LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0).")
 @app_commands.describe(value="설정할 Top-P 값 (0.0~1.0)")
-async def set_top_p(self, ctx: commands.Context, value: Optional[float] = None):
+async def set_top_p(self, ctx, value: Optional[float] = None):
     """LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0)."""
     # Check permissions unless NO_CHECK_PERMISSION is set
     if not self.config.no_check_permission:
@@ -269,7 +269,7 @@ async def set_top_p(self, ctx: commands.Context, value: Optional[float] = None):
     name="끊어치기", description="긴 응답을 나누어 보내는 기능을 켜거나 끕니다."
 )
 @app_commands.describe(mode="모드 설정 (on/off)")
-async def toggle_break_cut(self, ctx: commands.Context, mode: Optional[str] = None):
+async def toggle_break_cut(self, ctx, mode: Optional[str] = None):
     """긴 응답을 나누어 보내는 기능을 켜거나 끕니다."""
     if mode is None:
         # Toggle
@@ -294,7 +294,7 @@ async def toggle_break_cut(self, ctx: commands.Context, mode: Optional[str] = No
     description="Gemini Thinking Budget를 설정합니다.",
 )
 @app_commands.describe(value="숫자(512~32768), 'auto', 또는 'off'")
-async def set_thinking_budget(self, ctx: commands.Context, value: Optional[str] = None):
+async def set_thinking_budget(self, ctx, value: Optional[str] = None):
     """Gemini Thinking Budget를 설정합니다."""
     # Check permissions unless NO_CHECK_PERMISSION is set
     if not self.config.no_check_permission:
@@ -364,7 +364,7 @@ async def set_thinking_budget(self, ctx: commands.Context, value: Optional[str] 
     description="메시지 버퍼 대기 시간을 설정합니다 (초 단위).",
 )
 @app_commands.describe(value="설정할 대기 시간 (초, 0~60)")
-async def set_buffer_delay(self, ctx: commands.Context, value: Optional[float] = None):
+async def set_buffer_delay(self, ctx, value: Optional[float] = None):
     """메시지 버퍼 대기 시간을 설정합니다 (초 단위)."""
     # Check permissions unless NO_CHECK_PERMISSION is set
     if not self.config.no_check_permission:
@@ -399,7 +399,7 @@ async def set_buffer_delay(self, ctx: commands.Context, value: Optional[float] =
         await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
 
-async def cog_command_error(self, ctx: commands.Context, error: Exception):
+async def cog_command_error(self, ctx, error: Exception):
     """Cog 내 명령어 에러 핸들러"""
     if isinstance(error, commands.MissingPermissions):
         await ctx.reply(
