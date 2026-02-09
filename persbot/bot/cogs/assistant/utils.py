@@ -1,6 +1,7 @@
 """Helper functions and utilities for Assistant Cog."""
 
 import asyncio
+import io
 import logging
 from typing import Optional
 
@@ -87,8 +88,8 @@ async def send_response(
     handle_break_cut_sending_func,
 ) -> None:
     """Send the generated reply to Discord, handling break-cut mode if enabled."""
-    if not reply.text:
-        logger.debug("LLM returned no text response for the mention.")
+    if not reply.text and not reply.images:
+        logger.debug("LLM returned no text response or images for the mention.")
         return
 
     # If Break-Cut Mode is OFF, send normally (with automatic splitting)
@@ -96,6 +97,13 @@ async def send_response(
         sent_messages = await send_discord_message(message, reply.text, mention_author=False)
         for sent_message in sent_messages:
             session_manager.link_message_to_session(str(sent_message.id), reply.session_key)
+
+        # Send any generated images
+        if reply.images:
+            for img_bytes in reply.images:
+                img_file = discord.File(io.BytesIO(img_bytes), filename="generated_image.png")
+                img_msg = await message.channel.send(file=img_file)
+                session_manager.link_message_to_session(str(img_msg.id), reply.session_key)
         return
 
     # If Break-Cut Mode is ON, use shared helper
