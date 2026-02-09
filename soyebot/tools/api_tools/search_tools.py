@@ -5,6 +5,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from ddgs import DDGS
+from ddgs.exceptions import RatelimitException
 from soyebot.tools.base import ToolDefinition, ToolParameter, ToolCategory, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -49,13 +50,19 @@ async def web_search(
                     "count": len(results[:num_results]),
                 },
             )
+    except RatelimitException as e:
+        logger.warning("DuckDuckGo rate limit hit for query '%s': %s", query, e)
+        return ToolResult(
+            success=False,
+            error="Rate limit exceeded. DuckDuckGo search is temporarily unavailable due to too many requests. Please try again in a few minutes.",
+        )
     except Exception as e:
-        logger.debug("DuckDuckGo search failed: %s", e)
+        logger.error("DuckDuckGo search failed for query '%s': %s", query, e)
 
     # Fallback: Return a message about search limitations
     return ToolResult(
         success=False,
-        error="Web search failed. Please try again later.",
+        error="Web search failed. The search service may be temporarily unavailable.",
     )
 
 
@@ -68,34 +75,33 @@ def _perform_search(query: str, num_results: int) -> List[Dict[str, str]]:
 
     Returns:
         List of search result dictionaries.
+
+    Raises:
+        RatelimitException: When DuckDuckGo rate limits the request.
+        Exception: For other search errors.
     """
-    try:
-        ddgs = DDGS()
-        search_results = ddgs.text(
-            query,
-            max_results=num_results,
-            region="ko-kr",
-            safesearch="moderate",
-            backend="auto",
+    ddgs = DDGS()
+    search_results = ddgs.text(
+        query,
+        max_results=num_results,
+        region="ko-kr",
+        safesearch="moderate",
+        backend="auto",
+    )
+
+    # Transform DDGS results to match expected format
+    results = []
+    for result in search_results or []:
+        results.append(
+            {
+                "title": result.get("title", ""),
+                "url": result.get("href", ""),
+                "snippet": result.get("body", ""),
+                "source": "DuckDuckGo",
+            }
         )
 
-        # Transform DDGS results to match expected format
-        results = []
-        for result in search_results or []:
-            results.append(
-                {
-                    "title": result.get("title", ""),
-                    "url": result.get("href", ""),
-                    "snippet": result.get("body", ""),
-                    "source": "DuckDuckGo",
-                }
-            )
-
-        return results
-
-    except Exception as e:
-        logger.error("Error performing DuckDuckGo search: %s", e)
-        return []
+    return results
 
 
 def register_search_tools(registry):
