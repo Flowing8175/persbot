@@ -16,6 +16,7 @@ async def web_search(
     query: str,
     num_results: int = 5,
     search_api_key: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
     **kwargs,
 ) -> ToolResult:
     """Search the web for information.
@@ -24,6 +25,7 @@ async def web_search(
         query: The search query string.
         num_results: Number of results to return (default: 5, max: 10).
         search_api_key: Optional API key for search service (unused with DuckDuckGo).
+        cancel_event: AsyncIO event to check for cancellation before API calls.
 
     Returns:
         ToolResult with search results.
@@ -32,6 +34,11 @@ async def web_search(
         return ToolResult(success=False, error="Search query cannot be empty")
 
     num_results = min(max(1, num_results), 10)  # Clamp between 1-10
+
+    # Check for cancellation before API call
+    if cancel_event and cancel_event.is_set():
+        logger.info("Web search aborted due to cancellation signal before API call")
+        return ToolResult(success=False, error="Web search aborted by user")
 
     # Use DuckDuckGo search via duckduckgo-search package
     try:

@@ -76,16 +76,18 @@ class ToolManager:
         tool_name: str,
         parameters: Dict[str, Any],
         discord_context: Optional[discord.Message] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
         """Execute a single tool.
 
         Args:
-            tool_name: Name of the tool to execute.
-            parameters: Parameters to pass to the tool.
+            tool_name: Name of tool to execute.
+            parameters: Parameters to pass to tool.
             discord_context: Discord message context for permission checks.
+            cancel_event: AsyncIO event to check for cancellation before execution.
 
         Returns:
-            ToolResult containing the execution result.
+            ToolResult containing execution result.
         """
         # Inject discord_context and config into parameters for tool handlers
         if "discord_context" not in parameters and discord_context:
@@ -100,24 +102,36 @@ class ToolManager:
             if "weather_api_key" not in parameters:
                 parameters["weather_api_key"] = getattr(self.config, "weather_api_key", None)
 
-        return await self.executor.execute_tool(tool_name, parameters, discord_context)
+        return await self.executor.execute_tool(
+            tool_name, parameters, discord_context, cancel_event
+        )
 
     async def execute_tools(
         self,
         tool_calls: List[Dict[str, Any]],
         discord_context: Optional[discord.Message] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> List[Any]:
         """Execute multiple tool calls in parallel.
 
         Args:
             tool_calls: List of tool call dictionaries with 'name' and 'parameters'.
             discord_context: Discord message context for permission checks.
+            cancel_event: AsyncIO event to check for cancellation before execution.
 
         Returns:
-            List of tool execution results formatted for the AI provider.
+            List of tool execution results formatted for AI provider.
         """
+        # Check for cancellation before starting tool execution
+        if cancel_event and cancel_event.is_set():
+            logger.info("Tool execution aborted due to cancellation signal before execution")
+            raise asyncio.CancelledError("Tool execution aborted by user")
+
         # Execute all tools in parallel using asyncio.gather
-        tasks = [self._execute_and_format_tool(call, discord_context) for call in tool_calls]
+        tasks = [
+            self._execute_and_format_tool(call, discord_context, cancel_event)
+            for call in tool_calls
+        ]
 
         results = await asyncio.gather(*tasks, return_exceptions=False)
         return results
@@ -126,12 +140,14 @@ class ToolManager:
         self,
         call: Dict[str, Any],
         discord_context: Optional[discord.Message],
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> Dict[str, Any]:
         """Execute a single tool and format its result.
 
         Args:
             call: Tool call dictionary with 'name' and 'parameters'.
             discord_context: Discord message context for permission checks.
+            cancel_event: AsyncIO event to check for cancellation before execution.
 
         Returns:
             Formatted tool result dictionary.
@@ -145,8 +161,8 @@ class ToolManager:
         # Add call ID if present (for OpenAI/Z.AI format)
         call_id = call.get("id")
 
-        # Execute the tool
-        result = await self.execute_tool(tool_name, parameters, discord_context)
+        # Execute tool
+        result = await self.execute_tool(tool_name, parameters, discord_context, cancel_event)
 
         # Format result for provider
         if call_id:

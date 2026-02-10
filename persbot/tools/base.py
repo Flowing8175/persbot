@@ -1,8 +1,10 @@
 """Base tool definitions for SoyeBot AI tool system."""
 
+import asyncio
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
+import inspect
 
 try:
     from google.genai import types as genai_types
@@ -99,20 +101,40 @@ class ToolDefinition:
     enabled: bool = True
     """Whether the tool is currently enabled."""
 
-    async def execute(self, **kwargs) -> ToolResult:
+    timeout: Optional[float] = None
+    """Timeout in seconds for tool execution. None means use global config timeout."""
+
+    async def execute(self, cancel_event: Optional[asyncio.Event] = None, **kwargs) -> ToolResult:
         """Execute the tool with the given parameters.
 
         Args:
+            cancel_event: AsyncIO event to check for cancellation before execution.
             **kwargs: Parameter values to pass to the tool handler.
 
         Returns:
             ToolResult containing the execution result.
         """
         try:
-            result = await self.handler(**kwargs)
+            # Check for cancellation before handler execution
+            if cancel_event and cancel_event.is_set():
+                return ToolResult(
+                    success=False,
+                    error=f"Tool '{self.name}' execution aborted by user",
+                )
+
+            # Pass cancel_event to handler if it accepts it
+            sig = inspect.signature(self.handler)
+            if "cancel_event" in sig.parameters:
+                result = await self.handler(cancel_event=cancel_event, **kwargs)
+            else:
+                result = await self.handler(**kwargs)
+
             if isinstance(result, ToolResult):
                 return result
             return ToolResult(success=True, data=result)
+        except asyncio.CancelledError:
+            # Re-raise cancellation errors to propagate abort signal
+            raise
         except Exception as e:
             return ToolResult(success=False, error=str(e))
 

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 async def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
+    cancel_event: Optional[asyncio.Event] = None,
     **kwargs,
 ) -> ToolResult:
     """Generate an image using OpenRouter image generation API.
@@ -29,6 +30,7 @@ async def generate_image(
             "1:1" (1024x1024), "16:9" (1344x768), "9:16" (768x1344),
             "4:3" (1184x864), "3:2" (1248x832), "2:3" (832x1248),
             "21:9" (1536x672). Defaults to "1:1".
+        cancel_event: AsyncIO event to check for cancellation before API calls.
         **kwargs: Additional keyword arguments (unused).
 
     Returns:
@@ -37,6 +39,11 @@ async def generate_image(
     """
     if not prompt or not prompt.strip():
         return ToolResult(success=False, error="Image prompt cannot be empty")
+
+    # Check for cancellation before starting
+    if cancel_event and cancel_event.is_set():
+        logger.info("Image generation aborted due to cancellation signal before API call")
+        return ToolResult(success=False, error="Image generation aborted by user")
 
     # Calculate prompt hash for logging
     prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
@@ -97,6 +104,11 @@ async def generate_image(
             aspect_ratio,
             prompt_hash,
         )
+
+        # Check for cancellation before API call
+        if cancel_event and cancel_event.is_set():
+            logger.info("Image generation aborted due to cancellation signal before API call")
+            return ToolResult(success=False, error="Image generation aborted by user")
 
         # Build image config with aspect_ratio
         image_config = {"aspect_ratio": aspect_ratio}
@@ -161,6 +173,11 @@ async def generate_image(
                 )
         elif image_data_url.startswith(("http://", "https://")):
             # HTTP/HTTPS URL - fetch the image bytes
+            # Check for cancellation before fetching image
+            if cancel_event and cancel_event.is_set():
+                logger.info("Image generation aborted due to cancellation signal before image fetch")
+                return ToolResult(success=False, error="Image generation aborted by user")
+
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(image_data_url) as response:
@@ -351,5 +368,6 @@ def register_image_tools(registry):
             ],
             handler=generate_image,
             rate_limit=0,
+            timeout=120.0,
         )
     )

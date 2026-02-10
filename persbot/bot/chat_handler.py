@@ -159,9 +159,19 @@ async def create_chat_reply(
                 tool_rounds + 1,
             )
 
+            # Send progress notification before tool execution
+            notification_text = f"🔧 {', '.join(tool_name for call in function_calls for tool_name in [call.get('name', 'unknown')])}..."
+            progress_msg = None
+            if primary_msg and hasattr(primary_msg, "channel") and primary_msg.channel:
+                try:
+                    progress_msg = await primary_msg.channel.send(notification_text)
+                except Exception:
+                    # If sending fails, continue without notification
+                    pass
+
             try:
                 # Execute tools in parallel
-                results = await tool_manager.execute_tools(function_calls, primary_msg)
+                results = await tool_manager.execute_tools(function_calls, primary_msg, cancel_event)
                 logger.info(
                     "Executed %d tools: %s",
                     len(results),
@@ -207,8 +217,21 @@ async def create_chat_reply(
 
             except Exception as e:
                 logger.error("Error executing tools: %s", e, exc_info=True)
+                # Clean up progress message on error
+                if "progress_msg" in locals() and progress_msg:
+                    try:
+                        await progress_msg.delete()
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
                 # Return original response on tool execution error
                 break
+            finally:
+                # Clean up progress message (both success and error cases)
+                if progress_msg:
+                    try:
+                        await progress_msg.delete()
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
 
         if tool_rounds > 0:
             # We executed tools, use the final response from the LLM

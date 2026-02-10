@@ -51,6 +51,7 @@ class ToolExecutor:
         tool_name: str,
         parameters: Dict[str, Any],
         discord_context: Optional[discord.Message] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> ToolResult:
         """Execute a tool with permission checks and rate limiting.
 
@@ -58,6 +59,7 @@ class ToolExecutor:
             tool_name: Name of the tool to execute.
             parameters: Parameters to pass to the tool.
             discord_context: Discord message context for permission checks.
+            cancel_event: AsyncIO event to check for cancellation before execution.
 
         Returns:
             ToolResult containing the execution result.
@@ -94,7 +96,7 @@ class ToolExecutor:
                 )
 
         # Execute the tool
-        return await self._execute_with_timeout(tool, parameters)
+        return await self._execute_with_timeout(tool, parameters, cancel_event)
 
     def _check_permissions(self, tool: ToolDefinition, message: discord.Message) -> bool:
         """Check if the user has required permissions for the tool.
@@ -167,21 +169,33 @@ class ToolExecutor:
         self,
         tool: ToolDefinition,
         parameters: Dict[str, Any],
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> ToolResult:
-        """Execute a tool with timeout.
+        """Execute a tool with timeout and cancellation support.
 
         Args:
             tool: The tool to execute.
             parameters: Parameters to pass to the tool.
+            cancel_event: AsyncIO event to check for cancellation.
 
         Returns:
             ToolResult containing the execution result.
         """
-        timeout = getattr(self.config, "tool_timeout", 10.0)
+        timeout = (
+            tool.timeout if tool.timeout is not None else getattr(self.config, "tool_timeout", 10.0)
+        )
 
         try:
+            # Check for cancellation before executing tool
+            if cancel_event and cancel_event.is_set():
+                logger.info("Tool execution aborted due to cancellation signal before tool execution")
+                return ToolResult(
+                    success=False,
+                    error=f"Tool '{tool.name}' execution aborted by user",
+                )
+
             result = await asyncio.wait_for(
-                tool.execute(**parameters),
+                tool.execute(**parameters, cancel_event=cancel_event),
                 timeout=timeout,
             )
 
