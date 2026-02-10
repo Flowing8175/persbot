@@ -1,7 +1,6 @@
 """Base LLM Service for SoyeBot."""
 
 import asyncio
-import io
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -9,10 +8,9 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
-from PIL import Image
 
 from persbot.config import AppConfig
-from persbot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE
+from persbot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE, process_image_sync
 
 logger = logging.getLogger(__name__)
 
@@ -132,40 +130,6 @@ class BaseLLMService(ABC):
         """Check if the exception is a fatal error that requires immediate intervention."""
         return False
 
-    def _process_image_sync(self, image_data: bytes, filename: str) -> bytes:
-        """Process image synchronously with Pillow (CPU-bound)."""
-        target_pixels = 1_000_000  # 1 Megapixel
-        try:
-            with Image.open(io.BytesIO(image_data)) as img:
-                # Check current dimensions
-                width, height = img.size
-                pixels = width * height
-
-                if pixels > target_pixels:
-                    # Calculate scaling factor
-                    ratio = (target_pixels / pixels) ** 0.5
-                    new_width = int(width * ratio)
-                    new_height = int(height * ratio)
-
-                    logger.info(
-                        f"Downscaling image {filename} from {width}x{height} to {new_width}x{new_height}"
-                    )
-
-                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-                # Convert to JPEG (compatible and efficient)
-                output_buffer = io.BytesIO()
-                # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
-                if img.mode in ("RGBA", "P"):
-                    img = img.convert("RGB")
-
-                img.save(output_buffer, format="JPEG", quality=85)
-                return output_buffer.getvalue()
-        except Exception as img_err:
-            logger.error(f"Failed to process image {filename}: {img_err}")
-            # Fallback to original if processing fails
-            return image_data
-
     async def _extract_images_from_message(self, message: discord.Message) -> List[bytes]:
         """Extract image bytes from message attachments, downscaling to ~1MP."""
         images = []
@@ -179,7 +143,7 @@ class BaseLLMService(ABC):
 
                     # Run CPU-bound image processing in a separate thread
                     processed_data = await asyncio.to_thread(
-                        self._process_image_sync, image_data, attachment.filename
+                        process_image_sync, image_data, attachment.filename
                     )
                     images.append(processed_data)
 

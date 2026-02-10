@@ -31,6 +31,11 @@ class MessageBuffer:
         self.tasks: Dict[int, asyncio.Task] = {}
         self.max_buffer_size = max_buffer_size  # Prevent unbounded growth
 
+    def _cleanup_task(self, channel_id: int, task: asyncio.Task) -> None:
+        """Remove task from tracking when it completes (whether cancelled or finished)."""
+        if self.tasks.get(channel_id) == task:
+            self.tasks.pop(channel_id, None)
+
     async def add_message(
         self,
         channel_id: int,
@@ -61,9 +66,11 @@ class MessageBuffer:
             self.tasks[channel_id].cancel()
 
         # Start a new timer task with the default delay
-        self.tasks[channel_id] = asyncio.create_task(
+        task = asyncio.create_task(
             self._process_buffer(channel_id, self.default_delay, callback)
         )
+        task.add_done_callback(lambda t: self._cleanup_task(channel_id, t))
+        self.tasks[channel_id] = task
 
     def handle_typing(self, channel_id: int, callback: Callable[[List[discord.Message]], Any]):
         """
@@ -83,9 +90,11 @@ class MessageBuffer:
             )
 
         # Restart the timer with the extended timeout
-        self.tasks[channel_id] = asyncio.create_task(
+        task = asyncio.create_task(
             self._process_buffer(channel_id, self.typing_timeout, callback)
         )
+        task.add_done_callback(lambda t: self._cleanup_task(channel_id, t))
+        self.tasks[channel_id] = task
 
     def update_delay(self, delay: float):
         """

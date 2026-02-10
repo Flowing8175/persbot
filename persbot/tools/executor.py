@@ -127,6 +127,13 @@ class ToolExecutor:
             perm_name = tool.requires_permission
             if hasattr(message.author.guild_permissions, perm_name):
                 return getattr(message.author.guild_permissions, perm_name)
+            else:
+                logger.warning(
+                    "Tool '%s' requires invalid permission '%s'. "
+                    "Check tool configuration for valid permission names.",
+                    tool.name,
+                    perm_name,
+                )
 
         return False
 

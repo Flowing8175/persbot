@@ -15,52 +15,9 @@ from PIL import Image
 
 from persbot.config import load_config
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
-from persbot.utils import get_mime_type
+from persbot.utils import get_mime_type, process_image_sync
 
 logger = logging.getLogger(__name__)
-
-
-def _process_image_sync(image_data: bytes, filename: str) -> bytes:
-    """Process image synchronously with Pillow (CPU-bound).
-
-    Downscale images to ~1MP to reduce API payload size while maintaining quality.
-    """
-    target_pixels = 1_000_000  # 1 Megapixel
-    try:
-        with Image.open(io.BytesIO(image_data)) as img:
-            # Check current dimensions
-            width, height = img.size
-            pixels = width * height
-
-            if pixels > target_pixels:
-                # Calculate scaling factor
-                ratio = (target_pixels / pixels) ** 0.5
-                new_width = int(width * ratio)
-                new_height = int(height * ratio)
-
-                logger.info(
-                    "Downscaling image %s from %dx%d to %dx%d",
-                    filename,
-                    width,
-                    height,
-                    new_width,
-                    new_height,
-                )
-
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-            # Convert to JPEG (compatible and efficient)
-            output_buffer = io.BytesIO()
-            # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-
-            img.save(output_buffer, format="JPEG", quality=85)
-            return output_buffer.getvalue()
-    except Exception as img_err:
-        logger.error("Failed to process image %s: %s", filename, img_err)
-        # Fallback to original if processing fails
-        return image_data
 
 
 async def generate_image(
@@ -104,8 +61,7 @@ async def generate_image(
     prompt_length = len(prompt)
 
     # Check prompt length before API call (OpenRouter has ~2000 char limit for image models)
-    # Add anime prefix and validate total length
-    enhanced_prompt = f"{prompt}, anime"
+    enhanced_prompt = prompt
     total_prompt_length = len(enhanced_prompt)
 
     # OpenRouter character limit for image generation is approximately 2000 chars
@@ -119,19 +75,11 @@ async def generate_image(
             MAX_PROMPT_LENGTH,
         )
         # Truncate to fit within limit, keep as much of user's original prompt as possible
-        # Reserve room for ", anime" prefix
-        available_chars = MAX_PROMPT_LENGTH - len(", anime")
-        if available_chars > 0:
-            # Truncate user's prompt to fit, leaving room for anime prefix
-            truncated_prompt = prompt[:available_chars]
-            enhanced_prompt = f"{truncated_prompt}, anime"
-        else:
-            # Even user's prompt is too long to add anime prefix, use truncated version
-            enhanced_prompt = prompt[:MAX_PROMPT_LENGTH]
-            logger.warning(
-                "User prompt exceeds maximum, using truncated version (prompt_hash=%s)",
-                prompt_hash,
-            )
+        enhanced_prompt = prompt[:MAX_PROMPT_LENGTH]
+        logger.warning(
+            "User prompt exceeds maximum, using truncated version (prompt_hash=%s)",
+            prompt_hash,
+        )
 
     # Extract images from discord_context if no image_input provided
     if not image_input and discord_context and discord_context.attachments:
@@ -142,7 +90,7 @@ async def generate_image(
                     img_bytes = await attachment.read()
                     # Downscale image to ~1MP to reduce API payload
                     img_bytes_processed = await asyncio.to_thread(
-                        _process_image_sync, img_bytes, attachment.filename
+                        process_image_sync, img_bytes, attachment.filename
                     )
                     b64_str = base64.b64encode(img_bytes_processed).decode("utf-8")
                     mime_type = get_mime_type(img_bytes_processed)
@@ -412,21 +360,7 @@ async def generate_image(
             )
 
     except Exception as e:
-        # Check if it's a rate limit error via error string
-        error_str = str(e).lower()
-        if "rate limit" in error_str or "429" in error_str:
-            logger.error(
-                "Rate limit detected via string match (prompt_hash=%s, length=%d): %s",
-                prompt_hash,
-                prompt_length,
-                e,
-            )
-            return ToolResult(
-                success=False,
-                error="Rate limited, please try again later",
-            )
-
-        # Generic exception handler
+        # Generic exception handler (rate limit errors are already caught above)
         logger.error(
             "Image generation failed (prompt_hash=%s, length=%d): %s",
             prompt_hash,

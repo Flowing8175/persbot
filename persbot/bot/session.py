@@ -65,10 +65,11 @@ class SessionManager:
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
         self.channel_prompts: Dict[int, str] = {}  # channel_id -> prompt_content override
         self.channel_model_preferences: Dict[int, str] = {}  # channel_id -> model_alias override
+        self._cleanup_task: Optional[asyncio.Task] = None  # Track cleanup task for graceful shutdown
 
         # Start periodic session cleanup task
         if config.session_inactive_minutes > 0:
-            asyncio.create_task(self._periodic_session_cleanup())
+            self._cleanup_task = asyncio.create_task(self._periodic_session_cleanup())
 
     def _evict_if_needed(self) -> None:
         """Ensure the session cache does not grow without bounds."""
@@ -442,3 +443,14 @@ class SessionManager:
             logger.debug(f"Cleaned up {cleaned_count} inactive session contexts")
         except Exception as e:
             logger.error(f"Error during session cleanup: {e}", exc_info=True)
+
+    async def cleanup(self) -> None:
+        """Cancel the periodic cleanup task and clean up resources."""
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                logger.info("Session cleanup task cancelled during shutdown")
+        self.sessions.clear()
+        self.session_contexts.clear()

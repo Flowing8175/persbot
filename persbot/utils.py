@@ -1,10 +1,12 @@
 """Utility classes and functions for SoyeBot."""
 
+import io
 import logging
 import re
 from typing import Any, Optional
 
 import discord
+from PIL import Image
 
 GENERIC_ERROR_MESSAGE = "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요."
 
@@ -198,3 +200,53 @@ def get_mime_type(data: bytes) -> str:
     elif data.startswith(b"RIFF") and b"WEBP" in data[:20]:
         return "image/webp"
     return "image/jpeg"  # Default fallback
+
+
+def process_image_sync(image_data: bytes, filename: str) -> bytes:
+    """Process image synchronously with Pillow (CPU-bound).
+
+    Downscale images to ~1MP to reduce API payload size while maintaining quality.
+
+    Args:
+        image_data: Raw image bytes to process.
+        filename: Original filename for logging purposes.
+
+    Returns:
+        Processed image bytes (JPEG format, downscaled if needed).
+    """
+    target_pixels = 1_000_000  # 1 Megapixel
+    try:
+        with Image.open(io.BytesIO(image_data)) as img:
+            # Check current dimensions
+            width, height = img.size
+            pixels = width * height
+
+            if pixels > target_pixels:
+                # Calculate scaling factor
+                ratio = (target_pixels / pixels) ** 0.5
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+
+                logger.info(
+                    "Downscaling image %s from %dx%d to %dx%d",
+                    filename,
+                    width,
+                    height,
+                    new_width,
+                    new_height,
+                )
+
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # Convert to JPEG (compatible and efficient)
+            output_buffer = io.BytesIO()
+            # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+
+            img.save(output_buffer, format="JPEG", quality=85)
+            return output_buffer.getvalue()
+    except Exception as img_err:
+        logger.error("Failed to process image %s: %s", filename, img_err)
+        # Fallback to original if processing fails
+        return image_data
