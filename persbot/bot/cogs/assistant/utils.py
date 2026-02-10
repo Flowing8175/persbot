@@ -198,9 +198,19 @@ def cancel_channel_tasks(
     sending_tasks: dict[int, asyncio.Task],
     channel_name: str = "",
     reason: str = "",
+    cancellation_signals: Optional[dict[int, asyncio.Event]] = None,
 ) -> bool:
     """Cancel active processing and sending tasks for a channel. Returns True if any cancelled."""
     cancelled = False
+
+    # Trigger cancellation signal to abort LLM API calls
+    if cancellation_signals and channel_id in cancellation_signals:
+        logger.info(
+            "%s triggered abort signal for channel #%s",
+            reason,
+            channel_name,
+        )
+        cancellation_signals[channel_id].set()
 
     if channel_id in processing_tasks:
         task = processing_tasks[channel_id]

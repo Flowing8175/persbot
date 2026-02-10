@@ -136,7 +136,12 @@ class AssistantCog(BaseChatCog):
 
         # Cancel any active tasks
         cancelled = utils.cancel_channel_tasks(
-            channel_id, self.processing_tasks, self.sending_tasks, ctx.channel.name, "Retry command"
+            channel_id,
+            self.processing_tasks,
+            self.sending_tasks,
+            ctx.channel.name,
+            "Retry command",
+            self.cancellation_signals,
         )
 
         # Undo last exchange
@@ -189,7 +194,12 @@ class AssistantCog(BaseChatCog):
 
         # Cancel tasks in both cogs
         aborted = utils.cancel_channel_tasks(
-            channel_id, self.processing_tasks, self.sending_tasks, ctx.channel.name, "Abort command"
+            channel_id,
+            self.processing_tasks,
+            self.sending_tasks,
+            ctx.channel.name,
+            "Abort command",
+            self.cancellation_signals,
         )
         aborted = utils.cancel_auto_channel_tasks(channel_id, self.bot) or aborted
 
