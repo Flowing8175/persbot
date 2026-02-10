@@ -189,9 +189,6 @@ class BaseChatCog(commands.Cog):
             return
 
         if hasattr(channel, "id"):
-            # Trigger abort for active API calls when user types
-            self._cancel_active_tasks(channel.id, user.name, "Typing event")
-
             # Check filtering in subclass if needed, but BaseCog assumes if we are listening, we care.
             # But we should probably check if it's an interesting channel in the subclass listener
             # or rely on the buffer check (buffer handles non-existent keys gracefully).
