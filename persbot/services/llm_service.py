@@ -218,20 +218,40 @@ class LLMService:
 
     async def generate_prompt_from_concept(self, concept: str) -> Optional[str]:
         """Generate a detailed system prompt from a simple concept using Meta Prompt."""
-        # Use a powerful model for this task (usually the summarizer or assistant model)
-        # We'll create a temporary model instance with the META_PROMPT
-        # Disable caching for the meta prompt generation itself
-        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
+        # Different backends have different APIs for generating content
+        # Use the appropriate method based on the backend type
 
-        if hasattr(self.summarizer_backend, "assistant_model"):
-            # Create meta model
-            result = await self.summarizer_backend.execute_with_retry(
-                lambda: meta_model.generate_content(concept),
+        # For OpenAI and ZAI backends, use direct client API calls
+        from persbot.services.zai_service import ZAIService
+        from persbot.services.openai_service import OpenAIService
+
+        if isinstance(self.summarizer_backend, (OpenAIService, ZAIService)):
+            # Use client.chat.completions.create directly with META_PROMPT as system instruction
+            return await self.summarizer_backend.execute_with_retry(
+                lambda: self.summarizer_backend.client.chat.completions.create(
+                    model=self.summarizer_backend._summary_model_name,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": META_PROMPT,
+                        },
+                        {"role": "user", "content": concept},
+                    ],
+                    temperature=getattr(self.config, "temperature", 1.0),
+                    top_p=getattr(self.config, "top_p", 1.0),
+                ),
                 "프롬프트 생성",
                 timeout=60.0,
             )
-            return result
-        return None
+
+        # For Gemini backend, use the existing pattern with generate_content
+        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
+        result = await self.summarizer_backend.execute_with_retry(
+            lambda: meta_model.generate_content(concept),
+            "프롬프트 생성",
+            timeout=60.0,
+        )
+        return result
 
     async def generate_chat_response(
         self,

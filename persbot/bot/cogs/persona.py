@@ -350,7 +350,7 @@ class PromptManagerView(discord.ui.View):
                     await send_discord_message(
                         interaction, f"🗑️ **{p['name']}** 삭제 완료.", ephemeral=False
                     )
-                    await self.view_ref.refresh_view(interaction)
+                    await self.refresh_view(interaction)
                 else:
                     await send_discord_message(interaction, "❌ 삭제 실패.", ephemeral=True)
 
