@@ -186,10 +186,27 @@ class ZAIService(BaseLLMService):
             logger.exception("Failed to extract text from Z.AI response")
         return ""
 
-    async def summarize_text(self, text: str) -> Optional[str]:
-        """Summarize text using Z.AI model."""
+    async def summarize_text(
+        self,
+        text: str,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> Optional[str]:
+        """Summarize text using Z.AI model.
+
+        Args:
+            text: Text to summarize.
+            cancel_event: Optional event to check for abort signals.
+
+        Returns:
+            Summarized text or None if cancelled/failed.
+        """
         if not text.strip():
             return "요약할 메시지가 없습니다."
+
+        # Check cancellation event before starting API call
+        if cancel_event and cancel_event.is_set():
+            logger.info("Summary API call aborted due to cancellation signal")
+            raise asyncio.CancelledError("LLM API call aborted by user")
 
         prompt = f"Discord 대화 내용:\n{text}"
         return await self.execute_with_retry(
@@ -207,6 +224,7 @@ class ZAIService(BaseLLMService):
             ),
             "요약",
             extract_text=self._extract_text_from_response,
+            cancel_event=cancel_event,
         )
 
     async def generate_chat_response(

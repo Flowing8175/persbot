@@ -4,12 +4,21 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
-from ddgs import DDGS
-from ddgs.exceptions import RatelimitException
-
+from persbot.services.search_service import SearchService, SearchError, SearchRateLimitError
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
+
+# Global SearchService instance (lazy initialization)
+_search_service: Optional[SearchService] = None
+
+
+def _get_search_service() -> SearchService:
+    """Get or create the global SearchService instance."""
+    global _search_service
+    if _search_service is None:
+        _search_service = SearchService()
+    return _search_service
 
 
 async def web_search(
@@ -40,13 +49,14 @@ async def web_search(
         logger.info("Web search aborted due to cancellation signal before API call")
         return ToolResult(success=False, error="Web search aborted by user")
 
-    # Use DuckDuckGo search via duckduckgo-search package
     try:
-        # Run synchronous DDGS call in thread pool to avoid blocking
-        results = await asyncio.to_thread(
-            _perform_search,
-            query,
-            num_results,
+        # Get SearchService and perform search
+        search_service = _get_search_service()
+
+        results = await search_service.web_search(
+            query=query,
+            num_results=num_results,
+            cancel_event=cancel_event,
         )
 
         if results:
@@ -58,57 +68,33 @@ async def web_search(
                     "count": len(results[:num_results]),
                 },
             )
-    except RatelimitException:
+
+        # No results found
+        return ToolResult(
+            success=False,
+            error="No search results found",
+        )
+
+    except asyncio.CancelledError:
+        logger.info("Web search cancelled by user")
+        return ToolResult(success=False, error="Web search aborted by user")
+    except SearchRateLimitError:
         return ToolResult(
             success=False,
             error="Rate limit exceeded. DuckDuckGo search is temporarily unavailable due to too many requests. Please try again in a few minutes.",
         )
-    except Exception:
-        pass
-
-    # Fallback: Return a message about search limitations
-    return ToolResult(
-        success=False,
-        error="Web search failed. The search service may be temporarily unavailable.",
-    )
-
-
-def _perform_search(query: str, num_results: int) -> List[Dict[str, str]]:
-    """Perform synchronous DuckDuckGo search.
-
-    Args:
-        query: The search query string.
-        num_results: Number of results to return.
-
-    Returns:
-        List of search result dictionaries.
-
-    Raises:
-        RatelimitException: When DuckDuckGo rate limits the request.
-        Exception: For other search errors.
-    """
-    ddgs = DDGS()
-    search_results = ddgs.text(
-        query,
-        max_results=num_results,
-        region="ko-kr",
-        safesearch="moderate",
-        backend="auto",
-    )
-
-    # Transform DDGS results to match expected format
-    results = []
-    for result in search_results or []:
-        results.append(
-            {
-                "title": result.get("title", ""),
-                "url": result.get("href", ""),
-                "snippet": result.get("body", ""),
-                "source": "DuckDuckGo",
-            }
+    except SearchError as e:
+        logger.error("Search error: %s", e)
+        return ToolResult(
+            success=False,
+            error="Web search failed. The search service may be temporarily unavailable.",
         )
-
-    return results
+    except Exception as e:
+        logger.error("Unexpected search error: %s", e, exc_info=True)
+        return ToolResult(
+            success=False,
+            error="Web search failed",
+        )
 
 
 def register_search_tools(registry):

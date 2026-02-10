@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
 
-from persbot.exceptions import APIException, RateLimitException
+from persbot.exceptions import APIException, FatalError, RateLimitException
 from persbot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
@@ -172,12 +172,12 @@ class RetryHandler(ABC):
         last_error: Optional[Exception] = None
 
         for attempt in range(1, self.config.max_retries + 1):
-            try:
-                # Check for cancellation before attempting API call
-                if cancel_event and cancel_event.is_set():
-                    logger.info("API call aborted due to cancellation signal before attempt")
-                    raise asyncio.CancelledError("LLM API call aborted by user")
+            # Check for cancellation at the start of each retry iteration
+            if cancel_event and cancel_event.is_set():
+                logger.info("API call aborted due to cancellation signal at start of retry iteration %d", attempt)
+                raise asyncio.CancelledError("LLM API call aborted by user")
 
+            try:
                 response = await asyncio.wait_for(
                     self._execute_with_timeout(api_call),
                     timeout=self.config.request_timeout,

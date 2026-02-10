@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -253,7 +253,7 @@ class TestImageTools:
     @pytest.mark.asyncio
     async def test_generate_image_empty_prompt(self):
         """Test image generation with empty prompt."""
-        result = await generate_image("", discord_user_id=123456789)
+        result = await generate_image("")
 
         assert result.success is False
         assert "empty" in result.error.lower()
@@ -261,159 +261,91 @@ class TestImageTools:
     @pytest.mark.asyncio
     async def test_generate_image_whitespace_prompt(self):
         """Test image generation with whitespace-only prompt."""
-        result = await generate_image("   ", discord_user_id=123456789)
+        result = await generate_image("   ")
 
         assert result.success is False
         assert "empty" in result.error.lower()
 
     @pytest.mark.asyncio
-    @patch("persbot.tools.api_tools.image_tools.OpenAI")
-    @patch("persbot.tools.api_tools.image_tools.load_config")
-    @patch("persbot.tools.api_tools.image_tools.aiohttp.ClientSession")
-    async def test_generate_image_success(self, mock_session, mock_load_config, mock_openai):
-        """Test successful image generation with mocked API."""
+    async def test_generate_image_with_mock_service(self):
+        """Test successful image generation with mocked ImageService."""
+        # Mock ImageService
+        mock_service = AsyncMock()
+        mock_service.generate_image_with_fetch = AsyncMock(return_value=b"fake_image_bytes")
+
         # Mock config
-        mock_config = Mock()
-        mock_config.zai_api_key = "test_api_key"
-        mock_config.zai_base_url = "https://test.zai.com"
-        mock_config.api_request_timeout = 30
-        mock_load_config.return_value = mock_config
+        mock_config = MagicMock()
+        mock_config.openrouter_api_key = "test-key"
+        mock_config.openrouter_image_model = "test-model"
+        mock_config.api_request_timeout = 30.0
 
-        # Mock OpenAI client
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
+        # Mock rate limiter
+        mock_limiter = MagicMock()
+        mock_rate_result = MagicMock()
+        mock_rate_result.allowed = True
+        mock_limiter.check_rate_limit = AsyncMock(return_value=mock_rate_result)
 
-        # Mock API response
-        mock_response = Mock()
-        mock_response.data = [Mock(url="https://example.com/image.png")]
-        mock_response.content_filter = None
-        mock_client.images.create.return_value = mock_response
-
-        # Mock aiohttp session and response
-        mock_aiohttp_response = AsyncMock()
-        mock_aiohttp_response.status = 200
-        mock_aiohttp_response.read = AsyncMock(return_value=b"fake image data")
-
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__.return_value = mock_session_context
-        mock_session_context.get = Mock(
-            return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_aiohttp_response))
-        )
-        mock_session.return_value = mock_session_context
-
-        # Call the function
-        result = await generate_image("A beautiful sunset", discord_user_id=123456789)
+        with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+            with patch("persbot.tools.api_tools.image_tools.get_image_rate_limiter", return_value=mock_limiter):
+                with patch("persbot.tools.api_tools.image_tools._get_image_service", return_value=mock_service):
+                    result = await generate_image("A beautiful sunset")
 
         # Verify success
         assert result.success is True
-        assert result.data == b"fake image data"
-        mock_client.images.create.assert_called_once()
+        assert result.data == "Image generated successfully"
+        assert result.metadata.get("image_bytes") == b"fake_image_bytes"
 
     @pytest.mark.asyncio
-    @patch("tests.test_tools_api.generate_image")
-    async def test_generate_image_api_error_401(self, mock_generate_image):
-        """Test image generation with 401 error."""
-        from persbot.tools.base import ToolResult
-
-        # Mock generate_image to return 401 error result
-        mock_generate_image.return_value = ToolResult(
-            success=False, error="API key invalid or missing"
-        )
-
-        # Call the function (which is mocked)
-        result = await generate_image("Test prompt", discord_user_id=123456789)
-
-        # Verify error handling
-        assert result.success is False
-        assert "api key" in result.error.lower() or "invalid" in result.error.lower()
-
-    @pytest.mark.asyncio
-    @patch("tests.test_tools_api.generate_image")
-    async def test_generate_image_rate_limit_429(self, mock_generate_image):
-        """Test image generation with 429 rate limit error."""
-        from persbot.tools.base import ToolResult
-
-        # Mock generate_image to return rate limit error result
-        mock_generate_image.return_value = ToolResult(
-            success=False, error="Rate limited, please try again later"
-        )
-
-        # Call the function (which is mocked)
-        result = await generate_image("Test prompt", discord_user_id=123456789)
-
-        # Verify error handling
-        assert result.success is False
-        assert "rate limit" in result.error.lower()
-
-    @pytest.mark.asyncio
-    @patch("persbot.tools.api_tools.image_tools.OpenAI")
-    @patch("persbot.tools.api_tools.image_tools.load_config")
-    async def test_generate_image_content_filtered(self, mock_load_config, mock_openai):
-        """Test image generation with content filter violation."""
+    async def test_generate_image_rate_limited(self):
+        """Test image generation when rate limited."""
         # Mock config
-        mock_config = Mock()
-        mock_config.zai_api_key = "test_api_key"
-        mock_config.zai_base_url = "https://test.zai.com"
-        mock_config.api_request_timeout = 30
-        mock_load_config.return_value = mock_config
+        mock_config = MagicMock()
+        mock_config.openrouter_api_key = "test-key"
+        mock_config.openrouter_image_model = "test-model"
+        mock_config.api_request_timeout = 30.0
 
-        # Mock OpenAI client
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
+        # Mock rate limiter to deny
+        mock_limiter = MagicMock()
+        mock_rate_result = MagicMock()
+        mock_rate_result.allowed = False
+        mock_rate_result.message = "Rate limited"
+        mock_limiter.check_rate_limit = AsyncMock(return_value=mock_rate_result)
 
-        # Mock API response with content filter violation
-        # Data must be non-empty to trigger content filter check
-        mock_response = Mock()
-        mock_response.data = [Mock(url="https://example.com/image.png")]
-        mock_response.content_filter = ["violence", "adult"]
-        mock_client.images.create.return_value = mock_response
+        mock_discord_context = MagicMock()
+        mock_discord_context.author = MagicMock(id=12345)
 
-        # Call the function
-        result = await generate_image("Test prompt", discord_user_id=123456789)
+        with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+            with patch("persbot.tools.api_tools.image_tools.get_image_rate_limiter", return_value=mock_limiter):
+                result = await generate_image("test prompt", discord_context=mock_discord_context)
 
-        # Verify error handling
         assert result.success is False
-        assert "content filter" in result.error.lower()
+        assert "rate limited" in result.error.lower()
 
     @pytest.mark.asyncio
-    @patch("persbot.tools.api_tools.image_tools.OpenAI")
-    @patch("persbot.tools.api_tools.image_tools.load_config")
-    @patch("persbot.tools.api_tools.image_tools.aiohttp.ClientSession")
-    async def test_generate_image_download_failure(
-        self, mock_session, mock_load_config, mock_openai
-    ):
-        """Test image generation with download failure."""
-        # Mock config
-        mock_config = Mock()
-        mock_config.zai_api_key = "test_api_key"
-        mock_config.zai_base_url = "https://test.zai.com"
-        mock_config.api_request_timeout = 30
-        mock_load_config.return_value = mock_config
+    async def test_generate_image_service_error(self):
+        """Test image generation when service fails."""
+        from persbot.services.image_service import ImageGenerationError
 
-        # Mock OpenAI client
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
-
-        # Mock API response
-        mock_response = Mock()
-        mock_response.data = [Mock(url="https://example.com/image.png")]
-        mock_response.content_filter = None
-        mock_client.images.create.return_value = mock_response
-
-        # Mock aiohttp session with failed download
-        mock_aiohttp_response = AsyncMock()
-        mock_aiohttp_response.status = 500
-
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__.return_value = mock_session_context
-        mock_session_context.get = Mock(
-            return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_aiohttp_response))
+        # Mock ImageService
+        mock_service = AsyncMock()
+        mock_service.generate_image_with_fetch = AsyncMock(
+            side_effect=ImageGenerationError("API error")
         )
-        mock_session.return_value = mock_session_context
 
-        # Call the function
-        result = await generate_image("Test prompt", discord_user_id=123456789)
+        mock_config = MagicMock()
+        mock_config.openrouter_api_key = "test-key"
+        mock_config.openrouter_image_model = "test-model"
+        mock_config.api_request_timeout = 30.0
 
-        # Verify error handling
+        mock_limiter = MagicMock()
+        mock_rate_result = MagicMock()
+        mock_rate_result.allowed = True
+        mock_limiter.check_rate_limit = AsyncMock(return_value=mock_rate_result)
+
+        with patch("persbot.tools.api_tools.image_tools.load_config", return_value=mock_config):
+            with patch("persbot.tools.api_tools.image_tools.get_image_rate_limiter", return_value=mock_limiter):
+                with patch("persbot.tools.api_tools.image_tools._get_image_service", return_value=mock_service):
+                    result = await generate_image("test prompt")
+
         assert result.success is False
-        assert "download" in result.error.lower() or "failed" in result.error.lower()
+        assert "failed" in result.error.lower() or "api error" in result.error.lower()

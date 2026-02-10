@@ -1,5 +1,6 @@
 """Weather information tools for SoyeBot AI."""
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,7 @@ async def get_weather(
     location: str,
     units: str = "metric",
     weather_api_key: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
     **kwargs,
 ) -> ToolResult:
     """Get current weather information for a location.
@@ -22,12 +24,18 @@ async def get_weather(
         location: The location name (e.g., "Seoul", "New York", "Tokyo").
         units: Unit system - "metric" (Celsius) or "imperial" (Fahrenheit).
         weather_api_key: Optional API key for weather service.
+        cancel_event: AsyncIO event to check for cancellation before HTTP calls.
 
     Returns:
         ToolResult with weather information.
     """
     if not location or not location.strip():
         return ToolResult(success=False, error="Location cannot be empty")
+
+    # Check for cancellation before HTTP requests
+    if cancel_event and cancel_event.is_set():
+        logger.info("Weather lookup aborted due to cancellation signal before API call")
+        return ToolResult(success=False, error="Weather lookup aborted by user")
 
     units = units.lower()
     if units not in ("metric", "imperial"):
@@ -72,6 +80,9 @@ async def get_weather(
                     else:
                         return ToolResult(success=False, error=f"Weather API error: {resp.status}")
 
+        except asyncio.CancelledError:
+            logger.info("Weather lookup cancelled by user")
+            return ToolResult(success=False, error="Weather lookup aborted by user")
         except aiohttp.ClientError as e:
             logger.error("Weather API request failed: %s", e)
             return ToolResult(success=False, error="Failed to fetch weather data")
@@ -80,6 +91,10 @@ async def get_weather(
             return ToolResult(success=False, error=str(e))
 
     # Fallback: Use wttr.in (no API key required, but limited)
+    # Check for cancellation before fallback request
+    if cancel_event and cancel_event.is_set():
+        logger.info("Weather lookup aborted due to cancellation signal before fallback API call")
+        return ToolResult(success=False, error="Weather lookup aborted by user")
     try:
         async with aiohttp.ClientSession() as session:
             url = f"https://wttr.in/{location}?format=j1"

@@ -10,15 +10,27 @@ from typing import List, Optional
 
 import aiohttp
 import discord
-from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
 from PIL import Image
 
 from persbot.config import load_config
 from persbot.rate_limiter import get_image_rate_limiter, RateLimitResult
+from persbot.services.image_service import ImageService, ImageGenerationError
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 from persbot.utils import get_mime_type, process_image_sync
 
 logger = logging.getLogger(__name__)
+
+# Global ImageService instance (lazy initialization)
+_image_service: Optional[ImageService] = None
+
+
+def _get_image_service() -> ImageService:
+    """Get or create the global ImageService instance."""
+    global _image_service
+    if _image_service is None:
+        config = load_config()
+        _image_service = ImageService(config)
+    return _image_service
 
 
 async def generate_image(
@@ -73,31 +85,6 @@ async def generate_image(
         logger.info("Image generation aborted due to cancellation signal before API call")
         return ToolResult(success=False, error="Image generation aborted by user")
 
-    # Calculate prompt hash for logging
-    prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-    prompt_length = len(prompt)
-
-    # Check prompt length before API call (OpenRouter has ~2000 char limit for image models)
-    enhanced_prompt = prompt
-    total_prompt_length = len(enhanced_prompt)
-
-    # OpenRouter character limit for image generation is approximately 2000 chars
-    MAX_PROMPT_LENGTH = 2000
-
-    if total_prompt_length > MAX_PROMPT_LENGTH:
-        logger.warning(
-            "Prompt too long (prompt_hash=%s, length=%d, max=%d): truncating",
-            prompt_hash,
-            prompt_length,
-            MAX_PROMPT_LENGTH,
-        )
-        # Truncate to fit within limit, keep as much of user's original prompt as possible
-        enhanced_prompt = prompt[:MAX_PROMPT_LENGTH]
-        logger.warning(
-            "User prompt exceeds maximum, using truncated version (prompt_hash=%s)",
-            prompt_hash,
-        )
-
     # Extract images from discord_context if no image_input provided
     if not image_input and discord_context and discord_context.attachments:
         # Process first image attachment as input
@@ -113,8 +100,7 @@ async def generate_image(
                     mime_type = get_mime_type(img_bytes_processed)
                     image_input = f"data:{mime_type};base64,{b64_str}"
                     logger.info(
-                        "Using attached image as input for image generation (prompt_hash=%s)",
-                        prompt_hash,
+                        "Using attached image as input for image generation"
                     )
                     break
                 except Exception as e:
@@ -125,171 +111,22 @@ async def generate_image(
                     )
 
     try:
-        # Record start time for performance logging
-        start_time = time.time()
+        # Get ImageService and generate image
+        image_service = _get_image_service()
 
-        # Load config to get API credentials
-        config = load_config()
-
-        # Use provided model or fall back to config default
-        image_model = model or config.openrouter_image_model
-
-        # Initialize OpenAI client with OpenRouter credentials
-        image_base_url = "https://openrouter.ai/api/v1"
-        logger.info(
-            "Initializing image generation with OpenRouter: %s (model=%s)",
-            image_base_url,
-            image_model,
-        )
-        client = OpenAI(
-            api_key=config.openrouter_api_key,
-            base_url=image_base_url,
-            timeout=config.api_request_timeout,
+        image_bytes = await image_service.generate_image_with_fetch(
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            model=model,
+            image_input=image_input,
+            cancel_event=cancel_event,
         )
 
-        logger.info(
-            "Generating image with aspect_ratio: %s, model: %s (prompt_hash=%s)",
-            aspect_ratio,
-            image_model,
-            prompt_hash,
-        )
-
-        # Check for cancellation before API call
-        if cancel_event and cancel_event.is_set():
-            logger.info("Image generation aborted due to cancellation signal before API call")
-            return ToolResult(success=False, error="Image generation aborted by user")
-
-        # Build image config with aspect_ratio
-        image_config = {"aspect_ratio": aspect_ratio}
-
-        # Build user message content - include image if provided
-        if image_input:
-            # Image-to-image: include both text prompt and input image
-            user_content = [
-                {"type": "text", "text": enhanced_prompt},
-                {"type": "image_url", "image_url": {"url": image_input}}
-            ]
-            logger.info(
-                "Including input image in generation request (prompt_hash=%s)",
-                prompt_hash,
-            )
-        else:
-            # Text-to-image: only prompt
-            user_content = enhanced_prompt
-
-        # Call OpenAI client to generate image via OpenRouter
-        api_response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model=image_model,
-            messages=[{"role": "user", "content": user_content}],
-            modalities=["image"],
-            extra_body={"image_config": image_config},
-        )
-
-        # Validate response structure
-        if not api_response.choices or len(api_response.choices) == 0:
-            logger.error(
-                "No choices in image generation response (prompt_hash=%s, length=%d)",
-                prompt_hash,
-                prompt_length,
-            )
+        if image_bytes is None:
             return ToolResult(
                 success=False,
-                error="No image generated",
+                error="Image generation failed",
             )
-
-        message = api_response.choices[0].message
-        if not hasattr(message, "images") or not message.images or len(message.images) == 0:
-            logger.error(
-                "No images in response message (prompt_hash=%s, length=%d)",
-                prompt_hash,
-                prompt_length,
-            )
-            return ToolResult(
-                success=False,
-                error="No image generated",
-            )
-
-        # Parse image URL: handle both base64 data URLs and HTTP/HTTPS URLs
-        # Handle both object and dict response formats
-        image_obj = message.images[0]
-        if isinstance(image_obj, dict):
-            image_data_url = image_obj["image_url"]["url"]
-        else:
-            image_data_url = image_obj.image_url.url
-
-        # Check if URL is base64 data URL or HTTP/HTTPS URL
-        if image_data_url.startswith("data:"):
-            # Base64 data URL format: "data:image/png;base64,iVBORw0KG..."
-            try:
-                header, data = image_data_url.split(",", 1)
-                image_bytes = base64.b64decode(data)
-            except (ValueError, IndexError) as decode_error:
-                logger.error(
-                    "Failed to decode base64 image (prompt_hash=%s, length=%d): %s",
-                    prompt_hash,
-                    prompt_length,
-                    decode_error,
-                )
-                return ToolResult(
-                    success=False,
-                    error="Failed to decode generated image",
-                )
-        elif image_data_url.startswith(("http://", "https://")):
-            # HTTP/HTTPS URL - fetch the image bytes
-            # Check for cancellation before fetching image
-            if cancel_event and cancel_event.is_set():
-                logger.info("Image generation aborted due to cancellation signal before image fetch")
-                return ToolResult(success=False, error="Image generation aborted by user")
-
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(image_data_url) as response:
-                        if response.status != 200:
-                            logger.error(
-                                "Failed to fetch image from URL (prompt_hash=%s, length=%d, status=%d)",
-                                prompt_hash,
-                                prompt_length,
-                                response.status,
-                            )
-                            return ToolResult(
-                                success=False,
-                                error=f"Failed to fetch generated image (HTTP {response.status})",
-                            )
-                        image_bytes = await response.read()
-            except Exception as fetch_error:
-                logger.error(
-                    "Failed to fetch image from URL (prompt_hash=%s, length=%d): %s",
-                    prompt_hash,
-                    prompt_length,
-                    fetch_error,
-                )
-                return ToolResult(
-                    success=False,
-                    error="Failed to fetch generated image",
-                )
-        else:
-            logger.error(
-                "Unknown image URL format (prompt_hash=%s, length=%d): %s",
-                prompt_hash,
-                prompt_length,
-                image_data_url[:50] if image_data_url else "empty",
-            )
-            return ToolResult(
-                success=False,
-                error="Invalid image URL format",
-            )
-
-        # Calculate response time
-        response_time = time.time() - start_time
-
-        # Log successful generation
-        logger.info(
-            "Image generated successfully via OpenRouter (prompt_hash=%s, length=%d, response_time=%.2fs)",
-            prompt_hash,
-            prompt_length,
-            response_time,
-        )
 
         # Return success message and store image in metadata for Discord sending
         # Don't return the binary data in the main result field to avoid LLM prompt length issues
@@ -299,89 +136,15 @@ async def generate_image(
             metadata={"image_bytes": image_bytes},
         )
 
-    except AuthenticationError as e:
-        logger.error(
-            "Authentication error (prompt_hash=%s, length=%d): %s",
-            prompt_hash,
-            prompt_length,
-            e,
-        )
-        return ToolResult(
-            success=False,
-            error="API key invalid or missing",
-        )
-
-    except RateLimitError as e:
-        logger.error(
-            "Rate limit error (prompt_hash=%s, length=%d): %s",
-            prompt_hash,
-            prompt_length,
-            e,
-        )
-        # Log raw API response for debugging rate limit issues
-        logger.debug(
-            "Raw API response for rate limit (prompt_hash=%s): %s",
-            prompt_hash,
-            str(e),
-        )
-        return ToolResult(
-            success=False,
-            error="Rate limited, please try again later",
-        )
-
-    except APIStatusError as e:
-        if e.status_code == 401:
-            logger.error(
-                "Unauthorized error (prompt_hash=%s, length=%d): %s",
-                prompt_hash,
-                prompt_length,
-                e,
-            )
-            return ToolResult(
-                success=False,
-                error="API key invalid or missing",
-            )
-        elif e.status_code == 429:
-            logger.error(
-                "Rate limit error (prompt_hash=%s, length=%d): %s",
-                prompt_hash,
-                prompt_length,
-                e,
-            )
-            return ToolResult(
-                success=False,
-                error="Rate limited, please try again later",
-            )
-        elif e.status_code == 500:
-            logger.error(
-                "Server error (prompt_hash=%s, length=%d): %s",
-                prompt_hash,
-                prompt_length,
-                e,
-            )
-            return ToolResult(
-                success=False,
-                error="Image generation service unavailable",
-            )
-        else:
-            logger.error(
-                "API status error (prompt_hash=%s, length=%d, status=%d): %s",
-                prompt_hash,
-                prompt_length,
-                e.status_code,
-                e,
-            )
-            return ToolResult(
-                success=False,
-                error="Image generation failed",
-            )
-
+    except asyncio.CancelledError:
+        logger.info("Image generation cancelled by user")
+        return ToolResult(success=False, error="Image generation aborted by user")
+    except ImageGenerationError as e:
+        logger.error("Image generation error: %s", e)
+        return ToolResult(success=False, error=str(e))
     except Exception as e:
-        # Generic exception handler (rate limit errors are already caught above)
         logger.error(
-            "Image generation failed (prompt_hash=%s, length=%d): %s",
-            prompt_hash,
-            prompt_length,
+            "Image generation failed: %s",
             e,
             exc_info=True,
         )

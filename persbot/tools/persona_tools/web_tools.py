@@ -5,6 +5,7 @@ It allows inspecting and summarizing content from external URLs including web pa
 and YouTube videos.
 """
 
+import asyncio
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -25,6 +26,7 @@ MAX_CONTENT_LENGTH = 1000
 
 async def inspect_external_content(
     url: str,
+    cancel_event: Optional[asyncio.Event] = None,
     **kwargs,
 ) -> ToolResult:
     """Inspect and analyze content from an external URL.
@@ -34,6 +36,7 @@ async def inspect_external_content(
 
     Args:
         url: The URL to inspect and analyze.
+        cancel_event: AsyncIO event to check for cancellation before HTTP calls.
 
     Returns:
         ToolResult with the page's title, URL, and summarized content.
@@ -45,11 +48,16 @@ async def inspect_external_content(
     if not url.startswith(("http://", "https://")):
         return ToolResult(success=False, error="URL must start with http:// or https://")
 
+    # Check for cancellation before HTTP request
+    if cancel_event and cancel_event.is_set():
+        logger.info("Web content inspection aborted due to cancellation signal before HTTP call")
+        return ToolResult(success=False, error="Web content inspection aborted by user")
+
     try:
         # Check if this is a YouTube URL
         youtube_id = _extract_youtube_id(url)
         if youtube_id:
-            return await _inspect_youtube_content(url, youtube_id)
+            return await _inspect_youtube_content(url, youtube_id, cancel_event)
 
         # Regular web page inspection
         return await _inspect_web_page(url)
@@ -139,6 +147,9 @@ async def _inspect_web_page(url: str) -> ToolResult:
             },
         )
 
+    except asyncio.CancelledError:
+        logger.info("Web content inspection cancelled by user")
+        return ToolResult(success=False, error="Web content inspection aborted by user")
     except aiohttp.ClientError as e:
         logger.error("HTTP client error: %s", e)
         return ToolResult(success=False, error=f"Network error: {str(e)}")
@@ -147,16 +158,26 @@ async def _inspect_web_page(url: str) -> ToolResult:
         return ToolResult(success=False, error=f"Failed to parse page: {str(e)}")
 
 
-async def _inspect_youtube_content(url: str, video_id: str) -> ToolResult:
+async def _inspect_youtube_content(
+    url: str,
+    video_id: str,
+    cancel_event: Optional[asyncio.Event] = None,
+) -> ToolResult:
     """Inspect a YouTube video and extract its metadata.
 
     Args:
         url: The YouTube URL.
         video_id: The YouTube video ID.
+        cancel_event: AsyncIO event to check for cancellation before HTTP calls.
 
     Returns:
         ToolResult with YouTube video information.
     """
+    # Check for cancellation before HTTP request
+    if cancel_event and cancel_event.is_set():
+        logger.info("YouTube content inspection aborted due to cancellation signal before HTTP call")
+        return ToolResult(success=False, error="YouTube content inspection aborted by user")
+
     # Try to get video info via YouTube's oEmbed endpoint (no API key needed)
     oembed_url = (
         f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
@@ -179,6 +200,9 @@ async def _inspect_youtube_content(url: str, video_id: str) -> ToolResult:
                         },
                     )
 
+    except asyncio.CancelledError:
+        logger.info("YouTube content inspection cancelled by user")
+        return ToolResult(success=False, error="YouTube content inspection aborted by user")
     except Exception as e:
         logger.debug("YouTube oEmbed failed: %s", e)
 
