@@ -11,6 +11,7 @@ from persbot.services.session_wrappers.openai_session import (
     encode_image_to_url,
     OpenAIMessage,
 )
+from persbot.services.session_wrappers.zai_session import ZAIChatSession
 
 __all__ = [
     # Gemini
@@ -22,4 +23,6 @@ __all__ = [
     "ResponseSession",
     "encode_image_to_url",
     "OpenAIMessage",
+    # Z.AI
+    "ZAIChatSession",
 ]

@@ -1,13 +1,11 @@
 """OpenAI chat session wrapper for managing chat with history tracking."""
 
-import asyncio
 import base64
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, List, Optional, Union
+from typing import Any, Deque, Dict, List, Optional, Tuple, Callable
 
-import discord
 from openai import OpenAI
 
 from persbot.services.base import ChatMessage
@@ -49,6 +47,7 @@ class BaseOpenAISession:
         top_p: float,
         max_messages: int,
         service_tier: Optional[str] = None,
+        text_extractor: Optional[Callable[[Any], str]] = None,
     ):
         self._client = client
         self._model_name = model_name
@@ -57,6 +56,7 @@ class BaseOpenAISession:
         self._top_p = top_p
         self._max_messages = max_messages
         self._service_tier = service_tier
+        self._text_extractor = text_extractor or (lambda x: "")
         self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
 
     @property
@@ -65,7 +65,7 @@ class BaseOpenAISession:
         return list(self._history)
 
     @history.setter
-    def history(self, new_history: List[ChatMessage]]) -> None:
+    def history(self, new_history: List[ChatMessage]) -> None:
         """Replace the history with a new list."""
         self._history.clear()
         self._history.extend(new_history)
@@ -91,68 +91,16 @@ class BaseOpenAISession:
             )
         )
 
-    def _format_messages(
+    def _create_user_message(
         self,
         user_message: str,
         author_id: int,
         author_name: Optional[str] = None,
         message_ids: Optional[List[str]] = None,
         images: Optional[List[bytes]] = None,
-    ) -> List[Dict[str, Any]]:
-        """Format messages for the OpenAI API call."""
-        messages = []
-
-        # Add system instruction first if available
-        if self._system_instruction:
-            messages.append({
-                "role": "system",
-                "content": self._system_instruction,
-            })
-
-        # Add history (excluding system messages if we just added it)
-        for msg in self._history:
-            msg_dict = {"role": msg.role, "content": msg.content}
-            if msg.author_name and msg.role == "user":
-                # Add author name to user messages for context
-                msg_dict["name"] = msg.author_name
-            messages.append(msg_dict)
-
-        # Add current user message
-        user_content = [{"type": "text", "text": user_message}]
-        if images:
-            for img_data in images:
-                user_content.append(encode_image_to_url(img_data))
-
-        user_msg_dict = {"role": "user", "content": user_content}
-        if author_name:
-            user_msg_dict["name"] = author_name
-
-        messages.append(user_msg_dict)
-
-        return messages
-
-    async def send_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[List[str]] = None,
-        images: Optional[List[bytes]] = None,
-        tools: Optional[List[Any]] = None,
-    ) -> Tuple[ChatMessage, ChatMessage, Any]:
-        """Send a message to the model and get the response."""
-        messages = self._format_messages(
-            user_message, author_id, author_name, message_ids, images
-        )
-
-        # Make API call
-        response = await self._make_api_call(messages, tools)
-
-        # Extract response content
-        assistant_message = self._extract_response_content(response)
-
-        # Create ChatMessage objects
-        user_msg = ChatMessage(
+    ) -> ChatMessage:
+        """Create a ChatMessage for user input."""
+        return ChatMessage(
             role="user",
             content=user_message,
             author_id=author_id,
@@ -161,65 +109,235 @@ class BaseOpenAISession:
             images=images or [],
         )
 
-        model_msg = ChatMessage(
-            role="assistant",
-            content=assistant_message,
-            author_id=None,
-        )
-
-        return user_msg, model_msg, response
-
-    async def _make_api_call(self, messages: List[Dict[str, Any]], tools: Optional[List[Any]]):
-        """Make the actual API call - to be implemented by subclasses."""
-        raise NotImplementedError
-
-    def _extract_response_content(self, response: Any) -> str:
-        """Extract text content from response - to be implemented by subclasses."""
-        raise NotImplementedError
-
 
 class ChatCompletionSession(BaseOpenAISession):
-    """Session for standard chat completion API with history management."""
+    """Chat Completion API-backed chat session for fine-tuned models."""
 
-    async def _make_api_call(self, messages: List[Dict[str, Any]], tools: Optional[List[Any]]):
-        """Make chat completion API call."""
-        kwargs = {
+    def send_message(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
+        images: Optional[List[bytes]] = None,
+        tools: Optional[Any] = None,
+    ) -> Tuple[ChatMessage, ChatMessage, Any]:
+        """Send a message and get response."""
+        user_msg = self._create_user_message(
+            user_message, author_id, author_name, message_ids, images
+        )
+
+        # Build messages list
+        messages = self._build_system_message()
+        messages.extend(self._convert_history_to_api_format())
+        messages.append(self._build_user_content(user_message, images))
+
+        api_kwargs = {
             "model": self._model_name,
             "messages": messages,
             "temperature": self._temperature,
             "top_p": self._top_p,
+            "service_tier": self._service_tier,
         }
 
         if tools:
-            kwargs["tools"] = tools
+            api_kwargs["tools"] = tools
 
-        return await self._client.chat.completions.create(**kwargs)
+        response = self._client.chat.completions.create(**api_kwargs)
+
+        message_content = self._extract_response_content(response)
+        model_msg = ChatMessage(role="assistant", content=message_content)
+
+        return user_msg, model_msg, response
+
+    def _build_system_message(self) -> List[Dict[str, Any]]:
+        """Build system message list."""
+        if self._system_instruction:
+            return [{"role": "system", "content": self._system_instruction}]
+        return []
+
+    def _convert_history_to_api_format(self) -> List[Dict[str, Any]]:
+        """Convert chat history to OpenAI API format."""
+        api_history = []
+        for msg in self._history:
+            if msg.images:
+                content_blocks = []
+                if msg.content:
+                    content_blocks.append({"type": "text", "text": msg.content})
+                for img_bytes in msg.images:
+                    content_blocks.append(encode_image_to_url(img_bytes))
+                api_history.append({"role": msg.role, "content": content_blocks})
+            else:
+                api_history.append({"role": msg.role, "content": msg.content})
+        return api_history
+
+    def _build_user_content(
+        self, user_message: str, images: Optional[List[bytes]]
+    ) -> Dict[str, Any]:
+        """Build user message content for API."""
+        if images:
+            content_list = []
+            if user_message:
+                content_list.append({"type": "text", "text": user_message})
+            for img_bytes in images:
+                content_list.append(encode_image_to_url(img_bytes))
+            return {"role": "user", "content": content_list}
+        return {"role": "user", "content": user_message}
 
     def _extract_response_content(self, response: Any) -> str:
-        """Extract text content from chat completion response."""
-        if response.choices and len(response.choices) > 0:
-            return response.choices[0].message.content or ""
-        return ""
+        """Extract text content from response."""
+        if response.choices and response.choices[0].message.content:
+            return response.choices[0].message.content.strip()
+        return self._text_extractor(response)
+
+    def send_tool_results(
+        self, tool_rounds: List[Tuple[Any, Any]], tools: Optional[Any] = None
+    ) -> Tuple[ChatMessage, Any]:
+        """Send tool execution results back to model and get continuation.
+
+        Args:
+            tool_rounds: List of (response_obj, tool_results) tuples from each round.
+            tools: Tools for the next API call.
+
+        Returns:
+            Tuple of (model_msg, response_obj).
+        """
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
+
+        # Build base messages from history
+        messages = self._build_system_message()
+        messages.extend(self._convert_history_to_api_format())
+
+        # Remove last assistant entry (text-only from initial response)
+        if messages and messages[-1].get("role") == "assistant":
+            messages.pop()
+
+        # Add each tool round: assistant response (with tool_calls) + tool results
+        for resp_obj, results in tool_rounds:
+            assistant_msg = resp_obj.choices[0].message
+            tool_calls_data = []
+            if assistant_msg.tool_calls:
+                for tc in assistant_msg.tool_calls:
+                    tool_calls_data.append(
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                    )
+
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_msg.content,
+                    "tool_calls": tool_calls_data,
+                }
+            )
+
+            # Add tool result messages
+            messages.extend(OpenAIToolAdapter.create_tool_messages(results))
+
+        # Call API
+        api_kwargs = {
+            "model": self._model_name,
+            "messages": messages,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "service_tier": self._service_tier,
+        }
+        if tools:
+            api_kwargs["tools"] = tools
+
+        response = self._client.chat.completions.create(**api_kwargs)
+
+        message_content = self._extract_response_content(response)
+        model_msg = ChatMessage(role="assistant", content=message_content)
+
+        return model_msg, response
 
 
 class ResponseSession(BaseOpenAISession):
-    """Session for responses API (lower latency, no history)."""
+    """Response API-backed chat session with a bounded context window."""
 
-    async def _make_api_call(self, messages: List[Dict[str, Any]], tools: Optional[List[Any]]):
-        """Make responses API call (low latency)."""
-        messages_for_response = []
-        for msg in messages:
-            if msg["role"] == "system":
-                continue  # Responses API doesn't support system messages
-            messages_for_response.append(msg)
+    def _build_input_payload(self) -> List[Dict[str, Any]]:
+        """Build input payload for Responses API."""
+        payload = []
+        if self._system_instruction:
+            payload.append(
+                {
+                    "type": "message",
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": self._system_instruction,
+                        }
+                    ],
+                }
+            )
 
-        kwargs = {
+        for entry in self._history:
+            content_type = "output_text" if entry.role == "assistant" else "input_text"
+            payload.append(
+                {
+                    "type": "message",
+                    "role": entry.role,
+                    "content": [
+                        {
+                            "type": content_type,
+                            "text": entry.content,
+                        }
+                    ],
+                }
+            )
+        return payload
+
+    def send_message(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
+        images: Optional[List[bytes]] = None,
+        tools: Optional[Any] = None,
+    ) -> Tuple[ChatMessage, ChatMessage, Any]:
+        """Send a message and get response."""
+        user_msg = self._create_user_message(
+            user_message, author_id, author_name, message_ids, images
+        )
+
+        # Build current message content
+        current_payload = self._build_input_payload()
+
+        content_list = []
+        if user_message:
+            content_list.append({"type": "input_text", "text": user_message})
+
+        if images:
+            logger.warning(
+                "Images provided to ResponseSession (OpenAI Responses API), but image support is not fully implemented for this endpoint. Ignoring images."
+            )
+
+        # Append user message to payload
+        current_payload.append({"type": "message", "role": "user", "content": content_list})
+
+        api_kwargs = {
             "model": self._model_name,
-            "messages": messages_for_response,
+            "input": current_payload,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "service_tier": self._service_tier,
         }
 
-        return await self._client.responses.create(**kwargs)
+        if tools:
+            api_kwargs["tools"] = tools
 
-    def _extract_response_content(self, response: Any) -> str:
-        """Extract text content from responses API response."""
-        return response.output_text or ""
+        response = self._client.responses.create(**api_kwargs)
+
+        message_content = self._text_extractor(response)
+        model_msg = ChatMessage(role="assistant", content=message_content)
+
+        return user_msg, model_msg, response

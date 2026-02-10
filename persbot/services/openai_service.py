@@ -1,407 +1,30 @@
 """OpenAI API service for SoyeBot."""
 
 import asyncio
-import base64
-import json
 import logging
-from collections import deque
-from dataclasses import dataclass
-from typing import Any, Deque, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import discord
 from openai import OpenAI, RateLimitError
 
 from persbot.config import AppConfig
+from persbot.exceptions import RateLimitException
 from persbot.services.base import BaseLLMService, ChatMessage
+from persbot.services.model_wrappers.openai_model import OpenAIChatCompletionModel
 from persbot.services.prompt_service import PromptService
+from persbot.services.retry_handler import (
+    BackoffStrategy,
+    OpenAIRetryHandler,
+    RetryConfig,
+)
+from persbot.services.session_wrappers.openai_session import (
+    ChatCompletionSession,
+    encode_image_to_url,
+    ResponseSession,
+)
 from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
-from persbot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
-
-
-class BaseOpenAISession:
-    """Base class for OpenAI chat sessions."""
-
-    def __init__(
-        self,
-        client: OpenAI,
-        model_name: str,
-        system_instruction: str,
-        temperature: float,
-        top_p: float,
-        max_messages: int,
-        service_tier: Optional[str] = None,
-        text_extractor=None,
-    ):
-        self._client = client
-        self._model_name = model_name
-        self._system_instruction = system_instruction
-        self._temperature = temperature
-        self._top_p = top_p
-        self._max_messages = max_messages
-        self._service_tier = service_tier
-        self._text_extractor = text_extractor
-        self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
-
-    @property
-    def history(self) -> list[ChatMessage]:
-        """Get list of chat messages in history."""
-        return list(self._history)
-
-    @history.setter
-    def history(self, new_history: list[ChatMessage]) -> None:
-        """Replace the history with a new list."""
-        self._history.clear()
-        self._history.extend(new_history)
-
-    def _append_history(
-        self,
-        role: str,
-        content: str,
-        author_id: Optional[int] = None,
-        author_name: Optional[str] = None,
-        message_ids: list[str] = None,
-    ) -> None:
-        """Append a message to history if content is not empty."""
-        if not content:
-            return
-        self._history.append(
-            ChatMessage(
-                role=role,
-                content=content,
-                author_id=author_id,
-                author_name=author_name,
-                message_ids=message_ids or [],
-            )
-        )
-
-    def _create_user_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-    ) -> ChatMessage:
-        """Create a ChatMessage for user input."""
-        return ChatMessage(
-            role="user",
-            content=user_message,
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids or [],
-            images=images or [],
-        )
-
-    def _encode_image_to_url(self, img_bytes: bytes) -> dict:
-        """Convert image bytes to OpenAI image_url format."""
-        b64_str = base64.b64encode(img_bytes).decode("utf-8")
-        mime_type = get_mime_type(img_bytes)
-        return {
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
-        }
-
-
-class ResponseChatSession(BaseOpenAISession):
-    """Response API-backed chat session with a bounded context window."""
-
-    def _build_input_payload(self) -> list:
-        payload = []
-        if self._system_instruction:
-            payload.append(
-                {
-                    "type": "message",
-                    "role": "system",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": self._system_instruction,
-                        }
-                    ],
-                }
-            )
-
-        for entry in self._history:
-            content_type = "output_text" if entry.role == "assistant" else "input_text"
-            payload.append(
-                {
-                    "type": "message",
-                    "role": entry.role,
-                    "content": [
-                        {
-                            "type": content_type,
-                            "text": entry.content,
-                        }
-                    ],
-                }
-            )
-        return payload
-
-    def send_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-        tools: Optional[Any] = None,
-    ):
-        user_msg = self._create_user_message(
-            user_message, author_id, author_name, message_ids, images
-        )
-
-        # We need to temporarily simulate the history having the user message
-        # for the input payload construction, without mutating the permanent history state.
-        current_payload = self._build_input_payload()
-
-        # Build current message content
-        content_list = []
-        if user_message:
-            content_list.append({"type": "input_text", "text": user_message})
-
-        if images:
-            logger.warning(
-                "Images provided to ResponseChatSession (OpenAI Responses API), but image support is not fully implemented for this endpoint. Ignoring images."
-            )
-
-        # Append user message to payload
-        current_payload.append({"type": "message", "role": "user", "content": content_list})
-
-        api_kwargs = {
-            "model": self._model_name,
-            "input": current_payload,
-            "temperature": self._temperature,
-            "top_p": self._top_p,
-            "service_tier": self._service_tier,
-        }
-
-        if tools:
-            api_kwargs["tools"] = tools
-
-        response = self._client.responses.create(**api_kwargs)
-
-        message_content = self._text_extractor(response)
-        model_msg = ChatMessage(role="assistant", content=message_content)
-
-        return user_msg, model_msg, response
-
-
-class ChatCompletionSession(BaseOpenAISession):
-    """Chat Completion API-backed chat session for fine-tuned models."""
-
-    def send_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-        tools: Optional[Any] = None,
-    ):
-        user_msg = self._create_user_message(
-            user_message, author_id, author_name, message_ids, images
-        )
-
-        # Build messages list
-        messages = self._build_system_message()
-        messages.extend(self._convert_history_to_api_format())
-        messages.append(self._build_user_content(user_message, images))
-
-        api_kwargs = {
-            "model": self._model_name,
-            "messages": messages,
-            "temperature": self._temperature,
-            "top_p": self._top_p,
-            "service_tier": self._service_tier,
-        }
-
-        if tools:
-            api_kwargs["tools"] = tools
-
-        response = self._client.chat.completions.create(**api_kwargs)
-
-        message_content = self._extract_response_content(response)
-        model_msg = ChatMessage(role="assistant", content=message_content)
-
-        return user_msg, model_msg, response
-
-    def _build_system_message(self) -> list[dict]:
-        """Build system message list."""
-        if self._system_instruction:
-            return [{"role": "system", "content": self._system_instruction}]
-        return []
-
-    def _convert_history_to_api_format(self) -> list[dict]:
-        """Convert chat history to OpenAI API format."""
-        api_history = []
-        for msg in self._history:
-            if msg.images:
-                content_blocks = []
-                if msg.content:
-                    content_blocks.append({"type": "text", "text": msg.content})
-                for img_bytes in msg.images:
-                    content_blocks.append(self._encode_image_to_url(img_bytes))
-                api_history.append({"role": msg.role, "content": content_blocks})
-            else:
-                api_history.append({"role": msg.role, "content": msg.content})
-        return api_history
-
-    def _build_user_content(self, user_message: str, images: Optional[list[bytes]]) -> dict:
-        """Build user message content for API."""
-        if images:
-            content_list = []
-            if user_message:
-                content_list.append({"type": "text", "text": user_message})
-            for img_bytes in images:
-                content_list.append(self._encode_image_to_url(img_bytes))
-            return {"role": "user", "content": content_list}
-        return {"role": "user", "content": user_message}
-
-    def _extract_response_content(self, response) -> str:
-        """Extract text content from response."""
-        if response.choices and response.choices[0].message.content:
-            return response.choices[0].message.content.strip()
-        return self._text_extractor(response)
-
-    def send_tool_results(self, tool_rounds, tools=None):
-        """Send tool execution results back to model and get continuation.
-
-        Args:
-            tool_rounds: List of (response_obj, tool_results) tuples from each round.
-            tools: Tools for the next API call.
-
-        Returns:
-            Tuple of (model_msg, response_obj).
-        """
-        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
-
-        # Build base messages from history
-        messages = self._build_system_message()
-        messages.extend(self._convert_history_to_api_format())
-
-        # Remove last assistant entry (text-only from initial response)
-        if messages and messages[-1].get("role") == "assistant":
-            messages.pop()
-
-        # Add each tool round: assistant response (with tool_calls) + tool results
-        for resp_obj, results in tool_rounds:
-            assistant_msg = resp_obj.choices[0].message
-            tool_calls_data = []
-            if assistant_msg.tool_calls:
-                for tc in assistant_msg.tool_calls:
-                    tool_calls_data.append(
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        }
-                    )
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": assistant_msg.content,
-                    "tool_calls": tool_calls_data,
-                }
-            )
-
-            # Add tool result messages
-            messages.extend(OpenAIToolAdapter.create_tool_messages(results))
-
-        # Call API
-        api_kwargs = {
-            "model": self._model_name,
-            "messages": messages,
-            "temperature": self._temperature,
-            "top_p": self._top_p,
-            "service_tier": self._service_tier,
-        }
-        if tools:
-            api_kwargs["tools"] = tools
-
-        response = self._client.chat.completions.create(**api_kwargs)
-
-        message_content = self._extract_response_content(response)
-        model_msg = ChatMessage(role="assistant", content=message_content)
-
-        return model_msg, response
-
-
-class _ChatCompletionModel:
-    """Chat Completion API wrapper."""
-
-    def __init__(
-        self,
-        client: OpenAI,
-        model_name: str,
-        system_instruction: str,
-        temperature: float,
-        top_p: float,
-        max_messages: int,
-        service_tier: str,
-        text_extractor,
-    ):
-        self._client = client
-        self._model_name = model_name
-        self._system_instruction = system_instruction
-        self._temperature = temperature
-        self._top_p = top_p
-        self._max_messages = max_messages
-        self._service_tier = service_tier
-        self._text_extractor = text_extractor
-
-    def start_chat(self, system_instruction: str = None):
-        return ChatCompletionSession(
-            self._client,
-            self._model_name,
-            system_instruction or self._system_instruction,
-            self._temperature,
-            self._top_p,
-            self._max_messages,
-            self._service_tier,
-            self._text_extractor,
-        )
-
-
-class _ResponseModel:
-    """Response API wrapper mirroring the cached model API."""
-
-    def __init__(
-        self,
-        client: OpenAI,
-        model_name: str,
-        system_instruction: str,
-        temperature: float,
-        top_p: float,
-        max_messages: int,
-        service_tier: str,
-        text_extractor,
-    ):
-        self._client = client
-        self._model_name = model_name
-        self._system_instruction = system_instruction
-        self._temperature = temperature
-        self._top_p = top_p
-        self._max_messages = max_messages
-        self._service_tier = service_tier
-        self._text_extractor = text_extractor
-
-    def start_chat(self, system_instruction: str = None):
-        return ResponseChatSession(
-            self._client,
-            self._model_name,
-            system_instruction or self._system_instruction,
-            self._temperature,
-            self._top_p,
-            self._max_messages,
-            self._service_tier,
-            self._text_extractor,
-        )
 
 
 class OpenAIService(BaseLLMService):
@@ -420,7 +43,7 @@ class OpenAIService(BaseLLMService):
             api_key=config.openai_api_key,
             timeout=config.api_request_timeout,
         )
-        self._assistant_cache: dict[int, Union[_ResponseModel, _ChatCompletionModel]] = {}
+        self._assistant_cache: Dict[int, OpenAIChatCompletionModel] = {}
         self._max_messages = 7
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
@@ -433,41 +56,52 @@ class OpenAIService(BaseLLMService):
         )
         logger.info("OpenAI 모델 '%s' 준비 완료.", self._assistant_model_name)
 
-    def _get_or_create_assistant(self, model_name: str, system_instruction: str):
+    def _create_retry_config(self) -> RetryConfig:
+        """Create retry configuration for OpenAI API."""
+        return RetryConfig(
+            max_retries=2,
+            base_delay=2.0,
+            max_delay=32.0,
+            rate_limit_delay=5,
+            request_timeout=self.config.api_request_timeout,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+        )
+
+    def _create_retry_handler(self) -> Optional[OpenAIRetryHandler]:
+        """Create retry handler for OpenAI API."""
+        return OpenAIRetryHandler(self._create_retry_config())
+
+    def _get_or_create_assistant(
+        self, model_name: str, system_instruction: str
+    ) -> OpenAIChatCompletionModel:
+        """Get or create an assistant model wrapper."""
         key = hash((model_name, system_instruction))
         if key not in self._assistant_cache:
             # Select model wrapper based on configuration (Fine-tuned models use Chat Completions)
-            # Check if the requested model matches the configured fine-tuned model
             use_finetuned_logic = (
                 self.config.openai_finetuned_model
                 and model_name == self.config.openai_finetuned_model
             )
 
+            service_tier = "flex"
             if use_finetuned_logic:
-                self._assistant_cache[key] = _ChatCompletionModel(
-                    self.client,
-                    model_name,
-                    system_instruction,
-                    getattr(self.config, "temperature", 1.0),
-                    getattr(self.config, "top_p", 1.0),
-                    self._max_messages,
-                    "default",
-                    self._extract_text_from_response_output,
-                )
-            else:
-                self._assistant_cache[key] = _ResponseModel(
-                    self.client,
-                    model_name,
-                    system_instruction,
-                    getattr(self.config, "temperature", 1.0),
-                    getattr(self.config, "top_p", 1.0),
-                    self._max_messages,
-                    getattr(self.config, "service_tier", "flex"),
-                    self._extract_text_from_response_output,
-                )
+                service_tier = "default"
+
+            self._assistant_cache[key] = OpenAIChatCompletionModel(
+                client=self.client,
+                model_name=model_name,
+                system_instruction=system_instruction,
+                temperature=getattr(self.config, "temperature", 1.0),
+                top_p=getattr(self.config, "top_p", 1.0),
+                max_messages=self._max_messages,
+                service_tier=service_tier,
+            )
         return self._assistant_cache[key]
 
-    def create_assistant_model(self, system_instruction: str):
+    def create_assistant_model(
+        self, system_instruction: str
+    ) -> OpenAIChatCompletionModel:
+        """Create an assistant model with custom system instruction."""
         return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def reload_parameters(self) -> None:
@@ -483,13 +117,8 @@ class OpenAIService(BaseLLMService):
         """Return the role name for assistant messages."""
         return "assistant"
 
-    def _is_rate_limit_error(self, error: Exception) -> bool:
-        if isinstance(error, RateLimitError):
-            return True
-        error_str = str(error).lower()
-        return "rate limit" in error_str or "429" in error_str
-
     def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
+        """Log raw request details for debugging."""
         if not logger.isEnabledFor(logging.DEBUG):
             return
 
@@ -516,6 +145,7 @@ class OpenAIService(BaseLLMService):
             logger.exception("[RAW REQUEST] Error logging raw request")
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
+        """Log raw response details for debugging."""
         if not logger.isEnabledFor(logging.DEBUG):
             return
 
@@ -525,6 +155,7 @@ class OpenAIService(BaseLLMService):
             logger.exception("[RAW RESPONSE %s] Error logging raw response", attempt)
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
+        """Extract text content from OpenAI chat completion response."""
         try:
             choices = getattr(response_obj, "choices", []) or []
             for choice in choices:
@@ -536,7 +167,8 @@ class OpenAIService(BaseLLMService):
 
         return self._extract_text_from_response_output(response_obj)
 
-    def _extract_text_from_response_output(self, response_obj) -> str:
+    def _extract_text_from_response_output(self, response_obj: Any) -> str:
+        """Extract text from Responses API output."""
         try:
             text_fragments = []
             seen_fragments = set()
@@ -576,6 +208,7 @@ class OpenAIService(BaseLLMService):
         return ""
 
     async def summarize_text(self, text: str) -> Optional[str]:
+        """Summarize a text using the summary model."""
         if not text.strip():
             return "요약할 메시지가 없습니다."
 
@@ -596,17 +229,19 @@ class OpenAIService(BaseLLMService):
                 service_tier=getattr(self.config, "service_tier", "flex"),
             ),
             "요약",
+            extract_text=self._extract_text_from_response,
         )
 
     async def generate_chat_response(
         self,
-        chat_session,
+        chat_session: Union[ChatCompletionSession, ResponseSession],
         user_message: str,
-        discord_message: Union[discord.Message, list[discord.Message]],
+        discord_message: Union[discord.Message, List[discord.Message]],
         model_name: Optional[str] = None,
         tools: Optional[Any] = None,
         cancel_event: Optional[asyncio.Event] = None,
     ) -> Optional[Tuple[str, Any]]:
+        """Generate a chat response."""
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
             logger.info("API call aborted due to cancellation signal")
@@ -625,13 +260,6 @@ class OpenAIService(BaseLLMService):
         author_name = getattr(primary_msg.author, "name", str(author_id))
 
         # Check for model switch
-        # OpenAI sessions don't wrap a "factory" as cleanly as GeminiService (which has _ChatSession holding _factory)
-        # In OpenAI service, we create a `ResponseChatSession` which holds `self._model_name`.
-        # We need to recreate the session or update its internal model name if it changed.
-        # But wait, `chat_session` is the OBJECT returned by `start_chat`.
-        # `ResponseChatSession` has `self._model_name`.
-        # If `model_name` is provided and differs, we should update it.
-
         current_model_name = getattr(chat_session, "_model_name", None)
         if model_name and current_model_name != model_name:
             logger.info(
@@ -640,7 +268,6 @@ class OpenAIService(BaseLLMService):
                 model_name,
             )
             chat_session._model_name = model_name
-            # We might need to update other params if they depend on model, but usually shared.
 
         # Extract images from messages
         images = []
@@ -681,16 +308,16 @@ class OpenAIService(BaseLLMService):
 
     async def send_tool_results(
         self,
-        chat_session,
-        tool_rounds,
-        tools=None,
-        discord_message=None,
+        chat_session: ChatCompletionSession,
+        tool_rounds: List[Tuple[Any, Any]],
+        tools: Optional[Any] = None,
+        discord_message: Optional[discord.Message] = None,
         cancel_event: Optional[asyncio.Event] = None,
-    ):
+    ) -> Optional[Tuple[str, Any]]:
         """Send tool results back to model and get continuation response.
 
         Args:
-            chat_session: The OpenAI chat session.
+            chat_session: The OpenAI chat completion session.
             tool_rounds: List of (response_obj, tool_results) tuples.
             tools: Original tool definitions (will be converted to OpenAI format).
             discord_message: Discord message for error notifications.

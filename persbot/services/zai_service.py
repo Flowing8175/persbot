@@ -8,187 +8,25 @@ Enable Coding Plan API by setting ZAI_CODING_PLAN=true in environment.
 """
 
 import asyncio
-import base64
 import logging
-from collections import deque
-from dataclasses import dataclass
-from typing import Any, Deque, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import discord
-from openai import OpenAI, RateLimitError
+from openai import OpenAI
 
 from persbot.config import AppConfig
-from persbot.services.base import BaseLLMService, ChatMessage
-from persbot.services.openai_service import BaseOpenAISession
+from persbot.services.base import BaseLLMService
+from persbot.services.model_wrappers.zai_model import ZAIChatModel
 from persbot.services.prompt_service import PromptService
+from persbot.services.retry_handler import (
+    BackoffStrategy,
+    RetryConfig,
+    ZAIRetryHandler,
+)
+from persbot.services.session_wrappers.zai_session import ZAIChatSession
 from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
-from persbot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
-
-
-class ZAIChatSession(BaseOpenAISession):
-    """Z.AI chat session with history management."""
-
-    def send_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-        tools: Optional[Any] = None,
-    ):
-        """Send message to Z.AI API and get response."""
-        user_msg = self._create_user_message(
-            user_message, author_id, author_name, message_ids, images
-        )
-
-        # Build messages list using base class method
-        messages = []
-        if self._system_instruction:
-            messages.append({"role": "system", "content": self._system_instruction})
-
-        for msg in self._history:
-            if msg.images:
-                content_blocks = []
-                if msg.content:
-                    content_blocks.append({"type": "text", "text": msg.content})
-                for img_bytes in msg.images:
-                    mime_type = get_mime_type(img_bytes)
-                    b64_str = base64.b64encode(img_bytes).decode("utf-8")
-                    content_blocks.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
-                        }
-                    )
-                messages.append({"role": msg.role, "content": content_blocks})
-            else:
-                messages.append({"role": msg.role, "content": msg.content})
-
-        # Add current user message
-        user_content = []
-        if user_message:
-            user_content.append({"type": "text", "text": user_message})
-
-        if images:
-            for img_bytes in images:
-                mime_type = get_mime_type(img_bytes)
-                b64_str = base64.b64encode(img_bytes).decode("utf-8")
-                user_content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
-                    }
-                )
-
-        if user_content:
-            messages.append({"role": "user", "content": user_content})
-
-        # Call API
-        api_kwargs = {
-            "model": self._model_name,
-            "messages": messages,
-            "temperature": self._temperature,
-            "top_p": self._top_p,
-        }
-
-        if tools:
-            api_kwargs["tools"] = tools
-
-        response = self._client.chat.completions.create(**api_kwargs)
-
-        # Extract response content
-        message_content = self._text_extractor(response)
-        model_msg = ChatMessage(role="assistant", content=message_content)
-
-        return user_msg, model_msg, response
-
-    def send_tool_results(self, tool_rounds, tools=None):
-        """Send tool execution results back to model and get continuation.
-
-        Args:
-            tool_rounds: List of (response_obj, tool_results) tuples from each round.
-            tools: Tools for the next API call.
-
-        Returns:
-            Tuple of (model_msg, response_obj).
-        """
-        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
-
-        # Build messages
-        messages = []
-        if self._system_instruction:
-            messages.append({"role": "system", "content": self._system_instruction})
-
-        # Add history (will remove last assistant msg below)
-        for msg in self._history:
-            if msg.images:
-                content_blocks = []
-                if msg.content:
-                    content_blocks.append({"type": "text", "text": msg.content})
-                for img_bytes in msg.images:
-                    mime_type = get_mime_type(img_bytes)
-                    b64_str = base64.b64encode(img_bytes).decode("utf-8")
-                    content_blocks.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{b64_str}"},
-                        }
-                    )
-                messages.append({"role": msg.role, "content": content_blocks})
-            else:
-                messages.append({"role": msg.role, "content": msg.content})
-
-        # Remove last assistant entry (text-only from initial response)
-        if messages and messages[-1].get("role") == "assistant":
-            messages.pop()
-
-        # Add each tool round: assistant response (with tool_calls) + tool results
-        for resp_obj, results in tool_rounds:
-            assistant_msg = resp_obj.choices[0].message
-            tool_calls_data = []
-            if assistant_msg.tool_calls:
-                for tc in assistant_msg.tool_calls:
-                    tool_calls_data.append(
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        }
-                    )
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": assistant_msg.content,
-                    "tool_calls": tool_calls_data,
-                }
-            )
-
-            # Add tool result messages
-            messages.extend(ZAIToolAdapter.create_tool_messages(results))
-
-        # Call API
-        api_kwargs = {
-            "model": self._model_name,
-            "messages": messages,
-            "temperature": self._temperature,
-            "top_p": self._top_p,
-        }
-        if tools:
-            api_kwargs["tools"] = tools
-
-        response = self._client.chat.completions.create(**api_kwargs)
-
-        message_content = self._text_extractor(response)
-        model_msg = ChatMessage(role="assistant", content=message_content)
-
-        return model_msg, response
 
 
 class ZAIService(BaseLLMService):
@@ -209,7 +47,7 @@ class ZAIService(BaseLLMService):
             base_url=config.zai_base_url,
             timeout=config.api_request_timeout,
         )
-        self._assistant_cache: dict[int, ZAIChatSession] = {}
+        self._assistant_cache: Dict[int, ZAIChatModel] = {}
         self._max_messages = 7
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
@@ -228,24 +66,42 @@ class ZAIService(BaseLLMService):
             self.config.zai_base_url,
         )
 
-    def _get_or_create_assistant(self, model_name: str, system_instruction: str):
-        """Get or create a chat session for the given model."""
+    def _create_retry_config(self) -> RetryConfig:
+        """Create retry configuration for Z.AI API."""
+        return RetryConfig(
+            max_retries=2,
+            base_delay=2.0,
+            max_delay=32.0,
+            rate_limit_delay=5,
+            request_timeout=self.config.api_request_timeout,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+        )
+
+    def _create_retry_handler(self) -> Optional[ZAIRetryHandler]:
+        """Create retry handler for Z.AI API."""
+        return ZAIRetryHandler(self._create_retry_config())
+
+    def _get_or_create_assistant(
+        self, model_name: str, system_instruction: str
+    ) -> ZAIChatModel:
+        """Get or create a chat model for the given model."""
         key = hash((model_name, system_instruction))
         if key not in self._assistant_cache:
-            self._assistant_cache[key] = ZAIChatSession(
-                self.client,
-                model_name,
-                system_instruction,
-                getattr(self.config, "temperature", 1.0),
-                getattr(self.config, "top_p", 1.0),
-                self._max_messages,
-                None,  # Z.AI doesn't have service tier
-                self._extract_text_from_response,
+            self._assistant_cache[key] = ZAIChatModel(
+                client=self.client,
+                model_name=model_name,
+                system_instruction=system_instruction,
+                temperature=getattr(self.config, "temperature", 1.0),
+                top_p=getattr(self.config, "top_p", 1.0),
+                max_messages=self._max_messages,
+                text_extractor=self._extract_text_from_response,
             )
         return self._assistant_cache[key]
 
-    def create_assistant_model(self, system_instruction: str, use_cache: bool = True):
-        """Create a chat session with the given system instruction."""
+    def create_assistant_model(
+        self, system_instruction: str, use_cache: bool = True
+    ) -> ZAIChatModel:
+        """Create a chat model with the given system instruction."""
         return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
     def reload_parameters(self) -> None:
@@ -261,24 +117,6 @@ class ZAIService(BaseLLMService):
     def get_assistant_role_name(self) -> str:
         """Return role name for assistant messages."""
         return "assistant"
-
-    def _is_rate_limit_error(self, error: Exception) -> bool:
-        """Check if exception is a rate limit error."""
-        if isinstance(error, RateLimitError):
-            return True
-        error_str = str(error).lower()
-        return "rate limit" in error_str or "429" in error_str
-
-    def _extract_retry_delay(self, error: Exception) -> Optional[float]:
-        """Extract retry delay from error, if available."""
-        error_str = str(error)
-        # Try to find retry delay in error message
-        import re
-
-        match = re.search(r"please retry in (\d+)s", error_str, re.IGNORECASE)
-        if match:
-            return float(match.group(1))
-        return None
 
     def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
         """Log raw request for debugging."""
@@ -363,13 +201,14 @@ class ZAIService(BaseLLMService):
                 top_p=getattr(self.config, "top_p", 1.0),
             ),
             "요약",
+            extract_text=self._extract_text_from_response,
         )
 
     async def generate_chat_response(
         self,
-        chat_session,
+        chat_session: ZAIChatSession,
         user_message: str,
-        discord_message: Union[discord.Message, list[discord.Message]],
+        discord_message: Union[discord.Message, List[discord.Message]],
         model_name: Optional[str] = None,
         tools: Optional[Any] = None,
         cancel_event: Optional[asyncio.Event] = None,
@@ -441,12 +280,12 @@ class ZAIService(BaseLLMService):
 
     async def send_tool_results(
         self,
-        chat_session,
-        tool_rounds,
-        tools=None,
-        discord_message=None,
+        chat_session: ZAIChatSession,
+        tool_rounds: List[Tuple[Any, Any]],
+        tools: Optional[Any] = None,
+        discord_message: Optional[discord.Message] = None,
         cancel_event: Optional[asyncio.Event] = None,
-    ):
+    ) -> Optional[Tuple[str, Any]]:
         """Send tool results back to model and get continuation response.
 
         Args:
