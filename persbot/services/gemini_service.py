@@ -19,6 +19,7 @@ from google.genai.errors import ClientError
 from persbot.config import AppConfig
 from persbot.services.base import BaseLLMService, ChatMessage
 from persbot.services.prompt_service import PromptService
+from persbot.services.retry_handler import GeminiRetryHandler, RetryHandler, RetryConfig
 from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 from persbot.utils import GENERIC_ERROR_MESSAGE, get_mime_type
 
@@ -416,6 +417,17 @@ class GeminiService(BaseLLMService):
         """Reload parameters by clearing the model cache."""
         self._model_cache.clear()
         logger.info("Gemini model cache cleared to apply new parameters.")
+
+    def _create_retry_handler(self) -> Optional[RetryHandler]:
+        """Create Gemini-specific retry handler."""
+        config = RetryConfig(
+            max_retries=self.config.api_max_retries,
+            base_delay=self.config.api_retry_backoff_base,
+            max_delay=self.config.api_retry_backoff_max,
+            rate_limit_delay=self.config.api_rate_limit_retry_after,
+            request_timeout=self.config.api_request_timeout,
+        )
+        return GeminiRetryHandler(config)
 
     def get_user_role_name(self) -> str:
         """Return the role name for user messages."""

@@ -10,6 +10,11 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 import discord
 
 from persbot.config import AppConfig
+from persbot.services.retry_handler import (
+    BackoffStrategy,
+    RetryConfig,
+    RetryHandler,
+)
 from persbot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE, process_image_sync
 
 logger = logging.getLogger(__name__)
@@ -33,8 +38,9 @@ class ChatMessage:
 class BaseLLMService(ABC):
     """Abstract base class for LLM services handling retries, logging, and common behavior."""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, retry_handler: Optional[RetryHandler] = None):
         self.config = config
+        self._retry_handler = retry_handler
 
     @abstractmethod
     def _is_rate_limit_error(self, error: Exception) -> bool:
@@ -126,6 +132,27 @@ class BaseLLMService(ABC):
         """Reload service parameters (e.g. clear caches). To be overridden."""
         pass
 
+    def _create_retry_config(self) -> RetryConfig:
+        """Create retry configuration from AppConfig. Override for custom behavior."""
+        return RetryConfig(
+            max_retries=self.config.api_max_retries,
+            base_delay=self.config.api_retry_backoff_base,
+            max_delay=self.config.api_retry_backoff_max,
+            rate_limit_delay=self.config.api_rate_limit_retry_after,
+            request_timeout=self.config.api_request_timeout,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+        )
+
+    def _create_retry_handler(self) -> Optional[RetryHandler]:
+        """Create a retry handler instance. Override to use provider-specific handler."""
+        return None  # Default: use legacy retry logic
+
+    def get_retry_handler(self) -> Optional[RetryHandler]:
+        """Get the retry handler for this service, creating if needed."""
+        if self._retry_handler is None:
+            self._retry_handler = self._create_retry_handler()
+        return self._retry_handler
+
     def _is_fatal_error(self, error: Exception) -> bool:
         """Check if the exception is a fatal error that requires immediate intervention."""
         return False
@@ -210,7 +237,68 @@ class BaseLLMService(ABC):
     ) -> Optional[Any]:
         """
         Execute API call with retries, logging, countdown notifications, and fallback logic.
+
+        Uses the RetryHandler if available (when _create_retry_handler() returns a handler),
+        otherwise falls back to legacy retry logic.
         """
+        # Check if we should use the new retry handler
+        retry_handler = self.get_retry_handler()
+        if retry_handler is not None:
+            return await self._execute_with_retry_handler(
+                retry_handler,
+                model_call,
+                error_prefix=error_prefix,
+                return_full_response=return_full_response,
+                discord_message=discord_message,
+                timeout=timeout,
+                fallback_call=fallback_call,
+                cancel_event=cancel_event,
+            )
+
+        # Legacy retry logic (preserved for backward compatibility)
+        return await self._execute_with_legacy_retry(
+            model_call,
+            error_prefix=error_prefix,
+            return_full_response=return_full_response,
+            discord_message=discord_message,
+            timeout=timeout,
+            fallback_call=fallback_call,
+            cancel_event=cancel_event,
+        )
+
+    async def _execute_with_retry_handler(
+        self,
+        handler: RetryHandler,
+        model_call: Callable[[], Union[Any, Awaitable[Any]]],
+        error_prefix: str = "요청",
+        return_full_response: bool = False,
+        discord_message: Optional[discord.Message] = None,
+        timeout: Optional[float] = None,
+        fallback_call: Optional[Callable[[], Union[Any, Awaitable[Any]]]] = None,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> Optional[Any]:
+        """Execute API call using the new RetryHandler."""
+        return await handler.execute_with_retry(
+            api_call=model_call,
+            error_prefix=error_prefix,
+            return_full_response=return_full_response,
+            discord_message=discord_message,
+            cancel_event=cancel_event,
+            log_response=self._log_raw_response,
+            extract_text=None if return_full_response else self._extract_text_from_response,
+        )
+
+    async def _execute_with_legacy_retry(
+        self,
+        model_call: Callable[[], Union[Any, Awaitable[Any]]],
+        error_prefix: str = "요청",
+        return_full_response: bool = False,
+        discord_message: Optional[discord.Message] = None,
+        timeout: Optional[float] = None,
+        fallback_call: Optional[Callable[[], Union[Any, Awaitable[Any]]]] = None,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> Optional[Any]:
+        """Legacy retry logic - preserved for backward compatibility."""
         last_error: Optional[Exception] = None
         current_timeout = timeout if timeout is not None else self.config.api_request_timeout
 
