@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
 
+from persbot.exceptions import APIException, RateLimitException
 from persbot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
@@ -34,18 +35,6 @@ class RetryConfig:
     rate_limit_delay: int = 5
     request_timeout: float = 120.0
     backoff_strategy: BackoffStrategy = BackoffStrategy.EXPONENTIAL
-
-
-class RetryableError(Exception):
-    """Base class for errors that can be retried."""
-
-    pass
-
-
-class FatalError(Exception):
-    """Base class for errors that should not be retried."""
-
-    pass
 
 
 class RetryHandler(ABC):
