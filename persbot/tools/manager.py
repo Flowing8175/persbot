@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 import discord
 
 from persbot.config import AppConfig
+from persbot.services.image_model_service import get_channel_image_model
 from persbot.tools.api_tools import register_all_api_tools
 from persbot.tools.base import ToolCategory, ToolDefinition
 from persbot.tools.discord_tools import register_all_discord_tools
@@ -101,6 +102,12 @@ class ToolManager:
         if tool and tool.category == ToolCategory.API_WEATHER:
             if "weather_api_key" not in parameters:
                 parameters["weather_api_key"] = getattr(self.config, "weather_api_key", None)
+
+        # Inject channel's selected image model for generate_image tool
+        if tool_name == "generate_image" and discord_context:
+            channel_id = discord_context.channel.id
+            if "model" not in parameters:
+                parameters["model"] = get_channel_image_model(channel_id)
 
         return await self.executor.execute_tool(
             tool_name, parameters, discord_context, cancel_event
