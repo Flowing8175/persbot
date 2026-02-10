@@ -1,17 +1,18 @@
 """Gemini tool format adapter."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import google.genai as genai
 from google.genai import types as genai_types
 
+from persbot.tools.adapters.base_adapter import BaseToolAdapter
 from persbot.tools.base import ToolDefinition
 
 logger = logging.getLogger(__name__)
 
 
-class GeminiToolAdapter:
+class GeminiToolAdapter(BaseToolAdapter):
     """Adapter for converting tool definitions to Gemini format."""
 
     @staticmethod
@@ -73,32 +74,7 @@ class GeminiToolAdapter:
         return function_calls
 
     @staticmethod
-    def format_function_result(tool_name: str, result: Any) -> genai_types.Part:
-        """Format a function result for sending back to Gemini.
-
-        Args:
-            tool_name: Name of the tool that was executed.
-            result: Result data from the tool execution.
-
-        Returns:
-            genai_types.Part containing the function response.
-        """
-        # Convert result to string representation
-        if isinstance(result, dict):
-            result_str = str(result)
-        elif isinstance(result, (list, tuple)):
-            result_str = str(result)
-        else:
-            result_str = str(result) if result is not None else ""
-
-        return genai_types.Part(
-            function_response=genai_types.FunctionResponse(
-                name=tool_name, response={"result": result_str}
-            )
-        )
-
-    @staticmethod
-    def create_function_response_parts(results: List[Dict[str, Any]]) -> List[genai_types.Part]:
+    def format_results(results: List[Dict[str, Any]]) -> List[genai_types.Part]:
         """Create a list of function response parts from tool execution results.
 
         Args:
@@ -128,3 +104,24 @@ class GeminiToolAdapter:
             )
 
         return parts
+
+    @staticmethod
+    def format_function_result(tool_name: str, result: Any) -> genai_types.Part:
+        """Format a function result for sending back to Gemini.
+
+        Args:
+            tool_name: Name of the tool that was executed.
+            result: Result data from the tool execution.
+
+        Returns:
+            genai_types.Part containing the function response.
+        """
+        result_str = BaseToolAdapter._format_result_as_string(result)
+        return genai_types.Part(
+            function_response=genai_types.FunctionResponse(
+                name=tool_name, response={"result": result_str}
+            )
+        )
+
+    # create_function_response_parts is an alias for format_results for backward compatibility
+    create_function_response_parts = format_results
