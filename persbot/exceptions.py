@@ -82,3 +82,15 @@ class ValidationException(ConfigurationException):
     """Exception raised when configuration validation fails."""
 
     pass
+
+
+class FatalError(SoyeBotException):
+    """Exception raised for fatal errors that should stop retry attempts immediately."""
+
+    pass
+
+
+class RetryableError(SoyeBotException):
+    """Base exception for errors that can be retried."""
+
+    pass
