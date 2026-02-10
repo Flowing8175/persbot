@@ -149,7 +149,7 @@ class ModelSelectorCog(commands.Cog):
         await self.llm_subcommand(ctx)
 
     @model_command.command(
-        name="llm", aliases=["llm"], description="사용할 LLM 모델을 선택합니다."
+        name="llm", description="사용할 LLM 모델을 선택합니다."
     )
     async def llm_subcommand(self, ctx: commands.Context):
         """사용할 LLM 모델을 선택합니다."""
