@@ -146,15 +146,11 @@ def set_channel_image_model(channel_id: int, model_name: str) -> bool:
     Args:
         channel_id: Discord channel ID.
         model_name: Image model name (e.g., "sourceful/riverflow-v2-pro").
+                    Can be any valid model identifier - no validation required.
 
     Returns:
-        True if successful, False if model not found.
+        True if successful.
     """
-    # Verify model exists
-    if not get_image_model_by_name(model_name):
-        logger.warning(f"Unknown image model requested: {model_name}")
-        return False
-
     _channel_image_preferences[channel_id] = model_name
     logger.info("Set image model for channel %d to %s", channel_id, model_name)
     _save_preferences()
@@ -203,14 +199,11 @@ def set_default_image_model(model_name: str) -> bool:
 
     Args:
         model_name: Image model name to set as default.
+                    Can be any valid model identifier - no validation required.
 
     Returns:
-        True if successful, False if model not found.
+        True if successful.
     """
-    if not get_image_model_by_name(model_name):
-        logger.warning(f"Unknown image model requested for default: {model_name}")
-        return False
-
     _default_image_model = model_name
     logger.info("Set default image model to %s", model_name)
     _save_preferences()
