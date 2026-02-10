@@ -115,7 +115,7 @@ class AppConfig:
 
     # --- Image Generation Rate Limiting ---
     image_rate_limit_per_minute: int = 3
-    image_rate_limit_per_hour: int = 30
+    image_rate_limit_per_hour: int = 15
 
 
 def _normalize_provider(raw_provider: str | None, default: str) -> str:
@@ -329,7 +329,7 @@ def load_config() -> AppConfig:
 
     # Parse image rate limiting configuration
     image_rate_limit_per_minute = _parse_int_env("IMAGE_RATE_LIMIT_PER_MINUTE", 3)
-    image_rate_limit_per_hour = _parse_int_env("IMAGE_RATE_LIMIT_PER_HOUR", 30)
+    image_rate_limit_per_hour = _parse_int_env("IMAGE_RATE_LIMIT_PER_HOUR", 15)
 
     return AppConfig(
         discord_token=discord_token,

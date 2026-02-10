@@ -378,8 +378,8 @@ class ImageGenerationRateLimiter:
 
     def __init__(
         self,
-        max_requests_per_minute: int = 5,
-        max_requests_per_hour: int = 30,
+        max_requests_per_minute: int = 3,
+        max_requests_per_hour: int = 15,
     ):
         """Initialize the image generation rate limiter.
 
@@ -423,7 +423,7 @@ class ImageGenerationRateLimiter:
                 retry_after=minute_retry,
                 current_usage=minute_usage,
                 max_requests=self.max_requests_per_minute,
-                message=f"Rate limited: {minute_usage}/{self.max_requests_per_minute} requests per minute. Please wait {int(minute_retry)} seconds.",
+                message=f"The user has reached their image generation limit ({self.max_requests_per_minute} per minute). They can try again in about {int(minute_retry)} seconds.",
             )
 
         # Check per-hour limit
@@ -436,7 +436,7 @@ class ImageGenerationRateLimiter:
                 retry_after=hour_retry,
                 current_usage=hour_usage,
                 max_requests=self.max_requests_per_hour,
-                message=f"Rate limited: {hour_usage}/{self.max_requests_per_hour} requests per hour. Please wait {int(hour_retry // 60)} minutes.",
+                message=f"The user has reached their hourly image generation limit ({self.max_requests_per_hour} per hour). They can try again in about {int(hour_retry // 60)} minutes.",
             )
 
         # Both limits passed, acquire the request slot
@@ -478,7 +478,7 @@ def get_image_rate_limiter() -> ImageGenerationRateLimiter:
         config = load_config()
         _global_image_limiter = ImageGenerationRateLimiter(
             max_requests_per_minute=getattr(config, "image_rate_limit_per_minute", 3),
-            max_requests_per_hour=getattr(config, "image_rate_limit_per_hour", 30),
+            max_requests_per_hour=getattr(config, "image_rate_limit_per_hour", 15),
         )
     return _global_image_limiter
 
