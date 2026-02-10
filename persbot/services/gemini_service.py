@@ -18,10 +18,12 @@ from google.genai.errors import ClientError
 
 from persbot.config import AppConfig
 from persbot.services.base import BaseLLMService, ChatMessage
+from persbot.services.model_wrappers.gemini_model import GeminiCachedModel
 from persbot.services.prompt_service import PromptService
-from persbot.services.retry_handler import GeminiRetryHandler, RetryHandler, RetryConfig
+from persbot.services.retry_handler import GeminiRetryHandler, RetryConfig, RetryHandler
+from persbot.services.session_wrappers.gemini_session import GeminiChatSession, extract_clean_text
 from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
-from persbot.utils import GENERIC_ERROR_MESSAGE, get_mime_type
+from persbot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -38,234 +40,6 @@ CACHE_REFRESH_BUFFER_MAX_MINUTES = 5
 REQUEST_PREVIEW_LENGTH = 200
 RESPONSE_TEXT_PREVIEW_LENGTH = 200
 HISTORY_DISPLAY_LIMIT = 5
-
-
-def extract_clean_text(response_obj: Any) -> str:
-    """Extract text content from Gemini response, filtering out thoughts."""
-    try:
-        text_parts = []
-        if hasattr(response_obj, "candidates") and response_obj.candidates:
-            for candidate in response_obj.candidates:
-                if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                    for part in candidate.content.parts:
-                        # Skip parts that are marked as thoughts
-                        if getattr(part, "thought", False):
-                            continue
-
-                        if hasattr(part, "text") and part.text:
-                            text_parts.append(part.text)
-
-        if text_parts:
-            return " ".join(text_parts).strip()
-
-        return ""
-
-    except Exception as e:
-        logger.error(f"Failed to extract text from response: {e}", exc_info=True)
-        return ""
-
-
-class _ChatSession:
-    """A wrapper for a Gemini chat session to manage history with author tracking."""
-
-    def __init__(self, system_instruction: str, factory: "_CachedModel"):
-        self._system_instruction = system_instruction
-        self._factory = factory
-        # We will manage the history manually to include author_id
-        # Use deque with maxlen for automatic memory management
-        max_history = 50  # Default max history size
-        self.history: deque[ChatMessage] = deque(maxlen=max_history)
-
-    def _get_api_history(self) -> list[dict]:
-        """Convert local history to API format."""
-        api_history = []
-        for msg in self.history:
-            final_parts = []
-
-            # Add existing text/content parts
-            if msg.parts:
-                for p in msg.parts:
-                    if isinstance(p, dict) and "text" in p:
-                        final_parts.append(p)
-                    elif hasattr(p, "text") and p.text:  # It's a Part object
-                        final_parts.append(p)
-
-            # Reconstruct image parts from stored bytes
-            if hasattr(msg, "images") and msg.images:
-                for img_data in msg.images:
-                    mime_type = get_mime_type(img_data)
-                    final_parts.append(
-                        genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
-                    )
-
-            api_history.append({"role": msg.role, "parts": final_parts})
-        return api_history
-
-    def send_message(
-        self,
-        user_message: str,
-        author_id: int,
-        author_name: Optional[str] = None,
-        message_ids: Optional[list[str]] = None,
-        images: list[bytes] = None,
-        tools: Optional[list] = None,
-    ):
-        # 1. Build the full content list for this turn (History + Current Message)
-        contents = self._get_api_history()
-
-        current_parts = []
-        if user_message:
-            current_parts.append({"text": user_message})
-
-        if images:
-            for img_data in images:
-                mime_type = get_mime_type(img_data)
-                current_parts.append(
-                    genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
-                )
-
-        contents.append({"role": "user", "parts": current_parts})
-
-        # 2. Call generate_content directly (Stateless)
-        # Pass tools to generate_content to enable function calling
-        response = self._factory.generate_content(contents=contents, tools=tools)
-
-        # 3. Create ChatMessage objects but do NOT append to self.history yet.
-        user_msg = ChatMessage(
-            role="user",
-            content=user_message,
-            parts=[
-                {"text": user_message}
-            ],  # We store text part only in parts for compatibility/simplicity?
-            # Or we should store the text part. Images are stored in 'images' field.
-            images=images or [],
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids or [],
-        )
-
-        clean_content = extract_clean_text(response)
-        model_msg = ChatMessage(
-            role="model",
-            content=clean_content,
-            parts=[{"text": clean_content}],
-            author_id=None,  # Bot messages have no author
-        )
-
-        # Return the new messages and the raw response
-        return user_msg, model_msg, response
-
-    def send_tool_results(self, tool_rounds, tools=None):
-        """Send tool execution results back to model and get continuation.
-
-        Args:
-            tool_rounds: List of (response_obj, tool_results) tuples from each round.
-            tools: Tools to pass for the next API call.
-
-        Returns:
-            Tuple of (model_msg, response_obj).
-        """
-        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
-
-        # Build contents from history
-        contents = self._get_api_history()
-
-        # The last entry is the text-only model msg from initial response - remove it
-        if contents and contents[-1]["role"] == "model":
-            contents.pop()
-
-        # Add each tool round: model response (with function_call) + function results
-        for resp_obj, results in tool_rounds:
-            # Add model's response with function_call parts
-            model_content = resp_obj.candidates[0].content
-            contents.append({"role": "model", "parts": list(model_content.parts)})
-
-            # Add function response parts
-            fn_parts = GeminiToolAdapter.create_function_response_parts(results)
-            contents.append({"role": "user", "parts": fn_parts})
-
-        # Call generate_content
-        response = self._factory.generate_content(contents=contents, tools=tools)
-
-        # Create model message
-        clean_content = extract_clean_text(response)
-        model_msg = ChatMessage(
-            role="model",
-            content=clean_content,
-            parts=[{"text": clean_content}],
-        )
-
-        return model_msg, response
-
-
-class _CachedModel:
-    """Lightweight wrapper that mimics the old GenerativeModel interface."""
-
-    def __init__(
-        self,
-        client: genai.Client,
-        model_name: str,
-        config: genai_types.GenerateContentConfig,
-    ):
-        self._client = client
-        self._model_name = model_name
-        self._config = config
-
-    def generate_content(self, contents: Union[str, list], tools: Optional[list] = None):
-        """Generate content with optional tools override.
-
-        Args:
-            contents: The content to generate.
-            tools: Optional override for tools configuration.
-                   Note: Cannot override tools when using cached_content.
-
-        Returns:
-            The API response.
-        """
-        if tools is not None:
-            # Check if we're using cached_content - if so, cannot override tools
-            has_cached_content = getattr(self._config, "cached_content", None) is not None
-
-            if has_cached_content:
-                # When using cached_content, tools are already baked in
-                # Rebuild config without tools to avoid API error
-                config_kwargs = {
-                    "temperature": getattr(self._config, "temperature", 1.0),
-                    "top_p": getattr(self._config, "top_p", 1.0),
-                    "cached_content": self._config.cached_content,
-                }
-                # Add thinking config if present
-                if hasattr(self._config, "thinking_config") and self._config.thinking_config:
-                    config_kwargs["thinking_config"] = self._config.thinking_config
-
-                logger.warning(
-                    "Ignoring tools override when using cached_content. Tools are already in the cache."
-                )
-            else:
-                # Not using cache, can override tools normally
-                config_kwargs = {
-                    "temperature": getattr(self._config, "temperature", 1.0),
-                    "top_p": getattr(self._config, "top_p", 1.0),
-                    "system_instruction": getattr(self._config, "system_instruction", None),
-                    "tools": tools,
-                }
-                # Add thinking config if present
-                if hasattr(self._config, "thinking_config") and self._config.thinking_config:
-                    config_kwargs["thinking_config"] = self._config.thinking_config
-
-            config = genai_types.GenerateContentConfig(**config_kwargs)
-        else:
-            config = self._config
-
-        return self._client.models.generate_content(
-            model=self._model_name,
-            contents=contents,
-            config=config,
-        )
-
-    def start_chat(self, system_instruction: str):
-        # No underlying chat needed
-        return _ChatSession(system_instruction, self)
 
 
 class GeminiService(BaseLLMService):
@@ -287,7 +61,7 @@ class GeminiService(BaseLLMService):
 
         # Cache wrapper instances keyed by system instruction hash
         # Stores tuple: (model_wrapper, expiration_time: Optional[datetime.datetime])
-        self._model_cache: dict[int, Tuple[_CachedModel, Optional[datetime.datetime]]] = {}
+        self._model_cache: dict[int, Tuple[GeminiCachedModel, Optional[datetime.datetime]]] = {}
 
         # Pre-load default models using cache
         self.summary_model = self._get_or_create_model(
@@ -313,7 +87,7 @@ class GeminiService(BaseLLMService):
         system_instruction: str,
         use_cache: bool = True,
         tools: Optional[list] = None,
-    ) -> _CachedModel:
+    ) -> GeminiCachedModel:
         """Get cached model instance or create new one."""
         key = hash((model_name, system_instruction, use_cache))
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -332,14 +106,14 @@ class GeminiService(BaseLLMService):
 
         # Build and create model
         config = self._build_generation_config(cache_name, system_instruction, effective_tools)
-        model = _CachedModel(self.client, model_name, config)
+        model = GeminiCachedModel(self.client, model_name, config)
         self._model_cache[key] = (model, cache_expiration)
 
         return model
 
     def _check_model_cache_validity(
         self, cache_key: int, now: datetime.datetime
-    ) -> Optional[_CachedModel]:
+    ) -> Optional[GeminiCachedModel]:
         """Check if cached model exists and is still valid."""
         if cache_key not in self._model_cache:
             return None
@@ -407,7 +181,7 @@ class GeminiService(BaseLLMService):
 
     def create_assistant_model(
         self, system_instruction: str, use_cache: bool = True
-    ) -> _CachedModel:
+    ) -> GeminiCachedModel:
         """Create or retrieve a cached assistant model with custom system instruction."""
         return self._get_or_create_model(
             self._assistant_model_name, system_instruction, use_cache=use_cache
