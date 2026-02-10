@@ -149,6 +149,5 @@ def register_weather_tools(registry):
                 ),
             ],
             handler=get_weather,
-            rate_limit=60,  # 60 seconds between weather lookups
         )
     )

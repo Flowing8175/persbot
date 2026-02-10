@@ -38,12 +38,11 @@ class ExecutionMetrics:
 
 
 class ToolExecutor:
-    """Executes tools with permission checks, rate limiting, and error handling."""
+    """Executes tools with permission checks and error handling."""
 
     def __init__(self, config: AppConfig, registry: ToolRegistry):
         self.config = config
         self.registry = registry
-        self._rate_limits: Dict[str, float] = {}  # user_id -> last_execution_time
         self._metrics: Dict[str, ExecutionMetrics] = {}
 
     async def execute_tool(
@@ -84,15 +83,6 @@ class ToolExecutor:
                 return ToolResult(
                     success=False,
                     error=f"Missing required permissions for tool '{tool_name}'",
-                )
-
-        # Check rate limits
-        if discord_context:
-            rate_limit_check = self._check_rate_limit(tool, discord_context.author.id)
-            if not rate_limit_check:
-                return ToolResult(
-                    success=False,
-                    error=f"Rate limit exceeded for tool '{tool_name}'",
                 )
 
         # Execute the tool
@@ -136,41 +126,6 @@ class ToolExecutor:
                 )
 
         return False
-
-    def _check_rate_limit(self, tool: ToolDefinition, user_id: int) -> bool:
-        """Check if the user is rate limited for this tool.
-
-        Args:
-            tool: The tool to check rate limits for.
-            user_id: ID of the user attempting to use the tool.
-
-        Returns:
-            True if user can use the tool, False if rate limited.
-        """
-        # Use the tool's rate limit if set, otherwise use default
-        default_limit = getattr(self.config, "tool_rate_limit", 60)
-        limit = tool.rate_limit if tool.rate_limit is not None else default_limit
-
-        if limit <= 0:
-            return True  # No rate limiting
-
-        key = f"{user_id}:{tool.name}"
-        last_execution = self._rate_limits.get(key, 0)
-        current_time = time.time()
-
-        if current_time - last_execution < limit:
-            logger.debug(
-                "User %s rate limited for tool %s (last: %s, now: %s, limit: %s)",
-                user_id,
-                tool.name,
-                last_execution,
-                current_time,
-                limit,
-            )
-            return False
-
-        self._rate_limits[key] = current_time
-        return True
 
     async def _execute_with_timeout(
         self,
@@ -277,35 +232,3 @@ class ToolExecutor:
         if tool_name:
             return {tool_name: self._metrics.get(tool_name, ExecutionMetrics())}
         return self._metrics.copy()
-
-    def clear_rate_limits(self, user_id: Optional[int] = None) -> None:
-        """Clear rate limit records.
-
-        Args:
-            user_id: Optional specific user ID to clear limits for.
-                    If None, clears all rate limits.
-        """
-        if user_id:
-            keys_to_remove = [k for k in self._rate_limits if k.startswith(f"{user_id}:")]
-            for key in keys_to_remove:
-                del self._rate_limits[key]
-        else:
-            self._rate_limits.clear()
-
-    def cleanup_old_rate_limits(self, max_age_seconds: int = 3600) -> None:
-        """Clean up old rate limit entries to prevent memory leaks.
-
-        Args:
-            max_age_seconds: Maximum age of rate limit entries in seconds (default: 1 hour).
-        """
-        current_time = time.time()
-        keys_to_remove = [
-            key
-            for key, last_exec in self._rate_limits.items()
-            if current_time - last_exec > max_age_seconds
-        ]
-        for key in keys_to_remove:
-            del self._rate_limits[key]
-
-        if keys_to_remove:
-            logger.debug("Cleaned up %d old rate limit entries", len(keys_to_remove))

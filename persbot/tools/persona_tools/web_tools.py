@@ -237,6 +237,5 @@ def register_web_tools(registry):
                 ),
             ],
             handler=inspect_external_content,
-            rate_limit=15,  # 15 seconds between requests to avoid rate limiting
         )
     )

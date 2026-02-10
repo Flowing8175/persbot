@@ -224,11 +224,3 @@ class ToolManager:
             True if tools are enabled.
         """
         return getattr(self.config, "enable_tools", True)
-
-    def clear_rate_limits(self, user_id: Optional[int] = None) -> None:
-        """Clear rate limit records.
-
-        Args:
-            user_id: Optional specific user ID.
-        """
-        self.executor.clear_rate_limits(user_id)

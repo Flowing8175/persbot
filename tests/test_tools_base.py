@@ -477,7 +477,6 @@ class TestToolExecutor:
         """Create a mock config."""
         config = Mock()
         config.no_check_permission = True
-        config.tool_rate_limit = 0  # No rate limiting in tests
         config.tool_timeout = 10.0
         return config
 
@@ -583,12 +582,6 @@ class TestToolExecutor:
         """Test getting execution metrics."""
         metrics = executor.get_metrics()
         assert isinstance(metrics, dict)
-
-    def test_clear_rate_limits(self, executor):
-        """Test clearing rate limits."""
-        # Should not raise any errors
-        executor.clear_rate_limits()
-        executor.clear_rate_limits(user_id=12345)
 
 
 class TestExecutionMetrics:

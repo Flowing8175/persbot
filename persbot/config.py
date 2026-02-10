@@ -109,7 +109,6 @@ class AppConfig:
     enable_tools: bool = True
     enable_discord_tools: bool = True
     enable_api_tools: bool = True
-    tool_rate_limit: int = 0  # No rate limiting (0 = disabled)
     tool_timeout: float = 10.0  # seconds
     weather_api_key: str | None = None
     search_api_key: str | None = None
@@ -319,7 +318,6 @@ def load_config() -> AppConfig:
     enable_tools = _parse_bool_env("ENABLE_TOOLS", default=True)
     enable_discord_tools = _parse_bool_env("ENABLE_DISCORD_TOOLS", default=True)
     enable_api_tools = _parse_bool_env("ENABLE_API_TOOLS", default=True)
-    tool_rate_limit = _parse_int_env("TOOL_RATE_LIMIT", 0)
     tool_timeout = _parse_float_env("TOOL_TIMEOUT", 10.0)
     weather_api_key = os.environ.get("WEATHER_API_KEY")
     search_api_key = os.environ.get("SEARCH_API_KEY")
@@ -354,7 +352,6 @@ def load_config() -> AppConfig:
         enable_tools=enable_tools,
         enable_discord_tools=enable_discord_tools,
         enable_api_tools=enable_api_tools,
-        tool_rate_limit=tool_rate_limit,
         tool_timeout=tool_timeout,
         weather_api_key=weather_api_key,
         search_api_key=search_api_key,

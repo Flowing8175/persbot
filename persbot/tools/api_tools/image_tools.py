@@ -510,7 +510,6 @@ def register_image_tools(registry):
                 ),
             ],
             handler=generate_image,
-            rate_limit=0,
             timeout=300.0,
         )
     )
@@ -529,7 +528,6 @@ def register_image_tools(registry):
                 ),
             ],
             handler=send_image,
-            rate_limit=0,
             timeout=60.0,
         )
     )

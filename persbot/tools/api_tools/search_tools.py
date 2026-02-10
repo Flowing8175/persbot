@@ -138,6 +138,5 @@ def register_search_tools(registry):
                 ),
             ],
             handler=web_search,
-            rate_limit=30,  # 30 seconds between searches
         )
     )

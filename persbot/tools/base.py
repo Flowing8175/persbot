@@ -95,9 +95,6 @@ class ToolDefinition:
     requires_permission: Optional[str] = None
     """Discord permission required to use this tool (e.g., 'read_messages')."""
 
-    rate_limit: Optional[int] = None
-    """Rate limit in seconds between uses (None = no limit)."""
-
     enabled: bool = True
     """Whether the tool is currently enabled."""
 

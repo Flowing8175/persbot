@@ -21,7 +21,6 @@ class TestToolManager:
         config.enable_tools = True
         config.enable_discord_tools = True
         config.enable_api_tools = True
-        config.tool_rate_limit = 0  # No rate limiting in tests
         config.tool_timeout = 10.0
         config.weather_api_key = "test_weather_key"
         config.search_api_key = "test_search_key"
@@ -45,7 +44,6 @@ class TestToolManager:
         config.enable_tools = False
         config.enable_discord_tools = True
         config.enable_api_tools = True
-        config.tool_rate_limit = 0
         config.tool_timeout = 10.0
 
         manager = ToolManager(config)
@@ -156,12 +154,6 @@ class TestToolManager:
         metrics = tool_manager.get_metrics()
         assert isinstance(metrics, dict)
 
-    def test_clear_rate_limits(self, tool_manager):
-        """Test clearing rate limits."""
-        # Should not raise any errors
-        tool_manager.clear_rate_limits()
-        tool_manager.clear_rate_limits(user_id=12345)
-
     @pytest.mark.asyncio
     async def test_time_tool_execution_flow(self, tool_manager):
         """Test complete execution flow for time tool."""
@@ -254,7 +246,6 @@ class TestToolRegistration:
 
         config = Mock()
         config.no_check_permission = True
-        config.tool_rate_limit = 0
         config.tool_timeout = 10.0
 
         executor = ToolExecutor(config, registry)
@@ -309,7 +300,6 @@ class TestToolErrorHandling:
         """Test that failing tools return proper error results."""
         config = Mock()
         config.no_check_permission = True
-        config.tool_rate_limit = 0
         config.tool_timeout = 10.0
 
         executor = ToolExecutor(config, error_tool_registry)
@@ -323,7 +313,6 @@ class TestToolErrorHandling:
         """Test that timeout tools return proper error results."""
         config = Mock()
         config.no_check_permission = True
-        config.tool_rate_limit = 0
         config.tool_timeout = 1.0  # 1 second timeout
 
         executor = ToolExecutor(config, error_tool_registry)
