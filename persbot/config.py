@@ -113,6 +113,10 @@ class AppConfig:
     weather_api_key: str | None = None
     search_api_key: str | None = None
 
+    # --- Image Generation Rate Limiting ---
+    image_rate_limit_per_minute: int = 3
+    image_rate_limit_per_hour: int = 30
+
 
 def _normalize_provider(raw_provider: str | None, default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
@@ -323,6 +327,10 @@ def load_config() -> AppConfig:
     search_api_key = os.environ.get("SEARCH_API_KEY")
     api_request_timeout = _parse_float_env("API_REQUEST_TIMEOUT", 120.0)
 
+    # Parse image rate limiting configuration
+    image_rate_limit_per_minute = _parse_int_env("IMAGE_RATE_LIMIT_PER_MINUTE", 3)
+    image_rate_limit_per_hour = _parse_int_env("IMAGE_RATE_LIMIT_PER_HOUR", 30)
+
     return AppConfig(
         discord_token=discord_token,
         assistant_llm_provider=assistant_llm_provider,
@@ -356,4 +364,6 @@ def load_config() -> AppConfig:
         weather_api_key=weather_api_key,
         search_api_key=search_api_key,
         api_request_timeout=api_request_timeout,
+        image_rate_limit_per_minute=image_rate_limit_per_minute,
+        image_rate_limit_per_hour=image_rate_limit_per_hour,
     )

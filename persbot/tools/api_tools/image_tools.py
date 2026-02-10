@@ -14,6 +14,7 @@ from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
 from PIL import Image
 
 from persbot.config import load_config
+from persbot.rate_limiter import get_image_rate_limiter, RateLimitResult
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 from persbot.utils import get_mime_type, process_image_sync
 
@@ -50,6 +51,22 @@ async def generate_image(
     """
     if not prompt or not prompt.strip():
         return ToolResult(success=False, error="Image prompt cannot be empty")
+
+    # Check rate limits
+    user_id = discord_context.author.id if (discord_context and hasattr(discord_context, "author")) else "unknown"
+    rate_limiter = get_image_rate_limiter()
+    rate_limit_result = await rate_limiter.check_rate_limit(user_id)
+
+    if not rate_limit_result.allowed:
+        logger.warning(
+            "Image generation rate limited for user %s: %s",
+            user_id,
+            rate_limit_result.message,
+        )
+        return ToolResult(
+            success=False,
+            error=rate_limit_result.message,
+        )
 
     # Check for cancellation before starting
     if cancel_event and cancel_event.is_set():
