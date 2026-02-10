@@ -1,5 +1,5 @@
 # uv package manager
-.venv/
+.venv/[1;5F[1;5F[1;5F]]]
 .sisyphus/
 **/__pycache__/
 *.py[cod]
@@ -49,4 +49,4 @@ env/
 */*.db
 .env
 prompt_usage.json
-soyebot/assets/
+persbot/assets/

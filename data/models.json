@@ -24,14 +24,6 @@
       "provider": "zai",
       "fallback_alias": "GLM 4.7 Flash"
     },
-    "GLM 4.7 Flash": {
-      "display_name": "GLM 4.7 Flash",
-      "api_model_name": "glm-4.7-flash",
-      "daily_limit": 3000,
-      "scope": "guild",
-      "provider": "zai",
-      "fallback_alias": null
-    },
     "GLM 4.6V": {
       "display_name": "GLM 4.6V",
       "api_model_name": "glm-4.6v",
@@ -67,7 +59,7 @@
   },
   "image_models": [
     {
-      "display_name": "Flux 2 Klein",
+      "display_name": "Flux.2 Klein",
       "api_model_name": "black-forest-labs/flux.2-klein-4b",
       "description": "Fast and efficient image generation model",
       "default": true
@@ -86,7 +78,7 @@
     },
     {
       "display_name": "Gemini 2.5 Flash Image",
-      "api_model_name": "google/gemini-2.5-flash-image-preview",
+      "api_model_name": "google/gemini-2.5-flash-image",
       "description": "Gemini-based image generation",
       "default": false
     }
