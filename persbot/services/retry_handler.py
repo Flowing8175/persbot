@@ -85,6 +85,7 @@ class RetryHandler(ABC):
         self,
         delay: float,
         discord_message: Optional[discord.Message] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> None:
         """Wait for a specified delay with a countdown message in Discord."""
         if delay <= 0:
@@ -112,6 +113,17 @@ class RetryHandler(ABC):
                     except discord.HTTPException:
                         pass
                 logger.info(countdown_message)
+
+            # Check for cancellation before sleep
+            if cancel_event and cancel_event.is_set():
+                logger.info("Rate limit wait aborted due to cancellation signal")
+                if sent_message:
+                    try:
+                        await sent_message.delete()
+                    except discord.HTTPException:
+                        pass
+                raise asyncio.CancelledError("LLM API call aborted by user")
+
             await asyncio.sleep(1)
             remaining -= 1
 
@@ -209,7 +221,7 @@ class RetryHandler(ABC):
 
                 if self._is_rate_limit_error(e):
                     delay = self._extract_retry_delay(e) or self.config.rate_limit_delay
-                    await self._wait_with_countdown(delay, discord_message)
+                    await self._wait_with_countdown(delay, discord_message, cancel_event)
                     continue
 
                 if attempt >= self.config.max_retries:
@@ -217,6 +229,12 @@ class RetryHandler(ABC):
 
                 backoff = self._calculate_backoff(attempt)
                 logger.info("에러 발생, %.1f초 후 재시도", backoff)
+
+                # Check for cancellation before backoff sleep
+                if cancel_event and cancel_event.is_set():
+                    logger.info("Retry loop aborted due to cancellation signal during backoff")
+                    raise asyncio.CancelledError("LLM API call aborted by user")
+
                 await asyncio.sleep(backoff)
 
         # All retries failed - notify user

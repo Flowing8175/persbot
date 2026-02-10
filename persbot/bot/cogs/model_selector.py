@@ -8,38 +8,15 @@ from discord.ext import commands
 
 from persbot.bot.session import SessionManager
 from persbot.config import load_config
-from persbot.services.image_model_service import get_channel_image_model, set_channel_image_model
+from persbot.services.image_model_service import (
+    get_available_image_models,
+    get_channel_image_model,
+    set_channel_image_model,
+)
 from persbot.services.model_usage_service import ModelUsageService
 from persbot.utils import send_discord_message
 
 logger = logging.getLogger(__name__)
-
-# Image model definitions for selection
-# Verified from OpenRouter documentation
-IMAGE_MODEL_DEFINITIONS = {
-    "Riverflow Pro": {
-        "display_name": "Riverflow Pro",
-        "api_model_name": "sourceful/riverflow-v2-pro",
-        "description": "고품질 이미지 생성 (최고급)",
-    },
-    "Riverflow Fast": {
-        "display_name": "Riverflow Fast",
-        "api_model_name": "sourceful/riverflow-v2-fast",
-        "description": "고품질 이미지 생성 (빠름)",
-    },
-    "Flux 2 Klein": {
-        "display_name": "Flux 2 Klein",
-        "api_model_name": "black-forest-labs/flux.2-klein-4b",
-        "description": "고품질 이미지 생성 (표준)",
-    },
-    "Gemini 2.5 Flash Image": {
-        "display_name": "Gemini 2.5 Flash Image",
-        "api_model_name": "google/gemini-2.5-flash-image-preview",
-        "description": "Google Gemini 이미지 생성",
-    },
-}
-
-DEFAULT_IMAGE_MODEL_ALIAS = "Flux 2 Klein"
 
 
 class ModelSelectorView(discord.ui.View):
@@ -181,26 +158,24 @@ class ModelSelectorCog(commands.Cog):
         """사용할 이미지 생성 모델을 선택합니다."""
 
         # Get current image model for this channel from the service
-        # Map from API model name to alias if needed
         current_api_model = get_channel_image_model(ctx.channel.id)
-        # Find the alias for the current API model
-        current_image_model = DEFAULT_IMAGE_MODEL_ALIAS
-        for alias, definition in IMAGE_MODEL_DEFINITIONS.items():
-            if definition["api_model_name"] == current_api_model:
-                current_image_model = alias
-                break
-
-        # Get the API model name for display
-        current_api_model = IMAGE_MODEL_DEFINITIONS[current_image_model]["api_model_name"]
 
         # Build the image model selection view
         view = ImageModelSelectorView(
-            self, current_image_model, original_message=ctx.message
+            self, current_api_model, original_message=ctx.message
         )
+
+        # Get display name for current model
+        current_model_def = get_available_image_models()
+        current_display_name = current_api_model
+        for model in current_model_def:
+            if model.api_model_name == current_api_model:
+                current_display_name = model.display_name
+                break
 
         await send_discord_message(
             ctx,
-            f"현재 이미지 모델: **{current_image_model}** (`{current_api_model}`)\n변경할 모델을 선택해 주세요.",
+            f"현재 이미지 모델: **{current_display_name}** (`{current_api_model}`)\n변경할 모델을 선택해 주세요.",
             view=view,
             mention_author=False,
         )
@@ -219,14 +194,14 @@ class ImageModelSelectorView(discord.ui.View):
         self.cog = cog
         self.original_message = original_message
 
-        # Populate options from IMAGE_MODEL_DEFINITIONS
+        # Populate options from get_available_image_models()
         options = []
-        for alias, definition in IMAGE_MODEL_DEFINITIONS.items():
+        for model in get_available_image_models():
             options.append(
                 discord.SelectOption(
-                    label=alias,
-                    description=definition["description"],
-                    default=(alias == current_model),
+                    label=model.display_name,
+                    description=model.description,
+                    default=(model.api_model_name == current_model),
                     emoji="🎨",
                 )
             )
@@ -247,19 +222,29 @@ class ImageModelSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         view: ImageModelSelectorView = self.view
-        selected_alias = self.values[0]
+        selected_display_name = self.values[0]
 
         # Defer to allow time
         await interaction.response.defer()
 
-        # Get the API model name for the selected alias
-        api_model = IMAGE_MODEL_DEFINITIONS[selected_alias]["api_model_name"]
+        # Find the selected model's api_model_name
+        selected_model = None
+        for model in get_available_image_models():
+            if model.display_name == selected_display_name:
+                selected_model = model
+                break
+
+        if not selected_model:
+            await send_discord_message(
+                interaction, "❌ 선택한 모델을 찾을 수 없습니다."
+            )
+            return
 
         # Update the channel's image model preference using the service
-        set_channel_image_model(interaction.channel_id, api_model)
+        set_channel_image_model(interaction.channel_id, selected_model.api_model_name)
 
         confirmation_text = (
-            f"✅ 이미지 모델이 **{selected_alias}** (`{api_model}`)로 변경되었습니다."
+            f"✅ 이미지 모델이 **{selected_display_name}** (`{selected_model.api_model_name}`)로 변경되었습니다."
         )
 
         # Logic change: Reply to the original !model image command message, then delete the embed

@@ -469,8 +469,14 @@ class GeminiService(BaseLLMService):
         discord_message: Union[discord.Message, list[discord.Message]],
         model_name: Optional[str] = None,
         tools: Optional[Any] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> Optional[Tuple[str, Any]]:
         """Generate chat response."""
+        # Check cancellation event before starting API call
+        if cancel_event and cancel_event.is_set():
+            logger.info("API call aborted due to cancellation signal")
+            raise asyncio.CancelledError("LLM API call aborted by user")
+
         self._log_raw_request(user_message, chat_session)
 
         if isinstance(discord_message, list):
@@ -565,6 +571,7 @@ class GeminiService(BaseLLMService):
                 ),
                 on_cache_error=_refresh_chat_session,
                 discord_message=primary_msg,
+                cancel_event=cancel_event,
             )
 
             if result is None:
@@ -610,6 +617,7 @@ class GeminiService(BaseLLMService):
                         "응답 생성 (재시도)",
                         return_full_response=True,
                         discord_message=primary_msg,
+                        cancel_event=cancel_event,
                     )
                     if result:
                         user_msg, model_msg, response_obj = result
@@ -638,6 +646,7 @@ class GeminiService(BaseLLMService):
         tool_rounds,
         tools=None,
         discord_message=None,
+        cancel_event: Optional[asyncio.Event] = None,
     ):
         """Send tool results back to model and get continuation response.
 
@@ -646,10 +655,16 @@ class GeminiService(BaseLLMService):
             tool_rounds: List of (response_obj, tool_results) tuples.
             tools: Original tool definitions (will be converted to Gemini format).
             discord_message: Discord message for error notifications.
+            cancel_event: Optional event to check for abort signals.
 
         Returns:
             Tuple of (response_text, response_obj) or None.
         """
+        # Check cancellation event before starting API call
+        if cancel_event and cancel_event.is_set():
+            logger.info("Tool results API call aborted due to cancellation signal")
+            raise asyncio.CancelledError("LLM API call aborted by user")
+
         # Convert tools to Gemini format
         final_tools = []
         if tools:
@@ -666,6 +681,7 @@ class GeminiService(BaseLLMService):
             "tool 결과 전송",
             return_full_response=True,
             discord_message=discord_message,
+            cancel_event=cancel_event,
         )
 
         if result is None:
@@ -685,12 +701,18 @@ class GeminiService(BaseLLMService):
         model_call: Callable[[], Union[Any, Any]],
         on_cache_error: Callable[[], Awaitable[None]],
         discord_message: Optional[discord.Message] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> Optional[Any]:
         """Custom retry logic for Gemini to handle various error types."""
         last_error = None
 
         for attempt in range(1, self.config.api_max_retries + 1):
             try:
+                # Check for cancellation before attempting API call
+                if cancel_event and cancel_event.is_set():
+                    logger.info("API call aborted due to cancellation signal before attempt")
+                    raise asyncio.CancelledError("LLM API call aborted by user")
+
                 response = await asyncio.wait_for(
                     self._execute_model_call(model_call),
                     timeout=self.config.api_request_timeout,
@@ -701,7 +723,7 @@ class GeminiService(BaseLLMService):
             except Exception as e:
                 last_error = e
                 should_continue = await self._handle_retry_error(
-                    e, attempt, on_cache_error, discord_message
+                    e, attempt, on_cache_error, discord_message, cancel_event
                 )
                 if not should_continue:
                     break
@@ -715,6 +737,7 @@ class GeminiService(BaseLLMService):
         attempt: int,
         on_cache_error: Callable[[], Awaitable[None]],
         discord_message: Optional[discord.Message],
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> bool:
         """Handle retry error and return True if should continue retrying."""
         # Handle cache errors
@@ -723,7 +746,7 @@ class GeminiService(BaseLLMService):
 
         # Handle rate limit errors
         if self._is_rate_limit_error(error):
-            await self._handle_rate_limit_retry(error, attempt, discord_message)
+            await self._handle_rate_limit_retry(error, attempt, discord_message, cancel_event)
             return True
 
         # Handle generic errors
@@ -731,6 +754,11 @@ class GeminiService(BaseLLMService):
 
         if attempt >= self.config.api_max_retries:
             return False
+
+        # Check for cancellation before backoff sleep
+        if cancel_event and cancel_event.is_set():
+            logger.info("Retry loop aborted due to cancellation signal during backoff")
+            raise asyncio.CancelledError("LLM API call aborted by user")
 
         await asyncio.sleep(self._calculate_backoff(attempt))
         return True
@@ -748,12 +776,12 @@ class GeminiService(BaseLLMService):
             return False
 
     async def _handle_rate_limit_retry(
-        self, error: Exception, attempt: int, discord_message: Optional[discord.Message]
+        self, error: Exception, attempt: int, discord_message: Optional[discord.Message], cancel_event: Optional[asyncio.Event] = None
     ) -> None:
         """Handle rate limit error with countdown wait."""
         logger.warning("Gemini Rate Limit (Attempt %s). Waiting...", attempt)
         delay = self._extract_retry_delay(error) or self.config.api_rate_limit_retry_after
-        await self._wait_with_countdown(delay, discord_message)
+        await self._wait_with_countdown(delay, discord_message, cancel_event)
 
     def _calculate_backoff(self, attempt: int) -> float:
         """Calculate exponential backoff delay."""

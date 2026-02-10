@@ -179,86 +179,91 @@ async def create_chat_reply(
         tool_rounds = 0
         generated_images = []  # Collect all images across tool rounds
 
-        while function_calls and tool_rounds < max_tool_rounds:
-            logger.info(
-                "Detected %d function calls in response (round %d)",
-                len(function_calls),
-                tool_rounds + 1,
-            )
-
-            # Send progress notification before tool execution
-            notification_text = f"🔧 {', '.join(TOOL_NAME_KOREAN.get(call.get('name', 'unknown'), call.get('name', 'unknown')) for call in function_calls)} 사용 중..."
-            progress_msg = None
-            if primary_msg and hasattr(primary_msg, "channel") and primary_msg.channel:
-                try:
-                    progress_msg = await primary_msg.channel.send(notification_text)
-                except Exception:
-                    # If sending fails, continue without notification
-                    pass
-
-            try:
-                # Execute tools in parallel
-                results = await tool_manager.execute_tools(function_calls, primary_msg, cancel_event)
+        # Check for cancellation before starting tool execution
+        if cancel_event and cancel_event.is_set():
+            logger.info("Tool execution loop aborted due to cancellation signal")
+            function_calls = None  # Prevent the loop from executing
+        else:
+            while function_calls and tool_rounds < max_tool_rounds:
                 logger.info(
-                    "Executed %d tools: %s",
-                    len(results),
-                    [r.get("name") for r in results],
+                    "Detected %d function calls in response (round %d)",
+                    len(function_calls),
+                    tool_rounds + 1,
                 )
 
-                # Collect any generated images to send after LLM response
-                for result_item in results:
-                    image_bytes = result_item.get("image_bytes")
-                    if image_bytes:
-                        generated_images.append(image_bytes)
+                # Send progress notification before tool execution
+                notification_text = f"🔧 {', '.join(TOOL_NAME_KOREAN.get(call.get('name', 'unknown'), call.get('name', 'unknown')) for call in function_calls)} 사용 중..."
+                progress_msg = None
+                if primary_msg and hasattr(primary_msg, "channel") and primary_msg.channel:
+                    try:
+                        progress_msg = await primary_msg.channel.send(notification_text)
+                    except Exception:
+                        # If sending fails, continue without notification
+                        pass
 
-                # Send tool results back to LLM and get continuation
-                # Create a new round with (response_obj, tool_results)
-                tool_results_list = [(response_obj, results)]
+                try:
+                    # Execute tools in parallel
+                    results = await tool_manager.execute_tools(function_calls, primary_msg, cancel_event)
+                    logger.info(
+                        "Executed %d tools: %s",
+                        len(results),
+                        [r.get("name") for r in results],
+                    )
 
-                # Use send_tool_results to get continuation response
-                continuation = await llm_service.send_tool_results(
-                    chat_session,
-                    tool_rounds=tool_results_list,
-                    tools=tools,
-                    discord_message=primary_msg,
-                    cancel_event=cancel_event,
-                )
+                    # Collect any generated images to send after LLM response
+                    for result_item in results:
+                        image_bytes = result_item.get("image_bytes")
+                        if image_bytes:
+                            generated_images.append(image_bytes)
 
-                if not continuation:
-                    logger.warning("Tool results sent but no continuation received from LLM")
-                    break
+                    # Send tool results back to LLM and get continuation
+                    # Create a new round with (response_obj, tool_results)
+                    tool_results_list = [(response_obj, results)]
 
-                # Update response_text and response_obj from continuation
-                response_text, response_obj = continuation
-
-                # Check for more function calls in the continuation
-                function_calls = llm_service.extract_function_calls_from_response(
-                    llm_service.get_active_backend(
+                    # Use send_tool_results to get continuation response
+                    continuation = await llm_service.send_tool_results(
                         chat_session,
-                        use_summarizer_backend=resolution.is_reply_to_summary,
-                    ),
-                    response_obj,
-                )
+                        tool_rounds=tool_results_list,
+                        tools=tools,
+                        discord_message=primary_msg,
+                        cancel_event=cancel_event,
+                    )
 
-                tool_rounds += 1
+                    if not continuation:
+                        logger.warning("Tool results sent but no continuation received from LLM")
+                        break
 
-            except Exception as e:
-                logger.error("Error executing tools: %s", e, exc_info=True)
-                # Clean up progress message on error
-                if "progress_msg" in locals() and progress_msg:
-                    try:
-                        await progress_msg.delete()
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                        pass
-                # Return original response on tool execution error
-                break
-            finally:
-                # Clean up progress message (both success and error cases)
-                if progress_msg:
-                    try:
-                        await progress_msg.delete()
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                        pass
+                    # Update response_text and response_obj from continuation
+                    response_text, response_obj = continuation
+
+                    # Check for more function calls in the continuation
+                    function_calls = llm_service.extract_function_calls_from_response(
+                        llm_service.get_active_backend(
+                            chat_session,
+                            use_summarizer_backend=resolution.is_reply_to_summary,
+                        ),
+                        response_obj,
+                    )
+
+                    tool_rounds += 1
+
+                except Exception as e:
+                    logger.error("Error executing tools: %s", e, exc_info=True)
+                    # Clean up progress message on error
+                    if "progress_msg" in locals() and progress_msg:
+                        try:
+                            await progress_msg.delete()
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            pass
+                    # Return original response on tool execution error
+                    break
+                finally:
+                    # Clean up progress message (both success and error cases)
+                    if progress_msg:
+                        try:
+                            await progress_msg.delete()
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            pass
 
         if tool_rounds > 0:
             # We executed tools, use the final response from the LLM
