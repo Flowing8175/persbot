@@ -238,7 +238,7 @@ class ChatCompletionSession(BaseOpenAISession):
             )
 
             # Add tool result messages
-            messages.extend(OpenAIToolAdapter.create_tool_messages(results))
+            messages.extend(OpenAIToolAdapter.format_results(results))
 
         # Call API
         api_kwargs = {

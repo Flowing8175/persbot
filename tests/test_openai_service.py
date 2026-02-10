@@ -586,7 +586,7 @@ class TestChatCompletionSession:
 
         # Mock the OpenAIToolAdapter
         mock_adapter = mocker.patch("persbot.services.openai_service.OpenAIToolAdapter")
-        mock_adapter.create_tool_messages.return_value = [
+        mock_adapter.format_results.return_value = [
             {"role": "tool", "tool_call_id": "123", "content": "result"}
         ]
 
@@ -932,7 +932,7 @@ class TestToolCallingIntegration:
 
         openai_service.format_function_results(mock_results)
 
-        mock_adapter.create_tool_messages.assert_called_once_with(mock_results)
+        mock_adapter.format_results.assert_called_once_with(mock_results)
 
 
 # ============================================================================

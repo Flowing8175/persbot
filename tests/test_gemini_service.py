@@ -916,7 +916,7 @@ class TestToolCalling:
 
         gemini_service.format_function_results(mock_results)
 
-        mock_adapter.create_function_response_parts.assert_called_once_with(mock_results)
+        mock_adapter.format_results.assert_called_once_with(mock_results)
 
     @pytest.mark.asyncio
     async def test_send_tool_results(self, gemini_service, mock_discord_message, mocker):

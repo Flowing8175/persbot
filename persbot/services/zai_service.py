@@ -77,7 +77,7 @@ class ZAIService(BaseLLMService):
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
         )
 
-    def _create_retry_handler(self) -> Optional[ZAIRetryHandler]:
+    def _create_retry_handler(self) -> ZAIRetryHandler:
         """Create retry handler for Z.AI API."""
         return ZAIRetryHandler(self._create_retry_config())
 
@@ -360,4 +360,4 @@ class ZAIService(BaseLLMService):
         Returns:
             List of message dictionaries in Z.AI tool format.
         """
-        return ZAIToolAdapter.create_tool_messages(results)
+        return ZAIToolAdapter.format_results(results)

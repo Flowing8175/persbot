@@ -192,7 +192,7 @@ class GeminiService(BaseLLMService):
         self._model_cache.clear()
         logger.info("Gemini model cache cleared to apply new parameters.")
 
-    def _create_retry_handler(self) -> Optional[RetryHandler]:
+    def _create_retry_handler(self) -> RetryHandler:
         """Create Gemini-specific retry handler."""
         config = RetryConfig(
             max_retries=self.config.api_max_retries,
@@ -809,7 +809,7 @@ class GeminiService(BaseLLMService):
         Returns:
             List of genai_types.Part objects with function responses.
         """
-        return GeminiToolAdapter.create_function_response_parts(results)
+        return GeminiToolAdapter.format_results(results)
 
     async def _periodic_cache_cleanup(self):
         """Periodically clean up expired cache entries."""

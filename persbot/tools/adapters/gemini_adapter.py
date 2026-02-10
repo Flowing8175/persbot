@@ -123,5 +123,3 @@ class GeminiToolAdapter(BaseToolAdapter):
             )
         )
 
-    # create_function_response_parts is an alias for format_results for backward compatibility
-    create_function_response_parts = format_results

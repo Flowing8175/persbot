@@ -49,5 +49,3 @@ class OpenAIToolAdapter(OpenAIStyleAdapter):
 
         return messages
 
-    # create_tool_messages is an alias for format_results for backward compatibility
-    create_tool_messages = format_results

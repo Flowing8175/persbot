@@ -184,7 +184,7 @@ class ZAIChatSession(BaseOpenAISession):
             )
 
             # Add tool result messages
-            messages.extend(ZAIToolAdapter.create_tool_messages(results))
+            messages.extend(ZAIToolAdapter.format_results(results))
 
         # Call API
         api_kwargs = {

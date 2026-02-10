@@ -67,7 +67,7 @@ class OpenAIService(BaseLLMService):
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
         )
 
-    def _create_retry_handler(self) -> Optional[OpenAIRetryHandler]:
+    def _create_retry_handler(self) -> OpenAIRetryHandler:
         """Create retry handler for OpenAI API."""
         return OpenAIRetryHandler(self._create_retry_config())
 
@@ -390,4 +390,4 @@ class OpenAIService(BaseLLMService):
         Returns:
             List of message dictionaries in OpenAI tool format.
         """
-        return OpenAIToolAdapter.create_tool_messages(results)
+        return OpenAIToolAdapter.format_results(results)

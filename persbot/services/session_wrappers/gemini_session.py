@@ -170,7 +170,7 @@ class GeminiChatSession:
             contents.append({"role": "model", "parts": list(model_content.parts)})
 
             # Add function response parts
-            fn_parts = GeminiToolAdapter.create_function_response_parts(results)
+            fn_parts = GeminiToolAdapter.format_results(results)
             contents.append({"role": "user", "parts": fn_parts})
 
         # Call generate_content

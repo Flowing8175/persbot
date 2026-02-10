@@ -145,7 +145,7 @@ class ModelSelectorCog(commands.Cog):
     )
     async def model_command(self, ctx: commands.Context):
         """사용할 AI 모델을 선택합니다 (기본: LLM 모델)."""
-        # When invoked without subcommand, show LLM model selection (backward compatible)
+        # When invoked without subcommand, show LLM model selection
         await self.llm_subcommand(ctx)
 
     @model_command.command(

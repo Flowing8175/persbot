@@ -137,7 +137,7 @@ class TestGeminiAdapter:
         # With mocked genai_types, just verify it doesn't crash
         assert result is not None
 
-    def test_create_function_response_parts(self):
+    def test_format_results(self):
         """Test creating multiple function response parts."""
         results = [
             {"name": "tool1", "result": "Result 1"},
@@ -145,7 +145,7 @@ class TestGeminiAdapter:
             {"name": "tool3", "error": "Error message"},
         ]
 
-        parts = GeminiToolAdapter.create_function_response_parts(results)
+        parts = GeminiToolAdapter.format_results(results)
 
         # With mocked genai_types, just verify it doesn't crash
         assert parts is not None
@@ -239,14 +239,14 @@ class TestOpenAIAdapter:
         assert result["role"] == "tool"
         assert result["tool_call_id"] == "call_123"
 
-    def test_create_tool_messages(self):
+    def test_format_results(self):
         """Test creating multiple tool messages."""
         results = [
             {"id": "call_1", "name": "tool1", "result": "Result 1"},
             {"id": "call_2", "name": "tool2", "error": "Error message"},
         ]
 
-        messages = OpenAIToolAdapter.create_tool_messages(results)
+        messages = OpenAIToolAdapter.format_results(results)
 
         assert len(messages) == 2
         assert messages[0]["role"] == "tool"
@@ -337,14 +337,14 @@ class TestZAIAdapter:
         assert result["role"] == "tool"
         assert result["tool_call_id"] == "call_123"
 
-    def test_create_tool_messages(self):
+    def test_format_results(self):
         """Test creating multiple tool messages."""
         results = [
             {"id": "call_1", "name": "tool1", "result": "Result 1"},
             {"id": "call_2", "name": "tool2", "error": "Error"},
         ]
 
-        messages = ZAIToolAdapter.create_tool_messages(results)
+        messages = ZAIToolAdapter.format_results(results)
 
         assert len(messages) == 2
         assert messages[0]["role"] == "tool"

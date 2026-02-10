@@ -143,11 +143,12 @@ class BaseLLMService(ABC):
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
         )
 
-    def _create_retry_handler(self) -> Optional[RetryHandler]:
-        """Create a retry handler instance. Override to use provider-specific handler."""
-        return None  # Default: use legacy retry logic
+    @abstractmethod
+    def _create_retry_handler(self) -> RetryHandler:
+        """Create a retry handler instance. Must be implemented by subclasses."""
+        pass
 
-    def get_retry_handler(self) -> Optional[RetryHandler]:
+    def get_retry_handler(self) -> RetryHandler:
         """Get the retry handler for this service, creating if needed."""
         if self._retry_handler is None:
             self._retry_handler = self._create_retry_handler()
@@ -238,47 +239,10 @@ class BaseLLMService(ABC):
         """
         Execute API call with retries, logging, countdown notifications, and fallback logic.
 
-        Uses the RetryHandler if available (when _create_retry_handler() returns a handler),
-        otherwise falls back to legacy retry logic.
+        Uses the RetryHandler for retry logic with exponential backoff.
         """
-        # Check if we should use the new retry handler
         retry_handler = self.get_retry_handler()
-        if retry_handler is not None:
-            return await self._execute_with_retry_handler(
-                retry_handler,
-                model_call,
-                error_prefix=error_prefix,
-                return_full_response=return_full_response,
-                discord_message=discord_message,
-                timeout=timeout,
-                fallback_call=fallback_call,
-                cancel_event=cancel_event,
-            )
-
-        # Legacy retry logic (preserved for backward compatibility)
-        return await self._execute_with_legacy_retry(
-            model_call,
-            error_prefix=error_prefix,
-            return_full_response=return_full_response,
-            discord_message=discord_message,
-            timeout=timeout,
-            fallback_call=fallback_call,
-            cancel_event=cancel_event,
-        )
-
-    async def _execute_with_retry_handler(
-        self,
-        handler: RetryHandler,
-        model_call: Callable[[], Union[Any, Awaitable[Any]]],
-        error_prefix: str = "요청",
-        return_full_response: bool = False,
-        discord_message: Optional[discord.Message] = None,
-        timeout: Optional[float] = None,
-        fallback_call: Optional[Callable[[], Union[Any, Awaitable[Any]]]] = None,
-        cancel_event: Optional[asyncio.Event] = None,
-    ) -> Optional[Any]:
-        """Execute API call using the new RetryHandler."""
-        return await handler.execute_with_retry(
+        return await retry_handler.execute_with_retry(
             api_call=model_call,
             error_prefix=error_prefix,
             return_full_response=return_full_response,
@@ -287,121 +251,3 @@ class BaseLLMService(ABC):
             log_response=self._log_raw_response,
             extract_text=None if return_full_response else self._extract_text_from_response,
         )
-
-    async def _execute_with_legacy_retry(
-        self,
-        model_call: Callable[[], Union[Any, Awaitable[Any]]],
-        error_prefix: str = "요청",
-        return_full_response: bool = False,
-        discord_message: Optional[discord.Message] = None,
-        timeout: Optional[float] = None,
-        fallback_call: Optional[Callable[[], Union[Any, Awaitable[Any]]]] = None,
-        cancel_event: Optional[asyncio.Event] = None,
-    ) -> Optional[Any]:
-        """Legacy retry logic - preserved for backward compatibility."""
-        last_error: Optional[Exception] = None
-        current_timeout = timeout if timeout is not None else self.config.api_request_timeout
-
-        for attempt in range(1, self.config.api_max_retries + 1):
-            try:
-                # Check for cancellation before attempting API call
-                if cancel_event and cancel_event.is_set():
-                    logger.info("API call aborted due to cancellation signal before attempt")
-                    raise asyncio.CancelledError("LLM API call aborted by user")
-
-                response = await asyncio.wait_for(
-                    self._execute_model_call(model_call),
-                    timeout=current_timeout,
-                )
-
-                self._log_raw_response(response, attempt)
-
-                if return_full_response:
-                    return response
-                return self._extract_text_from_response(response)
-
-            except asyncio.TimeoutError:
-                last_error = asyncio.TimeoutError()
-                logger.warning(
-                    "%s API 타임아웃 (%s/%s)",
-                    self.__class__.__name__,
-                    attempt,
-                    self.config.api_max_retries,
-                )
-
-                # Check for fallback on timeout? Usually timeout is temp, but maybe.
-                # For now just retry.
-                if attempt < self.config.api_max_retries:
-                    logger.info("API 타임아웃, 재시도 중...")
-                    continue
-                break
-
-            except Exception as e:
-                last_error = e
-                logger.error(
-                    "%s API 에러 (%s/%s): %s",
-                    self.__class__.__name__,
-                    attempt,
-                    self.config.api_max_retries,
-                    e,
-                    exc_info=True,
-                )
-
-                if self._is_rate_limit_error(e):
-                    # Check if we should fallback
-                    if fallback_call:
-                        logger.info("Rate limit hit. Attempting fallback model...")
-                        try:
-                            # Execute fallback once without retry loop for simplicity, or we could recurse
-                            # Assuming fallback is "lighter" and less likely to fail or different quota
-                            response = await asyncio.wait_for(
-                                self._execute_model_call(fallback_call), timeout=current_timeout
-                            )
-                            self._log_raw_response(response, attempt)
-                            if return_full_response:
-                                return response
-                            return self._extract_text_from_response(response)
-                        except Exception as fb_e:
-                            logger.error(f"Fallback model failed: {fb_e}")
-                            # Continue to normal wait logic if fallback fails
-
-                    delay = self._extract_retry_delay(e) or self.config.api_rate_limit_retry_after
-                    await self._wait_with_countdown(delay, discord_message)
-                    continue
-
-                if self._is_fatal_error(e):
-                    logger.warning(
-                        "%s encountered a fatal error. Re-throwing to allow recovery.",
-                        self.__class__.__name__,
-                    )
-                    raise e
-
-                if attempt >= self.config.api_max_retries:
-                    break
-
-                # Exponential backoff
-                backoff = min(
-                    self.config.api_retry_backoff_base**attempt,
-                    self.config.api_retry_backoff_max,
-                )
-                logger.info("에러 발생, %.1f초 후 재시도", backoff)
-                await asyncio.sleep(backoff)
-
-        msg_content = GENERIC_ERROR_MESSAGE
-        if isinstance(last_error, asyncio.TimeoutError):
-            logger.error("❌ 에러: API 요청 시간 초과")
-            msg_content = ERROR_API_TIMEOUT
-        else:
-            logger.error(
-                "❌ 에러: 최대 재시도 횟수(%s)를 초과했습니다. (%s)",
-                self.config.api_max_retries,
-                error_prefix,
-            )
-
-        if discord_message:
-            try:
-                await discord_message.reply(msg_content, mention_author=False)
-            except discord.HTTPException:
-                pass
-
-        return None
