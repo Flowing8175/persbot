@@ -3,11 +3,13 @@
 import asyncio
 import base64
 import hashlib
+import io
 import logging
 import time
 from typing import Optional
 
 import aiohttp
+import discord
 from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
 from persbot.config import load_config
@@ -19,6 +21,7 @@ logger = logging.getLogger(__name__)
 async def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
+    model: Optional[str] = None,
     cancel_event: Optional[asyncio.Event] = None,
     **kwargs,
 ) -> ToolResult:
@@ -86,12 +89,15 @@ async def generate_image(
         # Load config to get API credentials
         config = load_config()
 
+        # Use provided model or fall back to config default
+        image_model = model or config.openrouter_image_model
+
         # Initialize OpenAI client with OpenRouter credentials
         image_base_url = "https://openrouter.ai/api/v1"
         logger.info(
             "Initializing image generation with OpenRouter: %s (model=%s)",
             image_base_url,
-            config.openrouter_image_model,
+            image_model,
         )
         client = OpenAI(
             api_key=config.openrouter_api_key,
@@ -100,8 +106,9 @@ async def generate_image(
         )
 
         logger.info(
-            "Generating image with aspect_ratio: %s (prompt_hash=%s)",
+            "Generating image with aspect_ratio: %s, model: %s (prompt_hash=%s)",
             aspect_ratio,
+            image_model,
             prompt_hash,
         )
 
@@ -116,7 +123,7 @@ async def generate_image(
         # Call OpenAI client to generate image via OpenRouter
         api_response = await asyncio.to_thread(
             client.chat.completions.create,
-            model=config.openrouter_image_model,
+            model=image_model,
             messages=[{"role": "user", "content": enhanced_prompt}],
             modalities=["image"],
             extra_body={"image_config": image_config},
@@ -341,6 +348,104 @@ async def generate_image(
         )
 
 
+async def send_image(
+    image_url: str,
+    discord_context: Optional[discord.Message] = None,
+    **kwargs,
+) -> ToolResult:
+    """Send an image to the Discord channel by fetching from a URL.
+
+    This tool is useful when you want to manually send an image to the user,
+    for example if a previous image generation took too long and you want to
+    retry or send a different image.
+
+    Args:
+        image_url: The URL of the image to fetch and send. Must be a valid HTTP/HTTPS URL.
+        discord_context: Discord message context (automatically injected) to get the channel.
+        **kwargs: Additional keyword arguments (unused).
+
+    Returns:
+        ToolResult with success message or error details.
+    """
+    if not image_url or not image_url.strip():
+        return ToolResult(success=False, error="Image URL cannot be empty")
+
+    if not discord_context or not hasattr(discord_context, "channel"):
+        return ToolResult(success=False, error="No Discord channel available")
+
+    # Validate URL format
+    if not image_url.startswith(("http://", "https://")):
+        return ToolResult(success=False, error="Invalid image URL format. Must start with http:// or https://")
+
+    try:
+        # Fetch the image from the URL
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as response:
+                if response.status != 200:
+                    logger.error(
+                        "Failed to fetch image from URL (status=%d): %s",
+                        response.status,
+                        image_url[:100],
+                    )
+                    return ToolResult(
+                        success=False,
+                        error=f"Failed to fetch image (HTTP {response.status})",
+                    )
+
+                # Validate content type is an image
+                content_type = response.headers.get("Content-Type", "")
+                if not content_type.startswith("image/"):
+                    logger.warning(
+                        "URL does not point to an image (content_type=%s): %s",
+                        content_type,
+                        image_url[:100],
+                    )
+                    return ToolResult(
+                        success=False,
+                        error=f"URL does not point to an image (content type: {content_type})",
+                    )
+
+                image_bytes = await response.read()
+
+        # Send the image to the Discord channel
+        channel = discord_context.channel
+        img_file = discord.File(io.BytesIO(image_bytes), filename="image.png")
+
+        await channel.send(file=img_file)
+
+        logger.info("Successfully sent image from URL to channel %s", channel.id)
+
+        return ToolResult(
+            success=True,
+            data="Image sent successfully",
+        )
+
+    except aiohttp.ClientError as e:
+        logger.error("Failed to fetch image from URL: %s", e)
+        return ToolResult(
+            success=False,
+            error="Failed to fetch image from URL",
+        )
+    except discord.Forbidden:
+        logger.error("No permission to send image to channel %s", discord_context.channel.id)
+        return ToolResult(
+            success=False,
+            error="No permission to send image to this channel",
+        )
+    except discord.HTTPException as e:
+        logger.error("Discord API error sending image: %s", e)
+        return ToolResult(
+            success=False,
+            error="Failed to send image via Discord API",
+        )
+    except Exception as e:
+        logger.error("Unexpected error sending image: %s", e, exc_info=True)
+        return ToolResult(
+            success=False,
+            error="Failed to send image",
+        )
+
+
 def register_image_tools(registry):
     """Register image tools with the given registry.
 
@@ -365,9 +470,34 @@ def register_image_tools(registry):
                     description='Aspect ratio for the image. Common values: "1:1" (1024x1024), "16:9" (1344x768), "9:16" (768x1344), "4:3" (1184x864), "3:2" (1248x832), "2:3" (832x1248), "21:9" (1536x672). Default is "1:1".',
                     required=False,
                 ),
+                ToolParameter(
+                    name="model",
+                    type="string",
+                    description='Optional specific model to use for image generation (e.g., "sourceful/riverflow-v2-pro", "sourceful/riverflow-v2-fast", "black-forest-labs/flux.2-klein-4b"). If not provided, uses the channel default.',
+                    required=False,
+                ),
             ],
             handler=generate_image,
             rate_limit=0,
             timeout=120.0,
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="send_image",
+            description="Send an image to the Discord channel by providing a URL. Use this to manually send an image if generation took too long, or to send an image from a specific URL.",
+            category=ToolCategory.API_SEARCH,
+            parameters=[
+                ToolParameter(
+                    name="image_url",
+                    type="string",
+                    description="The HTTP/HTTPS URL of the image to fetch and send to the Discord channel",
+                    required=True,
+                ),
+            ],
+            handler=send_image,
+            rate_limit=0,
+            timeout=60.0,
         )
     )

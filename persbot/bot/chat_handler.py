@@ -28,6 +28,7 @@ __all__ = [
 # Tool name to Korean translation mapping for progress notifications
 TOOL_NAME_KOREAN: dict[str, str] = {
     "generate_image": "이미지 생성 도구",
+    "send_image": "이미지 전송 도구",
     "get_time": "시간 확인 도구",
     "web_search": "웹 검색 도구",
     "get_weather": "날씨 확인 도구",
