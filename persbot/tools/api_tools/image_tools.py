@@ -6,22 +6,69 @@ import hashlib
 import io
 import logging
 import time
-from typing import Optional
+from typing import List, Optional
 
 import aiohttp
 import discord
 from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
+from PIL import Image
 
 from persbot.config import load_config
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
+from persbot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
+
+
+def _process_image_sync(image_data: bytes, filename: str) -> bytes:
+    """Process image synchronously with Pillow (CPU-bound).
+
+    Downscale images to ~1MP to reduce API payload size while maintaining quality.
+    """
+    target_pixels = 1_000_000  # 1 Megapixel
+    try:
+        with Image.open(io.BytesIO(image_data)) as img:
+            # Check current dimensions
+            width, height = img.size
+            pixels = width * height
+
+            if pixels > target_pixels:
+                # Calculate scaling factor
+                ratio = (target_pixels / pixels) ** 0.5
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+
+                logger.info(
+                    "Downscaling image %s from %dx%d to %dx%d",
+                    filename,
+                    width,
+                    height,
+                    new_width,
+                    new_height,
+                )
+
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # Convert to JPEG (compatible and efficient)
+            output_buffer = io.BytesIO()
+            # Convert to RGB if needed (e.g. RGBA -> RGB for JPEG)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+
+            img.save(output_buffer, format="JPEG", quality=85)
+            return output_buffer.getvalue()
+    except Exception as img_err:
+        logger.error("Failed to process image %s: %s", filename, img_err)
+        # Fallback to original if processing fails
+        return image_data
 
 
 async def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
     model: Optional[str] = None,
+    image_input: Optional[str] = None,
+    discord_context: Optional[discord.Message] = None,
     cancel_event: Optional[asyncio.Event] = None,
     **kwargs,
 ) -> ToolResult:
@@ -33,6 +80,10 @@ async def generate_image(
             "1:1" (1024x1024), "16:9" (1344x768), "9:16" (768x1344),
             "4:3" (1184x864), "3:2" (1248x832), "2:3" (832x1248),
             "21:9" (1536x672). Defaults to "1:1".
+        image_input: Optional base64-encoded image data (data URL format) to use
+            as reference/input for image generation. Enables image-to-image generation.
+        discord_context: Discord message context (automatically injected) to extract
+            attached images for use as input.
         cancel_event: AsyncIO event to check for cancellation before API calls.
         **kwargs: Additional keyword arguments (unused).
 
@@ -82,6 +133,32 @@ async def generate_image(
                 prompt_hash,
             )
 
+    # Extract images from discord_context if no image_input provided
+    if not image_input and discord_context and discord_context.attachments:
+        # Process first image attachment as input
+        for attachment in discord_context.attachments:
+            if attachment.content_type and attachment.content_type.startswith("image/"):
+                try:
+                    img_bytes = await attachment.read()
+                    # Downscale image to ~1MP to reduce API payload
+                    img_bytes_processed = await asyncio.to_thread(
+                        _process_image_sync, img_bytes, attachment.filename
+                    )
+                    b64_str = base64.b64encode(img_bytes_processed).decode("utf-8")
+                    mime_type = get_mime_type(img_bytes_processed)
+                    image_input = f"data:{mime_type};base64,{b64_str}"
+                    logger.info(
+                        "Using attached image as input for image generation (prompt_hash=%s)",
+                        prompt_hash,
+                    )
+                    break
+                except Exception as e:
+                    logger.warning(
+                        "Failed to read attachment %s for image input: %s",
+                        attachment.filename,
+                        e,
+                    )
+
     try:
         # Record start time for performance logging
         start_time = time.time()
@@ -120,11 +197,26 @@ async def generate_image(
         # Build image config with aspect_ratio
         image_config = {"aspect_ratio": aspect_ratio}
 
+        # Build user message content - include image if provided
+        if image_input:
+            # Image-to-image: include both text prompt and input image
+            user_content = [
+                {"type": "text", "text": enhanced_prompt},
+                {"type": "image_url", "image_url": {"url": image_input}}
+            ]
+            logger.info(
+                "Including input image in generation request (prompt_hash=%s)",
+                prompt_hash,
+            )
+        else:
+            # Text-to-image: only prompt
+            user_content = enhanced_prompt
+
         # Call OpenAI client to generate image via OpenRouter
         api_response = await asyncio.to_thread(
             client.chat.completions.create,
             model=image_model,
-            messages=[{"role": "user", "content": enhanced_prompt}],
+            messages=[{"role": "user", "content": user_content}],
             modalities=["image"],
             extra_body={"image_config": image_config},
         )
@@ -455,7 +547,7 @@ def register_image_tools(registry):
     registry.register(
         ToolDefinition(
             name="generate_image",
-            description="Generate an image using AI based on a text description. Use this when the user asks for an image, drawing, or visual content.",
+            description="Generate an image using AI based on a text description. Optionally use an attached image as input/reference for image-to-image generation. Use this when the user asks for an image, drawing, or visual content.",
             category=ToolCategory.API_SEARCH,
             parameters=[
                 ToolParameter(
@@ -474,6 +566,12 @@ def register_image_tools(registry):
                     name="model",
                     type="string",
                     description='Optional specific model to use for image generation (e.g., "sourceful/riverflow-v2-pro", "sourceful/riverflow-v2-fast", "black-forest-labs/flux.2-klein-4b"). If not provided, uses the channel default.',
+                    required=False,
+                ),
+                ToolParameter(
+                    name="image_input",
+                    type="string",
+                    description='Optional base64-encoded image (data URL format like "data:image/png;base64,...") to use as input/reference for image-to-image generation. If not provided but the user attached an image, it will be used automatically.',
                     required=False,
                 ),
             ],
