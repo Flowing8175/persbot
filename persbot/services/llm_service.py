@@ -300,6 +300,50 @@ class LLMService:
             if limit_error:
                 return limit_error
 
+        # Auto-switch to GLM-4.6V for vision understanding when images are present
+        vision_model_alias = "GLM 4.6V"
+
+        if image_count > 0 and final_alias != vision_model_alias:
+            logger.info(
+                "Images detected (%d). Using GLM-4.6V for vision understanding.",
+                image_count,
+            )
+            vision_backend = self.get_backend_for_model(vision_model_alias)
+            if vision_backend:
+                try:
+                    # Create a temporary session for vision understanding
+                    vision_model_name = self.model_usage_service.get_api_model_name(
+                        vision_model_alias
+                    )
+                    vision_session = vision_backend.create_assistant_model(
+                        "You are a vision understanding assistant. Describe the content of images concisely and accurately in the language of the user's message."
+                    )
+
+                    # Get vision response from GLM-4.6V
+                    vision_response = await vision_backend.generate_chat_response(
+                        vision_session,
+                        user_message,
+                        discord_message,
+                        model_name=vision_model_name,
+                        tools=None,
+                        cancel_event=cancel_event,
+                    )
+
+                    if vision_response:
+                        vision_text, _ = vision_response
+                        logger.info(
+                            "Vision understanding obtained from GLM-4.6V: %s",
+                            vision_text[:100],
+                        )
+                        # Prepend vision understanding to user message
+                        user_message = f"[이미지 분석]: {vision_text}\n\n{user_message}"
+                except Exception as e:
+                    logger.warning(
+                        "Failed to get vision understanding from GLM-4.6V: %s",
+                        e,
+                    )
+                    # Continue without vision understanding if it fails
+
         # Generate response
         response = await active_backend.generate_chat_response(
             chat_session,

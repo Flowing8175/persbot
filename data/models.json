@@ -31,6 +31,14 @@
     "provider": "zai",
     "fallback_alias": null
   },
+  "GLM 4.6V": {
+    "display_name": "GLM 4.6V",
+    "api_model_name": "glm-4.6v",
+    "daily_limit": 1000,
+    "scope": "guild",
+    "provider": "zai",
+    "fallback_alias": "GLM 4.7"
+  },
   "GPT 4o": {
     "display_name": "GPT 4o",
     "api_model_name": "gpt-4o",
