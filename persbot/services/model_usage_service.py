@@ -50,7 +50,9 @@ class ModelUsageService:
             try:
                 with open(self.models_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    for alias, details in data.items():
+                    # Read from llm_models section
+                    llm_models = data.get("llm_models", data)
+                    for alias, details in llm_models.items():
                         model_def = ModelDefinition(
                             display_name=details["display_name"],
                             api_model_name=details["api_model_name"],

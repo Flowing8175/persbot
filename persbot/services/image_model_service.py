@@ -1,27 +1,164 @@
 """Service for managing image model preferences per channel."""
 
+import json
 import logging
-from typing import Dict, Optional
+import os
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Default image model
-DEFAULT_IMAGE_MODEL = "black-forest-labs/flux.2-klein-4b"
+# Path to models.json
+MODELS_FILE = "data/models.json"
 
-# Channel-level image model preferences
-# Format: {channel_id: model_name}
+
+@dataclass
+class ImageModelDefinition:
+    """Definition of an image generation model."""
+
+    display_name: str
+    api_model_name: str
+    description: str
+    default: bool = False
+
+
+# In-memory cache for image model definitions and preferences
+_image_models_cache: List[ImageModelDefinition] = []
 _channel_image_preferences: Dict[int, str] = {}
+_default_image_model: str = "black-forest-labs/flux.2-klein-4b"
 
 
-def set_channel_image_model(channel_id: int, model_name: str) -> None:
+def _load_image_models():
+    """Load image model definitions from models.json file."""
+    global _image_models_cache, _default_image_model
+
+    if os.path.exists(MODELS_FILE):
+        try:
+            with open(MODELS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                models_data = data.get("image_models", [])
+                _image_models_cache = [
+                    ImageModelDefinition(
+                        display_name=m["display_name"],
+                        api_model_name=m["api_model_name"],
+                        description=m["description"],
+                        default=m.get("default", False),
+                    )
+                    for m in models_data
+                ]
+
+                # Load default and channel preferences
+                prefs = data.get("image_model_preferences", {})
+                _default_image_model = prefs.get("default", "black-forest-labs/flux.2-klein-4b")
+                channel_prefs = prefs.get("channels", {})
+                _channel_image_preferences.clear()
+                for channel_id_str, model_name in channel_prefs.items():
+                    try:
+                        _channel_image_preferences[int(channel_id_str)] = model_name
+                    except ValueError:
+                        logger.warning(f"Invalid channel ID in preferences: {channel_id_str}")
+
+                logger.info(
+                    f"Loaded {len(_image_models_cache)} image models, "
+                    f"default: {_default_image_model}"
+                )
+        except Exception as e:
+            logger.error(f"Failed to load image models: {e}")
+            # Use fallback defaults
+            _image_models_cache = [
+                ImageModelDefinition(
+                    display_name="Flux 2 Klein",
+                    api_model_name="black-forest-labs/flux.2-klein-4b",
+                    description="Fast and efficient image generation model",
+                    default=True,
+                )
+            ]
+    else:
+        logger.warning(f"Models file not found: {MODELS_FILE}")
+        _image_models_cache = [
+            ImageModelDefinition(
+                display_name="Flux 2 Klein",
+                api_model_name="black-forest-labs/flux.2-klein-4b",
+                description="Fast and efficient image generation model",
+                default=True,
+            )
+        ]
+
+
+def _save_preferences():
+    """Save channel preferences to models.json file."""
+    if not os.path.exists(MODELS_FILE):
+        logger.warning(f"Models file not found: {MODELS_FILE}, skipping save")
+        return
+
+    try:
+        with open(MODELS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Update preferences section
+        if "image_model_preferences" not in data:
+            data["image_model_preferences"] = {}
+
+        data["image_model_preferences"]["default"] = _default_image_model
+        data["image_model_preferences"]["channels"] = {
+            str(k): v for k, v in _channel_image_preferences.items()
+        }
+
+        with open(MODELS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        logger.debug("Saved image model preferences")
+    except Exception as e:
+        logger.error(f"Failed to save image model preferences: {e}")
+
+
+def get_available_image_models() -> List[ImageModelDefinition]:
+    """Get all available image model definitions.
+
+    Returns:
+        List of ImageModelDefinition objects.
+    """
+    if not _image_models_cache:
+        _load_image_models()
+    return _image_models_cache.copy()
+
+
+def get_image_model_by_name(model_name: str) -> Optional[ImageModelDefinition]:
+    """Get an image model definition by API model name.
+
+    Args:
+        model_name: The API model name to search for.
+
+    Returns:
+        ImageModelDefinition if found, None otherwise.
+    """
+    if not _image_models_cache:
+        _load_image_models()
+    for model in _image_models_cache:
+        if model.api_model_name == model_name:
+            return model
+    return None
+
+
+def set_channel_image_model(channel_id: int, model_name: str) -> bool:
     """Set the image model preference for a channel.
 
     Args:
         channel_id: Discord channel ID.
         model_name: Image model name (e.g., "sourceful/riverflow-v2-pro").
+
+    Returns:
+        True if successful, False if model not found.
     """
+    # Verify model exists
+    if not get_image_model_by_name(model_name):
+        logger.warning(f"Unknown image model requested: {model_name}")
+        return False
+
     _channel_image_preferences[channel_id] = model_name
     logger.info("Set image model for channel %d to %s", channel_id, model_name)
+    _save_preferences()
+    return True
 
 
 def get_channel_image_model(channel_id: int) -> str:
@@ -33,7 +170,9 @@ def get_channel_image_model(channel_id: int) -> str:
     Returns:
         The image model name for the channel, or DEFAULT_IMAGE_MODEL if not set.
     """
-    return _channel_image_preferences.get(channel_id, DEFAULT_IMAGE_MODEL)
+    if not _image_models_cache:
+        _load_image_models()
+    return _channel_image_preferences.get(channel_id, _default_image_model)
 
 
 def clear_channel_image_model(channel_id: int) -> None:
@@ -45,3 +184,38 @@ def clear_channel_image_model(channel_id: int) -> None:
     if channel_id in _channel_image_preferences:
         del _channel_image_preferences[channel_id]
         logger.info("Cleared image model preference for channel %d", channel_id)
+        _save_preferences()
+
+
+def get_default_image_model() -> str:
+    """Get the default image model name.
+
+    Returns:
+        The default image model API name.
+    """
+    if not _image_models_cache:
+        _load_image_models()
+    return _default_image_model
+
+
+def set_default_image_model(model_name: str) -> bool:
+    """Set the default image model.
+
+    Args:
+        model_name: Image model name to set as default.
+
+    Returns:
+        True if successful, False if model not found.
+    """
+    if not get_image_model_by_name(model_name):
+        logger.warning(f"Unknown image model requested for default: {model_name}")
+        return False
+
+    _default_image_model = model_name
+    logger.info("Set default image model to %s", model_name)
+    _save_preferences()
+    return True
+
+
+# Initialize on module load
+_load_image_models()
