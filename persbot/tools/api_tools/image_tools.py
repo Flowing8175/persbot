@@ -479,7 +479,7 @@ def register_image_tools(registry):
             ],
             handler=generate_image,
             rate_limit=0,
-            timeout=120.0,
+            timeout=300.0,
         )
     )
 
