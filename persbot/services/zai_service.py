@@ -118,6 +118,11 @@ class ZAIService(BaseLLMService):
         """Return role name for assistant messages."""
         return "assistant"
 
+    def _is_rate_limit_error(self, error: Exception) -> bool:
+        """Check if exception is a rate limit error."""
+        error_str = str(error).lower()
+        return "rate limit" in error_str or "429" in error_str
+
     def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
         """Log raw request for debugging."""
         if not logger.isEnabledFor(logging.DEBUG):
