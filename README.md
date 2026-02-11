@@ -6,6 +6,8 @@ A feature-rich Discord bot powered by multiple LLM providers (Google Gemini, Ope
 [![Discord.py](https://img.shields.io/badge/discord.py-2.3.0+-blue.svg)](https://github.com/Rapptz/discord.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+100% written by AI agents. Be aware for bugs. I don't care of anything goes wrong :>
+
 ## Features
 
 ### AI Chat Assistant
