@@ -19,6 +19,29 @@ logger = logging.getLogger(__name__)
 # --- UI Components for Prompt Manager ---
 
 
+class PromptModeSelectView(discord.ui.View):
+    """View for selecting persona creation mode."""
+
+    def __init__(self, view: "PromptManagerView"):
+        super().__init__(timeout=180)
+        self.parent_view = view
+
+    @discord.ui.button(label="기본 모드", style=discord.ButtonStyle.secondary, emoji="⚡", row=0)
+    async def basic_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Basic mode - quick generation without questions."""
+        await interaction.response.send_modal(PromptCreateModal(self.parent_view, use_questions=False))
+
+    @discord.ui.button(label="AI 질문 모드", style=discord.ButtonStyle.primary, emoji="🧠", row=0)
+    async def qa_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """AI question mode - detailed generation with AI questions."""
+        await interaction.response.send_modal(PromptCreateModal(self.parent_view, use_questions=True))
+
+    @discord.ui.button(label="취소", style=discord.ButtonStyle.danger, emoji="❌", row=1)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Cancel mode selection."""
+        await interaction.response.delete_message()
+
+
 class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성"):
     concept = discord.ui.TextInput(
         label="페르소나 컨셉",
@@ -28,22 +51,14 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
         max_length=500,
     )
 
-    use_questions = discord.ui.TextInput(
-        label="생성 모드",
-        placeholder="1: 기본 모드 (빠름) / 2: AI 질문 도움모드 (상세)",
-        style=discord.TextStyle.short,
-        required=True,
-        max_length=1,
-        default="1",
-    )
-
-    def __init__(self, view: "PromptManagerView"):
+    def __init__(self, view: "PromptManagerView", use_questions: bool = False):
         super().__init__()
         self.view_ref = view
+        self.use_questions = use_questions
 
     async def on_submit(self, interaction: discord.Interaction):
         concept_str = self.concept.value
-        use_qa = self.use_questions.value.strip() in ("2", "yes", "y", "Y", "예")
+        use_qa = self.use_questions
 
         if use_qa:
             # Defer and show loading, then send the questions modal
@@ -413,7 +428,17 @@ class PromptManagerView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        await interaction.response.send_modal(PromptCreateModal(self))
+
+        embed = discord.Embed(
+            title="✨ 페르소나 생성 모드 선택",
+            description="원하시는 생성 모드를 선택해주세요.",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="⚡ 기본 모드", value="컨셉만 입력하여 빠르게 생성", inline=False)
+        embed.add_field(name="🧠 AI 질문 모드", value="AI가 질문을 생성하고 답변으로 상세하게 커스텀", inline=False)
+
+        view = PromptModeSelectView(self)
+        await send_discord_message(interaction, "", embed=embed, view=view, ephemeral=True)
 
     async def on_file_add(self, interaction: discord.Interaction):
         # Check permissions unless NO_CHECK_PERMISSION is set
