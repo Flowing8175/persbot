@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import discord
 
 from persbot.config import AppConfig
+from persbot.constants import META_PROMPT
 from persbot.domain import Provider
 from persbot.exceptions import ProviderUnavailableException
 from persbot.services.base import BaseLLMService
