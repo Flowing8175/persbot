@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionChunk
 
 from persbot.config import AppConfig
-from persbot.constants import LLMDefaults, RetryConfig
+from persbot.constants import LLMDefaults, RetryConfig, ModelNames
 from persbot.services.base import BaseLLMService, ChatMessage
 from persbot.services.model_wrappers.zai_model import ZAIChatModel
 from persbot.services.prompt_service import PromptService
@@ -32,6 +32,10 @@ from persbot.services.session_wrappers.zai_session import ZAIChatSession
 from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
 
 logger = logging.getLogger(__name__)
+
+# Models that don't support vision - will auto-switch to vision model
+NON_VISION_MODELS = {"glm-4.7", "glm-4-flash"}
+VISION_MODEL = "glm-4.6v"
 
 
 class ZAIService(BaseLLMService):
@@ -122,6 +126,21 @@ class ZAIService(BaseLLMService):
     def get_assistant_role_name(self) -> str:
         """Return role name for assistant messages."""
         return "assistant"
+
+    def _get_model_for_images(self, model_name: str, has_images: bool) -> str:
+        """Get the appropriate model name based on whether images are present.
+
+        GLM-4.7 doesn't support vision, so we auto-switch to glm-4.6v when images are detected.
+        """
+        if has_images and model_name in NON_VISION_MODELS:
+            logger.info(
+                "📷 이미지가 감지되어 비전 모델(%s)로 자동 전환합니다: %s -> %s",
+                VISION_MODEL,
+                model_name,
+                VISION_MODEL,
+            )
+            return VISION_MODEL
+        return model_name
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
         """Check if exception is a rate limit error."""
@@ -259,17 +278,7 @@ class ZAIService(BaseLLMService):
         author_id = primary_msg.author.id
         author_name = getattr(primary_msg.author, "name", str(author_id))
 
-        # Check for model switch
-        current_model_name = getattr(chat_session, "_model_name", None)
-        if model_name and current_model_name != model_name:
-            logger.info(
-                "Switching Z.AI chat session model from %s to %s",
-                current_model_name,
-                model_name,
-            )
-            chat_session._model_name = model_name
-
-        # Extract images from messages
+        # Extract images from messages first (before model selection)
         images = []
         if isinstance(discord_message, list):
             for msg in discord_message:
@@ -277,6 +286,22 @@ class ZAIService(BaseLLMService):
                 images.extend(imgs)
         else:
             images = await self._extract_images_from_message(discord_message)
+
+        # Determine the actual model to use (switch to vision model if images present)
+        actual_model = self._get_model_for_images(
+            model_name if model_name else getattr(chat_session, "_model_name", self._assistant_model_name),
+            len(images) > 0
+        )
+
+        # Check for model switch
+        current_model_name = getattr(chat_session, "_model_name", None)
+        if actual_model and current_model_name != actual_model:
+            logger.info(
+                "Switching Z.AI chat session model from %s to %s",
+                current_model_name,
+                actual_model,
+            )
+            chat_session._model_name = actual_model
 
         # Convert tools to Z.AI (OpenAI-compatible) format if provided
         converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None
@@ -348,17 +373,7 @@ class ZAIService(BaseLLMService):
         author_id = primary_msg.author.id
         author_name = getattr(primary_msg.author, "name", str(author_id))
 
-        # Check for model switch
-        current_model_name = getattr(chat_session, "_model_name", None)
-        if model_name and current_model_name != model_name:
-            logger.info(
-                "Switching Z.AI chat session model from %s to %s",
-                current_model_name,
-                model_name,
-            )
-            chat_session._model_name = model_name
-
-        # Extract images from messages
+        # Extract images from messages first (before model selection)
         images = []
         if isinstance(discord_message, list):
             for msg in discord_message:
@@ -366,6 +381,22 @@ class ZAIService(BaseLLMService):
                 images.extend(imgs)
         else:
             images = await self._extract_images_from_message(discord_message)
+
+        # Determine the actual model to use (switch to vision model if images present)
+        actual_model = self._get_model_for_images(
+            model_name if model_name else getattr(chat_session, "_model_name", self._assistant_model_name),
+            len(images) > 0
+        )
+
+        # Check for model switch
+        current_model_name = getattr(chat_session, "_model_name", None)
+        if actual_model and current_model_name != actual_model:
+            logger.info(
+                "Switching Z.AI chat session model from %s to %s",
+                current_model_name,
+                actual_model,
+            )
+            chat_session._model_name = actual_model
 
         # Convert tools to Z.AI format if provided
         converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None

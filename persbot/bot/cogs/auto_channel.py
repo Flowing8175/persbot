@@ -137,14 +137,7 @@ class AutoChannelCog(BaseChatCog):
             logger.debug("LLM returned no text response for the auto-reply message.")
             return
 
-        # If Break-Cut Mode is OFF, send normally (with automatic splitting)
-        if not self.config.break_cut_mode:
-            sent_messages = await send_discord_message(message.channel, reply.text)
-            for sent_msg in sent_messages:
-                self.session_manager.link_message_to_session(str(sent_msg.id), reply.session_key)
-            return
-
-        # If Break-Cut Mode is ON, use shared helper
+        # Use base class method (handles streaming/non-streaming based on break_cut_mode)
         await self._handle_break_cut_sending(message.channel.id, message.channel, reply)
 
     async def _handle_error(self, message: discord.Message, error: Exception):
