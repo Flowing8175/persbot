@@ -50,7 +50,7 @@ class ZAIService(BaseLLMService):
         self.client = OpenAI(
             api_key=config.zai_api_key,
             base_url=config.zai_base_url,
-            timeout=config.api_request_timeout,
+            timeout=config.zai_request_timeout,
         )
         self._assistant_cache: Dict[int, ZAIChatModel] = {}
         self._max_messages = 7
@@ -78,7 +78,7 @@ class ZAIService(BaseLLMService):
             base_delay=RetryConfig.BACKOFF_BASE,
             max_delay=RetryConfig.BACKOFF_MAX,
             rate_limit_delay=RetryConfig.RATE_LIMIT_RETRY_AFTER,
-            request_timeout=self.config.api_request_timeout,
+            request_timeout=self.config.zai_request_timeout,
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
         )
 

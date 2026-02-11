@@ -75,6 +75,7 @@ class AppConfig:
     api_max_retries: int = 2
     api_rate_limit_retry_after: int = 5
     api_request_timeout: float = 120.0
+    zai_request_timeout: float = 300.0  # 5 minutes for Z.AI (for complex coding tasks)
     api_retry_backoff_base: float = 2.0  # Exponential backoff base
     api_retry_backoff_max: float = 32.0  # Max backoff cap (seconds)
     progress_update_interval: float = 0.5
@@ -326,6 +327,7 @@ def load_config() -> AppConfig:
     weather_api_key = os.environ.get("WEATHER_API_KEY")
     search_api_key = os.environ.get("SEARCH_API_KEY")
     api_request_timeout = _parse_float_env("API_REQUEST_TIMEOUT", 120.0)
+    zai_request_timeout = _parse_float_env("ZAI_REQUEST_TIMEOUT", 300.0)
 
     # Parse image rate limiting configuration
     image_rate_limit_per_minute = _parse_int_env("IMAGE_RATE_LIMIT_PER_MINUTE", 3)
@@ -364,6 +366,7 @@ def load_config() -> AppConfig:
         weather_api_key=weather_api_key,
         search_api_key=search_api_key,
         api_request_timeout=api_request_timeout,
+        zai_request_timeout=zai_request_timeout,
         image_rate_limit_per_minute=image_rate_limit_per_minute,
         image_rate_limit_per_hour=image_rate_limit_per_hour,
     )
