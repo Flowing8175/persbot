@@ -10,7 +10,12 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 
 import discord
 
-from persbot.config import AppConfig
+from persbot.config import (
+    AppConfig,
+    DEFAULT_GEMINI_ASSISTANT_MODEL,
+    DEFAULT_OPENAI_ASSISTANT_MODEL,
+    DEFAULT_ZAI_ASSISTANT_MODEL,
+)
 from persbot.constants import META_PROMPT, QUESTION_GENERATION_PROMPT
 from persbot.domain import Provider
 from persbot.exceptions import ProviderUnavailableException
@@ -139,11 +144,11 @@ class ProviderRegistry:
             Default model name.
         """
         defaults = {
-            Provider.OPENAI: self.config.openai_assistant_model_name or "gpt-5-mini",
-            Provider.ZAI: self.config.zai_assistant_model_name or "glm-4.7",
-            Provider.GEMINI: self.config.assistant_model_name or "gemini-2.5-flash",
+            Provider.OPENAI: DEFAULT_OPENAI_ASSISTANT_MODEL,
+            Provider.ZAI: DEFAULT_ZAI_ASSISTANT_MODEL,
+            Provider.GEMINI: DEFAULT_GEMINI_ASSISTANT_MODEL,
         }
-        return defaults.get(provider, self.config.assistant_model_name)
+        return defaults.get(provider, DEFAULT_GEMINI_ASSISTANT_MODEL)
 
 
 class LLMService:
