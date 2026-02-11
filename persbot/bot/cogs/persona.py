@@ -1,9 +1,10 @@
 """Persona/Prompt Management Cog for SoyeBot."""
 
 import asyncio
+import json
 import logging
 import re
-from typing import Optional
+from typing import Optional, List, Dict
 
 import discord
 from bot.session import SessionManager
@@ -27,22 +28,104 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
         max_length=500,
     )
 
+    use_questions = discord.ui.TextInput(
+        label="AI 질문 도움 사용 (Y/N)",
+        placeholder="Y: AI가 질문 생성, N: 바로 생성",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=1,
+        default="N",
+    )
+
     def __init__(self, view: "PromptManagerView"):
         super().__init__()
         self.view_ref = view
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Use deferred response because generation takes time
-        await interaction.response.defer(ephemeral=False)
-
         concept_str = self.concept.value
-        msg = await interaction.followup.send(
-            f"🧠 입력된 내용을 바탕으로 페르소나 설계 중...", ephemeral=False
-        )
+        use_qa = self.use_questions.value.upper() in ("Y", "YES", "예")
 
+        if use_qa:
+            # Defer and show loading, then send the questions modal
+            await interaction.response.defer(ephemeral=False)
+
+            msg = await interaction.followup.send(
+                f"🧠 컨셉을 분석하여 질문 생성 중...", ephemeral=False
+            )
+
+            cog = self.view_ref.cog
+            try:
+                questions_json = await cog.llm_service.generate_questions_from_concept(
+                    concept_str
+                )
+
+                if not questions_json:
+                    await msg.edit(content="❌ 질문 생성에 실패했습니다. 기본 모드로 진행합니다.")
+                    # Fall through to direct generation
+                    await self._generate_direct(interaction, concept_str, msg)
+                    return
+
+                # Parse JSON response
+                try:
+                    # Clean up the response - remove markdown code blocks if present
+                    cleaned_json = questions_json.strip()
+                    if cleaned_json.startswith("```"):
+                        # Remove markdown code blocks
+                        lines = cleaned_json.split("\n")
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]  # Remove opening ```
+                        if lines[-1].strip() == "```":
+                            lines = lines[:-1]  # Remove closing ```
+                        cleaned_json = "\n".join(lines)
+
+                    questions_data = json.loads(cleaned_json)
+                    questions = questions_data.get("questions", [])
+
+                    if not questions:
+                        await msg.edit(content="❌ 질문 파싱에 실패했습니다. 기본 모드로 진행합니다.")
+                        await self._generate_direct(interaction, concept_str, msg)
+                        return
+
+                    # Delete the loading message and send the answer modal
+                    await msg.delete()
+
+                    # Create and send the answer modal
+                    answer_modal = PromptAnswerModal(
+                        self.view_ref, concept_str, questions
+                    )
+                    await interaction.followup.send("📝 **아래 질문에 답변해 주세요:**", ephemeral=False)
+                    await interaction.followup.send_modal(answer_modal)
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON parse error: {e}, Response: {questions_json[:200]}")
+                    await msg.edit(content=f"❌ 질문 파싱 오류. 기본 모드로 진행합니다.")
+                    await self._generate_direct(interaction, concept_str, msg)
+                except Exception as e:
+                    logger.error(f"Error in question modal: {e}", exc_info=True)
+                    await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+                    await self._generate_direct(interaction, concept_str, msg)
+
+            except Exception as e:
+                logger.error(f"Error generating questions: {e}", exc_info=True)
+                await msg.edit(content=f"❌ 질문 생성 오류: {str(e)}")
+                await self._generate_direct(interaction, concept_str, msg)
+        else:
+            # Direct generation path
+            await interaction.response.defer(ephemeral=False)
+            msg = await interaction.followup.send(
+                f"🧠 입력된 내용을 바탕으로 페르소나 설계 중...", ephemeral=False
+            )
+            await self._generate_direct(interaction, concept_str, msg)
+
+    async def _generate_direct(
+        self, interaction: discord.Interaction, concept_str: str, msg
+    ):
+        """Direct prompt generation without questions."""
         cog = self.view_ref.cog
         try:
-            generated_prompt = await cog.llm_service.generate_prompt_from_concept(concept_str)
+            generated_prompt = await cog.llm_service.generate_prompt_from_concept(
+                concept_str
+            )
 
             if not generated_prompt:
                 await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
@@ -66,6 +149,94 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
         except Exception as e:
             logger.error(f"Error in PromptCreateModal: {e}", exc_info=True)
+            await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+
+
+class PromptAnswerModal(discord.ui.Modal, title="페르소나 질문 답변"):
+    """Modal for answering LLM-generated questions about the persona."""
+
+    # Define maximum number of questions as class attributes
+    answer_1 = discord.ui.TextInput(label="질문 1", style=discord.TextStyle.long, required=False, max_length=500)
+    answer_2 = discord.ui.TextInput(label="질문 2", style=discord.TextStyle.long, required=False, max_length=500)
+    answer_3 = discord.ui.TextInput(label="질문 3", style=discord.TextStyle.long, required=False, max_length=500)
+    answer_4 = discord.ui.TextInput(label="질문 4", style=discord.TextStyle.long, required=False, max_length=500)
+    answer_5 = discord.ui.TextInput(label="질문 5", style=discord.TextStyle.long, required=False, max_length=500)
+
+    def __init__(
+        self,
+        view: "PromptManagerView",
+        concept: str,
+        questions: List[Dict[str, str]],
+    ):
+        super().__init__(title="페르소나 질문 답변")
+        self.view_ref = view
+        self.concept = concept
+        self.questions = questions
+
+        # Update labels and placeholders dynamically
+        answer_fields = [self.answer_1, self.answer_2, self.answer_3, self.answer_4, self.answer_5]
+        for i, q in enumerate(questions[:5]):
+            sample = q.get('sample_answer', '자유롭게 작성')
+            answer_fields[i].label = f"Q{i+1}: {q['question'][:45]}..."
+            answer_fields[i].placeholder = f"예시: {sample}"[:100]
+
+        # Hide unused fields by removing them from children
+        # Note: Discord.py doesn't support removing items after init, so we set placeholder for unused
+        for i in range(len(questions), 5):
+            answer_fields[i].label = f"(사용 안함 - 생략 가능)"
+            answer_fields[i].placeholder = "이 필드는 비워두세요"
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Use deferred response because generation takes time
+        await interaction.response.defer(ephemeral=False)
+
+        # Build Q&A string
+        qa_pairs = []
+        answer_fields = [self.answer_1, self.answer_2, self.answer_3, self.answer_4, self.answer_5]
+        for i, q in enumerate(self.questions):
+            if i < len(answer_fields):
+                answer_value = answer_fields[i].value.strip()
+                if answer_value:
+                    qa_pairs.append(f"Q: {q['question']}\nA: {answer_value}")
+
+        questions_and_answers = "\n\n".join(qa_pairs) if qa_pairs else "No additional answers provided."
+
+        msg = await interaction.followup.send(
+            f"🧠 답변을 바탕으로 페르소나 설계 중...", ephemeral=False
+        )
+
+        cog = self.view_ref.cog
+        try:
+            generated_prompt = await cog.llm_service.generate_prompt_from_concept_with_answers(
+                self.concept, questions_and_answers
+            )
+
+            if not generated_prompt:
+                await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                return
+
+            name_match = re.search(
+                r"Project\s+['\"]?(.+?)['\"]?\]", generated_prompt, re.IGNORECASE
+            )
+            name = (
+                name_match.group(1)
+                if name_match
+                else f"Generated ({self.concept[:10]}...)"
+            )
+            prompt_content = generated_prompt.strip()
+
+            idx = await cog.prompt_service.add_prompt(name, prompt_content)
+
+            # Record usage after successful creation
+            await cog.prompt_service.increment_today_usage(interaction.user.id)
+
+            await msg.edit(
+                content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})"
+            )
+            await self.view_ref.refresh_view(interaction)
+
+        except Exception as e:
+            logger.error(f"Error in PromptAnswerModal: {e}", exc_info=True)
             await msg.edit(content=f"❌ 오류 발생: {str(e)}")
 
 
