@@ -205,24 +205,29 @@ class PromptAnswerModal(discord.ui.Modal):
         self.questions = questions
 
         # Dynamically create TextInput fields for each question
-        # Create attributes dynamically and add them to the modal
+        # Use discord.ui.Label to wrap TextInput with description for full question text
+        # Label text: 45 chars max, Description: 100 chars max
         for i, q in enumerate(questions[:5]):
             sample = q.get('sample_answer', '자유롭게 작성')
-            # Discord label max is 45 chars. Reserve space for "Q{N}: " prefix and "..." suffix
-            # For single digits: "Q1: " = 4 chars, for double digits: "Q10: " = 5 chars
-            prefix_len = 5 if i >= 9 else 4  # Account for "Q10: " vs "Q1: "
-            suffix_len = 3  # "..."
-            max_question_len = 45 - prefix_len - suffix_len
-            truncated_q = q['question'][:max_question_len]
+            # Create TextInput without label (label is deprecated, use Label wrapper)
             text_input = discord.ui.TextInput(
-                label=f"Q{i+1}: {truncated_q}...",
                 style=discord.TextStyle.long,
                 required=False,
                 max_length=500,
                 placeholder=f"예시: {sample}"[:100]
             )
+            # Wrap TextInput in Label with short text + long description
+            # Label text: Short identifier like "Q1" (45 chars max)
+            # Description: Full question text (100 chars max, truncate if needed)
+            question_text = q['question'][:100] if len(q['question']) > 100 else q['question']
+            label = discord.ui.Label(
+                text=f"Q{i+1}",
+                description=question_text,
+                component=text_input
+            )
             setattr(self, f'answer_{i}', text_input)
-            self.add_item(text_input)
+            setattr(self, f'label_{i}', label)
+            self.add_item(label)
 
     async def on_submit(self, interaction: discord.Interaction):
         # Use deferred response because generation takes time
