@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
+
+[project.scripts]
+persbot = "persbot.main:main"
+persbot-dev = "run_dev:main"
 dependencies = [
     "aiohttp>=3.8.0",
     "chzzkpy>=1.0.0",
@@ -59,4 +63,5 @@ dev = [
     "black>=26.1.0",
     "mypy>=1.19.1",
     "ruff>=0.15.0",
+    "watchdog>=6.0.0",
 ]
