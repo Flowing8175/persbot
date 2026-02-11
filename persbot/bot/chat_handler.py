@@ -287,7 +287,10 @@ async def send_split_response(
 ):
     """
     Shared utility to split and send a response line by line.
-    Handles cancellation by undoing the last exchange in session history.
+    Handles cancellation by cleaning up properly when interrupted.
+
+    Note: This function respects asyncio cancellation and will stop sending
+    immediately when a new message arrives (like pressing STOP in chatgpt.com).
     """
     try:
         # First, split by existing newlines to preserve the "line by line" feel

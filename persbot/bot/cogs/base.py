@@ -23,6 +23,26 @@ from persbot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_d
 logger = logging.getLogger(__name__)
 
 
+class ActiveAPICall:
+    """Tracks an active API call for cancellation.
+
+    This class ensures that when a new message arrives during batch processing:
+    1. The ongoing LLM API-side generation is cancelled (like pressing STOP in chatgpt.com)
+    2. The stacked messages are included in the new request
+    """
+
+    def __init__(self, task: asyncio.Task, cancel_event: asyncio.Event):
+        self.task = task
+        self.cancel_event = cancel_event
+
+    def cancel(self):
+        """Cancel both the task and set the cancel event immediately."""
+        if self.cancel_event:
+            self.cancel_event.set()
+        if self.task and not self.task.done():
+            self.task.cancel()
+
+
 class BaseChatCog(commands.Cog):
     """Abstract base cog containing shared logic for message buffering and processing."""
 
@@ -48,6 +68,8 @@ class BaseChatCog(commands.Cog):
 
         # Cancellation signal tracking (per-channel abort events)
         self.cancellation_signals: dict[int, asyncio.Event] = {}
+        # Track active API calls for proper cancellation (per-channel)
+        self.active_api_calls: dict[int, ActiveAPICall] = {}
 
     @abstractmethod
     async def _send_response(self, message: discord.Message, reply: ChatReply):
@@ -64,11 +86,15 @@ class BaseChatCog(commands.Cog):
 
         # Register task
         self.active_batches[channel_id] = messages
-        self.processing_tasks[channel_id] = asyncio.current_task()
+        current_task = asyncio.current_task()
+        self.processing_tasks[channel_id] = current_task
 
         # Create cancellation event for this channel
         cancel_event = asyncio.Event()
         self.cancellation_signals[channel_id] = cancel_event
+
+        # Track this API call for proper cancellation
+        api_call_task = None
 
         try:
             full_text = await self._prepare_batch_context(messages)
@@ -83,30 +109,44 @@ class BaseChatCog(commands.Cog):
                 full_text[:100],
             )
 
-            async with primary_message.channel.typing():
-                resolution = await resolve_session_for_message(
-                    primary_message,
-                    full_text,
-                    session_manager=self.session_manager,
-                    cancel_event=cancel_event,
-                )
+            # Create the actual API call as a separate tracked task for proper cancellation
+            # This allows us to cancel the API call immediately when a new message arrives
+            async def _make_api_call():
+                async with primary_message.channel.typing():
+                    resolution = await resolve_session_for_message(
+                        primary_message,
+                        full_text,
+                        session_manager=self.session_manager,
+                        cancel_event=cancel_event,
+                    )
 
-                if not resolution:
-                    return
+                    if not resolution:
+                        return None
 
-                reply = await create_chat_reply(
-                    messages if isinstance(messages, list) else primary_message,
-                    resolution=resolution,
-                    llm_service=self.llm_service,
-                    session_manager=self.session_manager,
-                    tool_manager=self.tool_manager,
-                    cancel_event=cancel_event,
-                )
+                    reply = await create_chat_reply(
+                        messages if isinstance(messages, list) else primary_message,
+                        resolution=resolution,
+                        llm_service=self.llm_service,
+                        session_manager=self.session_manager,
+                        tool_manager=self.tool_manager,
+                        cancel_event=cancel_event,
+                    )
+                    return reply
 
-                if reply:
-                    # Use last message as the anchor for reply/context
-                    anchor_message = messages[-1]
-                    await self._send_response(anchor_message, reply)
+            # Create and track the API call task for immediate cancellation
+            api_call_task = asyncio.create_task(_make_api_call())
+            self.active_api_calls[channel_id] = ActiveAPICall(api_call_task, cancel_event)
+
+            try:
+                reply = await api_call_task
+            finally:
+                # Clean up API call tracking
+                self.active_api_calls.pop(channel_id, None)
+
+            if reply:
+                # Use last message as the anchor for reply/context
+                anchor_message = messages[-1]
+                await self._send_response(anchor_message, reply)
 
         except asyncio.CancelledError:
             logger.info("Batch processing cancelled for channel %s.", primary_message.channel.name)
@@ -117,10 +157,12 @@ class BaseChatCog(commands.Cog):
             await self._handle_error(primary_message, e)
 
         finally:
-            if self.processing_tasks.get(channel_id) == asyncio.current_task():
+            if self.processing_tasks.get(channel_id) == current_task:
                 self.processing_tasks.pop(channel_id, None)
                 self.active_batches.pop(channel_id, None)
                 self.cancellation_signals.pop(channel_id, None)
+            # Ensure API call is cleaned up if still present
+            self.active_api_calls.pop(channel_id, None)
 
     async def _prepare_batch_context(self, messages: list[discord.Message]) -> str:
         """Prepare the text content for the LLM, including context if needed. Can be overridden."""
@@ -153,14 +195,34 @@ class BaseChatCog(commands.Cog):
     def _cancel_active_tasks(
         self, channel_id: int, author_name: str, message_type: str = "new message"
     ):
-        """Cancel sending and processing tasks for a channel."""
-        # Trigger cancellation signal to abort LLM API calls
+        """Cancel sending and processing tasks for a channel.
+
+        This method ensures that when a new message arrives during batch processing:
+        1. Any ongoing LLM API-side generation is cancelled immediately (like STOP button)
+        2. The messages from the cancelled batch are returned for stacking
+        3. A new request will be made with all stacked messages
+        """
+        messages_to_prepend = []
+
+        # Step 1: Cancel ongoing API call FIRST (critical for server-side cancellation)
+        # This is the most important step - it cancels the actual HTTP request
+        if channel_id in self.active_api_calls:
+            active_api = self.active_api_calls[channel_id]
+            logger.info(
+                f"{message_type} from {author_name} cancelling ongoing API call for channel {channel_id}"
+            )
+            active_api.cancel()
+            # Get messages from the cancelled batch to prepend to new request
+            messages_to_prepend = self.active_batches.get(channel_id, [])
+
+        # Step 2: Also trigger cancellation signal (redundant but ensures coverage)
         if channel_id in self.cancellation_signals:
             logger.info(
                 f"{message_type} from {author_name} triggered abort signal for channel {channel_id}"
             )
             self.cancellation_signals[channel_id].set()
 
+        # Step 3: Cancel sending task if in break-cut mode
         if self.config.break_cut_mode and channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
@@ -169,14 +231,16 @@ class BaseChatCog(commands.Cog):
                 )
                 task.cancel()
 
-        messages_to_prepend = []
+        # Step 4: Cancel the processing task itself
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
                 logger.info(
                     f"{message_type} from {author_name} interrupted processing in channel {channel_id}. Merging messages."
                 )
-                messages_to_prepend = self.active_batches.get(channel_id, [])
+                # If we didn't get messages from active_api_calls, get from active_batches
+                if not messages_to_prepend:
+                    messages_to_prepend = self.active_batches.get(channel_id, [])
                 task.cancel()
 
         return messages_to_prepend

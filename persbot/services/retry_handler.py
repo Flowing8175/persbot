@@ -173,11 +173,14 @@ class RetryHandler(ABC):
 
         for attempt in range(1, self.config.max_retries + 1):
             # Check for cancellation at the start of each retry iteration
+            # This ensures immediate cancellation when new message arrives
             if cancel_event and cancel_event.is_set():
                 logger.info("API call aborted due to cancellation signal at start of retry iteration %d", attempt)
                 raise asyncio.CancelledError("LLM API call aborted by user")
 
             try:
+                # Use wait_for with proper timeout to ensure cancellation propagates
+                # asyncio.wait_for properly raises CancelledError when task is cancelled
                 response = await asyncio.wait_for(
                     self._execute_with_timeout(api_call),
                     timeout=self.config.request_timeout,
@@ -191,6 +194,11 @@ class RetryHandler(ABC):
                 if extract_text:
                     return extract_text(response)
                 return response
+
+            except asyncio.CancelledError:
+                # Re-raise cancellation immediately - don't retry
+                logger.info("API call cancelled via asyncio task cancellation (attempt %d)", attempt)
+                raise
 
             except asyncio.TimeoutError:
                 last_error = asyncio.TimeoutError()
