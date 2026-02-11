@@ -28,26 +28,13 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
         max_length=500,
     )
 
-    use_questions = discord.ui.Select(
-        custom_id="use_questions_select",
-        placeholder="생성 모드 선택",
-        options=[
-            discord.SelectOption(
-                label="기본 모드 (빠름)",
-                value="no",
-                description="컨셉만으로 바로 페르소나 생성",
-                emoji="⚡"
-            ),
-            discord.SelectOption(
-                label="AI 질문 도움모드 (상세)",
-                value="yes",
-                description="AI가 질문 생성 후 답변으로 페르소나 생성",
-                emoji="🧠"
-            ),
-        ],
-        min_values=1,
-        max_values=1,
-        row=1,
+    use_questions = discord.ui.TextInput(
+        label="생성 모드",
+        placeholder="1: 기본 모드 (빠름) / 2: AI 질문 도움모드 (상세)",
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=1,
+        default="1",
     )
 
     def __init__(self, view: "PromptManagerView"):
@@ -56,7 +43,7 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
     async def on_submit(self, interaction: discord.Interaction):
         concept_str = self.concept.value
-        use_qa = self.use_questions.values[0] == "yes"
+        use_qa = self.use_questions.value.strip() in ("2", "yes", "y", "Y", "예")
 
         if use_qa:
             # Defer and show loading, then send the questions modal
