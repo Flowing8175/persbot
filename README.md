@@ -1,4 +1,4 @@
-# SoyeBot - Multi-Provider Discord AI Bot
+# Persbot - Multi-Provider Discord AI Bot
 
 A feature-rich Discord bot powered by multiple LLM providers (Google Gemini, OpenAI, Z.AI) with chat assistance, summarization, persona management, and image generation capabilities.
 
