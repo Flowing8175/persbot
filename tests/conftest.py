@@ -394,6 +394,24 @@ def mock_gemini_cache_methods():
                 return
         return original_setattr(self, name, value)
 
+
+def _run_task_now(*args, **kwargs):
+    """Helper to run a task immediately for mocking asyncio.create_task."""
+    task = Mock()
+    # Create the coroutine that would be passed to create_task
+    coro = args[0] if args else None
+
+    async def wrapper():
+        await coro
+        if task._done_callback:
+            task._done_callback(task)
+
+    # Schedule the coroutine to run immediately
+    loop = asyncio.get_event_loop()
+    loop.create_task(wrapper)
+    # Return the mock task as if it were returned by create_task
+    return task
+
     with patch.object(Mock, "__getattr__", safe_getattr):
         with patch.object(Mock, "__setattr__", safe_setattr):
             with (
@@ -401,7 +419,7 @@ def mock_gemini_cache_methods():
                     "persbot.services.gemini_service.GeminiService._get_gemini_cache",
                     return_value=(None, None),
                 ),
-                patch("asyncio.create_task", return_value=Mock()),
+                patch("asyncio.create_task", side_effect=_run_task_now),
             ):
                 yield
 

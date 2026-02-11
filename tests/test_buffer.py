@@ -155,8 +155,8 @@ class TestProcessBatch:
 
         await message_buffer.add_message(111222333, msg, mock_callback)
 
-        # Wait for buffer to process
-        await asyncio.sleep(0.2)
+        # Wait for buffer to process - wait longer than delay to ensure task runs
+        await asyncio.sleep(0.3)
 
         # Callback should have been called
         mock_callback.assert_called_once()
@@ -174,7 +174,7 @@ class TestProcessBatch:
         await message_buffer.add_message(111222333, msg, mock_callback)
 
         # Wait for processing
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.3)
 
         # Buffer should be cleared
         assert 111222333 not in message_buffer.buffers
