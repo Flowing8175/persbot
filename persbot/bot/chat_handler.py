@@ -348,6 +348,7 @@ async def create_chat_reply_stream(
     resolution: ResolvedSession,
     llm_service: LLMService,
     session_manager: SessionManager,
+    tool_manager=None,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> AsyncIterator[str]:
     """Create a streaming chat reply.
@@ -360,6 +361,7 @@ async def create_chat_reply_stream(
         resolution: The resolved session.
         llm_service: The LLM service.
         session_manager: The session manager.
+        tool_manager: Optional tool manager for function calling.
         cancel_event: Optional cancellation event.
 
     Yields:
@@ -383,12 +385,18 @@ async def create_chat_reply_stream(
         message_id=msg_id_for_session,
     )
 
+    # Get tools from tool_manager if available
+    tools = None
+    if tool_manager and tool_manager.is_enabled():
+        tools = list(tool_manager.get_enabled_tools().values())
+
     # Stream the response
     async for chunk in llm_service.generate_chat_response_stream(
         chat_session,
         resolution.cleaned_message,
         message,
         use_summarizer_backend=resolution.is_reply_to_summary,
+        tools=tools,
         cancel_event=cancel_event,
     ):
         yield chunk

@@ -109,6 +109,7 @@ class BaseChatCog(commands.Cog):
                         resolution=resolution,
                         llm_service=self.llm_service,
                         session_manager=self.session_manager,
+                        tool_manager=self.tool_manager,
                         cancel_event=cancel_event,
                     )
                     return stream
