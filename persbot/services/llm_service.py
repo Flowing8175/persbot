@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import discord
 
 from persbot.config import AppConfig
-from persbot.prompts import META_PROMPT
+from persbot.prompts import META_PROMPT, QUESTION_GENERATION_PROMPT
 from persbot.services.base import BaseLLMService
 from persbot.services.gemini_service import GeminiService
 from persbot.services.model_usage_service import ModelUsageService
@@ -248,6 +248,102 @@ class LLMService:
         meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
         result = await self.summarizer_backend.execute_with_retry(
             lambda: meta_model.generate_content(concept),
+            "프롬프트 생성",
+            timeout=60.0,
+        )
+        return result
+
+    async def generate_questions_from_concept(self, concept: str) -> Optional[str]:
+        """Generate clarifying questions with sample answers from a persona concept.
+
+        Returns a JSON string containing questions and sample answers.
+        """
+        import json
+
+        from persbot.services.zai_service import ZAIService
+        from persbot.services.openai_service import OpenAIService
+
+        if isinstance(self.summarizer_backend, (OpenAIService, ZAIService)):
+            raw_response = await self.summarizer_backend.execute_with_retry(
+                lambda: self.summarizer_backend.client.chat.completions.create(
+                    model=self.summarizer_backend._summary_model_name,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": QUESTION_GENERATION_PROMPT,
+                        },
+                        {"role": "user", "content": concept},
+                    ],
+                    temperature=0.7,
+                ),
+                "질문 생성",
+                timeout=60.0,
+            )
+
+            # Extract content from response
+            if hasattr(raw_response, 'choices') and raw_response.choices:
+                return raw_response.choices[0].message.content
+            return raw_response
+
+        # For Gemini backend
+        question_model = self.summarizer_backend.create_assistant_model(
+            QUESTION_GENERATION_PROMPT, use_cache=False
+        )
+        result = await self.summarizer_backend.execute_with_retry(
+            lambda: question_model.generate_content(concept),
+            "질문 생성",
+            timeout=60.0,
+        )
+
+        # For Gemini, extract text from response
+        if hasattr(result, 'text'):
+            return result.text
+        return result
+
+    async def generate_prompt_from_concept_with_answers(
+        self, concept: str, questions_and_answers: str
+    ) -> Optional[str]:
+        """Generate a detailed system prompt from concept and user answers.
+
+        Args:
+            concept: Original persona concept
+            questions_and_answers: Formatted string of Q&A pairs
+
+        Returns:
+            Generated system prompt
+        """
+        from persbot.services.zai_service import ZAIService
+        from persbot.services.openai_service import OpenAIService
+
+        # Enhanced concept with answers
+        enhanced_concept = (
+            f"**Original Concept:** {concept}\n\n"
+            f"**Additional Details from Interview:**\n{questions_and_answers}\n\n"
+            f"Use these interview answers to create a more personalized and detailed persona."
+        )
+
+        if isinstance(self.summarizer_backend, (OpenAIService, ZAIService)):
+            return await self.summarizer_backend.execute_with_retry(
+                lambda: self.summarizer_backend.client.chat.completions.create(
+                    model=self.summarizer_backend._summary_model_name,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": META_PROMPT,
+                        },
+                        {"role": "user", "content": enhanced_concept},
+                    ],
+                    temperature=getattr(self.config, "temperature", 1.0),
+                    top_p=getattr(self.config, "top_p", 1.0),
+                ),
+                "프롬프트 생성",
+                timeout=60.0,
+            )
+
+        # For Gemini backend
+        meta_model = self.summarizer_backend.create_assistant_model(META_PROMPT, use_cache=False)
+        result = await self.summarizer_backend.execute_with_retry(
+            lambda: meta_model.generate_content(enhanced_concept),
             "프롬프트 생성",
             timeout=60.0,
         )
