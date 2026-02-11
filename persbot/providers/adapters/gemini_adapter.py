@@ -54,14 +54,8 @@ class GeminiToolAdapter(BaseToolAdapter):
         Returns:
             A FunctionDeclaration object.
         """
-        # Parse the JSON schema from parameters
-        parameters = tool.parameters or {"type": "object", "properties": {}}
-
-        return genai_types.FunctionDeclaration(
-            name=tool.name,
-            description=tool.description,
-            parameters=parameters,
-        )
+        # Use the tool's built-in conversion method to get proper FunctionDeclaration
+        return tool.to_gemini_format()
 
     @staticmethod
     def extract_function_calls(

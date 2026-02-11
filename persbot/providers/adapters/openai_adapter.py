@@ -34,18 +34,9 @@ class OpenAIToolAdapter(BaseToolAdapter):
 
         for tool in tools:
             try:
-                tool_dict = {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": tool.parameters or {
-                            "type": "object",
-                            "properties": {},
-                        },
-                    },
-                }
-                converted.append(tool_dict)
+                # Use the tool's built-in conversion method to get proper JSON schema
+                openai_format = tool.to_openai_format()
+                converted.append(openai_format)
             except Exception as e:
                 logger.warning(f"Failed to convert tool {tool.name}: {e}")
 
