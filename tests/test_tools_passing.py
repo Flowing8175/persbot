@@ -1,5 +1,6 @@
 """Comprehensive tests for tool passing through different service layers."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call, patch
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from persbot.services.llm_service import LLMService
 from persbot.services.gemini_service import GeminiService
 from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+from persbot.services.model_usage_service import ModelDefinition
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter
 
 
@@ -29,6 +31,42 @@ def create_test_tool(name="test_tool", description="Test tool"):
     )
 
 
+# Helper to create test model definitions
+def _create_test_model_definition(model_name="gemini-2.5-flash", provider="gemini"):
+    """Create a test ModelDefinition instance for use in tests."""
+    return ModelDefinition(
+        display_name=model_name.replace("-", " ").title(),
+        api_model_name=model_name,
+        daily_limit=100,
+        scope="guild",
+        provider=provider,
+        fallback_alias=None,
+    )
+
+
+# Helper to create a proper mock config
+def _create_mock_config(
+    assistant_provider="gemini",
+    summarizer_provider="gemini",
+    assistant_model="gemini-2.5-flash",
+    summarizer_model="gemini-2.5-flash",
+    gemini_key="test_gemini_key",
+    openai_key="test_openai_key",
+    zai_key="test_zai_key",
+):
+    """Create a mock AppConfig that returns proper values for attributes."""
+    return SimpleNamespace(
+        assistant_llm_provider=assistant_provider,
+        summarizer_llm_provider=summarizer_provider,
+        assistant_model_name=assistant_model,
+        summarizer_model_name=summarizer_model,
+        gemini_api_key=gemini_key,
+        openai_api_key=openai_key,
+        zai_api_key=zai_key,
+        no_check_permission=True,
+    )
+
+
 class TestToolsPassingToAssistantModel:
     """Test that tools are passed correctly when calling assistant model."""
 
@@ -38,7 +76,7 @@ class TestToolsPassingToAssistantModel:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -53,7 +91,7 @@ class TestToolsPassingToAssistantModel:
                 new_callable=AsyncMock,
             ) as mock_gen:
                 # Mock the LLMService and backend
-                llm_service = LLMService(Mock())
+                llm_service = LLMService(_create_mock_config())
                 test_tools = [create_test_tool("test_tool", "Test tool")]
 
                 await llm_service.generate_chat_response(
@@ -69,7 +107,7 @@ class TestToolsPassingToAssistantModel:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -83,7 +121,7 @@ class TestToolsPassingToAssistantModel:
                 "generate_chat_response",
                 new_callable=AsyncMock,
             ) as mock_gen:
-                llm_service = LLMService(Mock())
+                llm_service = LLMService(_create_mock_config())
                 test_tools = [create_test_tool("test_tool", "Test tool")]
 
                 await llm_service.generate_chat_response(
@@ -99,7 +137,7 @@ class TestToolsPassingToAssistantModel:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -113,7 +151,7 @@ class TestToolsPassingToAssistantModel:
                 "generate_chat_response",
                 new_callable=AsyncMock,
             ) as mock_gen:
-                llm_service = LLMService(Mock())
+                llm_service = LLMService(_create_mock_config())
 
                 await llm_service.generate_chat_response(Mock(), "User message", None)
 
@@ -130,8 +168,8 @@ class TestToolsPassingToCustomModels:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "custom-model": Mock(provider="gemini"),
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "custom-model": _create_test_model_definition("custom-model", "gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(side_effect=lambda x: x)
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -145,7 +183,7 @@ class TestToolsPassingToCustomModels:
                 "generate_chat_response",
                 new_callable=AsyncMock,
             ) as mock_gen:
-                llm_service = LLMService(Mock())
+                llm_service = LLMService(_create_mock_config())
                 test_tools = [create_test_tool("custom_tool", "Custom tool")]
 
                 await llm_service.generate_chat_response(
@@ -330,10 +368,17 @@ class TestToolsInGenerateChatResponse:
     @pytest.mark.asyncio
     async def test_tools_list_not_empty_when_passed(self):
         """Test that tools list is not empty when passed to the service."""
-        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus, \
+             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
+             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
+             patch("persbot.services.llm_service.ZAIService") as mock_zai:
+            mock_gemini.return_value = Mock()
+            mock_openai.return_value = Mock()
+            mock_zai.return_value = Mock()
+
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -347,7 +392,7 @@ class TestToolsInGenerateChatResponse:
                 "generate_chat_response",
                 new_callable=AsyncMock,
             ) as mock_gen:
-                llm_service = LLMService(Mock())
+                llm_service = LLMService(_create_mock_config())
                 test_tools = [create_test_tool("tool1", "Tool 1")]
 
                 result = await llm_service.generate_chat_response(
@@ -373,7 +418,7 @@ class TestToolsInGenerateChatResponse:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -387,7 +432,7 @@ class TestToolsInGenerateChatResponse:
                 "generate_chat_response",
                 new_callable=AsyncMock,
             ) as mock_gen:
-                llm_service = LLMService(Mock())
+                llm_service = LLMService(_create_mock_config())
 
                 await llm_service.generate_chat_response(None, "User message", None)
 
@@ -432,7 +477,7 @@ class TestToolsFlowFromLLMServiceToGemini:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -441,7 +486,7 @@ class TestToolsFlowFromLLMServiceToGemini:
             )
             mock_mus.return_value = mock_instance
 
-            llm_service = LLMService(Mock())
+            llm_service = LLMService(_create_mock_config())
 
             # Step 2: LLMService.get_tools_for_backend calls backend.get_tools_for_provider
             converted_tools = llm_service.get_tools_for_backend(
@@ -464,7 +509,7 @@ class TestToolsFlowFromLLMServiceToGemini:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": _create_test_model_definition("gemini-2.5-flash", "gemini"),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
@@ -473,7 +518,7 @@ class TestToolsFlowFromLLMServiceToGemini:
             )
             mock_mus.return_value = mock_instance
 
-            llm_service = LLMService(Mock())
+            llm_service = LLMService(_create_mock_config())
             test_tools = [create_test_tool("search_tool", "Search tool")]
 
             # Mock the entire flow
