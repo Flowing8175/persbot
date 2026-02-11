@@ -208,8 +208,14 @@ class PromptAnswerModal(discord.ui.Modal):
         # Create attributes dynamically and add them to the modal
         for i, q in enumerate(questions[:5]):
             sample = q.get('sample_answer', '자유롭게 작성')
+            # Discord label max is 45 chars. Reserve space for "Q{N}: " prefix and "..." suffix
+            # For single digits: "Q1: " = 4 chars, for double digits: "Q10: " = 5 chars
+            prefix_len = 5 if i >= 9 else 4  # Account for "Q10: " vs "Q1: "
+            suffix_len = 3  # "..."
+            max_question_len = 45 - prefix_len - suffix_len
+            truncated_q = q['question'][:max_question_len]
             text_input = discord.ui.TextInput(
-                label=f"Q{i+1}: {q['question'][:45]}...",
+                label=f"Q{i+1}: {truncated_q}...",
                 style=discord.TextStyle.long,
                 required=False,
                 max_length=500,
