@@ -41,7 +41,7 @@ class PromptModeSelectView(discord.ui.View):
     @discord.ui.button(label="취소", style=discord.ButtonStyle.danger, emoji="❌", row=1)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Cancel mode selection."""
-        await interaction.response.edit_message(content="❌ 페르소나 생성이 취소되었습니다.", view=None)
+        await interaction.response.delete_message()
 
 
 class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성"):
@@ -65,10 +65,10 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
         if use_qa:
             # Defer and show loading, then send the questions modal
-            await interaction.response.defer(ephemeral=False)
+            await interaction.response.defer(ephemeral=True)
 
             msg = await interaction.followup.send(
-                f"🧠 컨셉을 분석하여 질문 생성 중...", ephemeral=False
+                f"🧠 컨셉을 분석하여 질문 생성 중...", ephemeral=True
             )
 
             cog = self.view_ref.cog
@@ -111,7 +111,7 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
                     answer_modal = PromptAnswerModal(
                         self.view_ref, concept_str, questions
                     )
-                    await interaction.followup.send("📝 **아래 질문에 답변해 주세요:**", ephemeral=False)
+                    await interaction.followup.send("📝 **아래 질문에 답변해 주세요:**", ephemeral=True)
                     await interaction.followup.send_modal(answer_modal)
 
                 except json.JSONDecodeError as e:
@@ -129,9 +129,9 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
                 await self._generate_direct(interaction, concept_str, msg)
         else:
             # Direct generation path
-            await interaction.response.defer(ephemeral=False)
+            await interaction.response.defer(ephemeral=True)
             msg = await interaction.followup.send(
-                f"🧠 입력된 내용을 바탕으로 페르소나 설계 중...", ephemeral=False
+                f"🧠 입력된 내용을 바탕으로 페르소나 설계 중...", ephemeral=True
             )
             await self._generate_direct(interaction, concept_str, msg)
 
@@ -441,7 +441,7 @@ class PromptManagerView(discord.ui.View):
         embed.add_field(name="🧠 AI 질문 모드", value="AI가 질문을 생성하고 답변으로 상세하게 커스텀", inline=False)
 
         view = PromptModeSelectView(self)
-        await send_discord_message(interaction, "", embed=embed, view=view, ephemeral=False)
+        await send_discord_message(interaction, "", embed=embed, view=view, ephemeral=True)
 
     async def on_file_add(self, interaction: discord.Interaction):
         # Check permissions unless NO_CHECK_PERMISSION is set
