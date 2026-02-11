@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 
-def register_all_api_tools(registry):
+def register_all_api_tools(registry) -> None:
     """Register all external API tools with the given registry.
 
     Args:

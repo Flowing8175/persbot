@@ -97,7 +97,7 @@ async def web_search(
         )
 
 
-def register_search_tools(registry):
+def register_search_tools(registry) -> None:
     """Register search tools with the given registry.
 
     Args:

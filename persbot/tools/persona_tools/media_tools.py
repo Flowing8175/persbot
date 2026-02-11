@@ -163,7 +163,7 @@ async def describe_scene_atmosphere(
     )
 
 
-def register_media_tools(registry):
+def register_media_tools(registry) -> None:
     """Register media generation tools with the given registry.
 
     Args:

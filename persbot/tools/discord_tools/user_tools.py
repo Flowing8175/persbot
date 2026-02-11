@@ -220,7 +220,7 @@ async def get_member_roles(
         return ToolResult(success=False, error=str(e))
 
 
-def register_user_tools(registry):
+def register_user_tools(registry) -> None:
     """Register all user tools with the given registry.
 
     Args:

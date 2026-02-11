@@ -70,7 +70,7 @@ class ImageUseCase:
         llm_service: LLMService,
         image_usage_service: ImageUsageService,
         image_service: Optional[ImageService] = None,
-    ):
+    ) -> None:
         """Initialize the image use case.
 
         Args:
@@ -110,9 +110,7 @@ class ImageUseCase:
 
         try:
             # Get vision backend
-            vision_backend = self.llm_service.get_backend_for_model(
-                self._vision_model_alias
-            )
+            vision_backend = self.llm_service.get_backend_for_model(self._vision_model_alias)
             if not vision_backend:
                 logger.warning(f"Vision model {self._vision_model_alias} unavailable")
                 return None
@@ -242,9 +240,7 @@ class ImageUseCase:
         """
         return get_channel_image_model(channel_id)
 
-    def _can_upload_images(
-        self, author: discord.abc.User, count: int = 1
-    ) -> bool:
+    def _can_upload_images(self, author: discord.abc.User, count: int = 1) -> bool:
         """Check if user can upload images.
 
         Args:
@@ -269,10 +265,7 @@ class ImageUseCase:
         """
         if self.config.no_check_permission:
             return True
-        return (
-            isinstance(author, discord.Member)
-            and author.guild_permissions.manage_guild
-        )
+        return isinstance(author, discord.Member) and author.guild_permissions.manage_guild
 
     async def _record_image_usage(self, author: discord.abc.User, count: int) -> None:
         """Record image usage for non-admin users.

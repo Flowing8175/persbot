@@ -40,7 +40,7 @@ class ExecutionMetrics:
 class ToolExecutor:
     """Executes tools with permission checks and error handling."""
 
-    def __init__(self, config: AppConfig, registry: ToolRegistry):
+    def __init__(self, config: AppConfig, registry: ToolRegistry) -> None:
         self.config = config
         self.registry = registry
         self._metrics: Dict[str, ExecutionMetrics] = {}
@@ -116,7 +116,7 @@ class ToolExecutor:
             # Check if user has the required permission
             perm_name = tool.requires_permission
             if hasattr(message.author.guild_permissions, perm_name):
-                return getattr(message.author.guild_permissions, perm_name)
+                return bool(getattr(message.author.guild_permissions, perm_name))
             else:
                 logger.warning(
                     "Tool '%s' requires invalid permission '%s'. "
@@ -150,7 +150,9 @@ class ToolExecutor:
         try:
             # Check for cancellation before executing tool
             if cancel_event and cancel_event.is_set():
-                logger.info("Tool execution aborted due to cancellation signal before tool execution")
+                logger.info(
+                    "Tool execution aborted due to cancellation signal before tool execution"
+                )
                 return ToolResult(
                     success=False,
                     error=f"Tool '{tool.name}' execution aborted by user",

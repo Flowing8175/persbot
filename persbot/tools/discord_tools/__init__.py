@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 
-def register_all_discord_tools(registry):
+def register_all_discord_tools(registry) -> None:
     """Register all Discord tools with the given registry.
 
     Args:

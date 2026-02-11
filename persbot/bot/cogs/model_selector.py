@@ -52,7 +52,9 @@ class ModelSelectorView(discord.ui.View):
                     emoji=(
                         "🤖"
                         if definition.provider == "gemini"
-                        else "⚡" if definition.provider == "zai" else "🧠"
+                        else "⚡"
+                        if definition.provider == "zai"
+                        else "🧠"
                     ),
                 )
             )
@@ -71,7 +73,7 @@ class ModelSelect(discord.ui.Select):
             options=options,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         view: ModelSelectorView = self.view
         selected_alias = self.values[0]
 
@@ -120,15 +122,13 @@ class ModelSelectorCog(commands.Cog):
         description="사용할 AI 모델을 선택합니다.",
         invoke_without_command=True,
     )
-    async def model_command(self, ctx: commands.Context):
+    async def model_command(self, ctx: commands.Context) -> None:
         """사용할 AI 모델을 선택합니다 (기본: LLM 모델)."""
         # When invoked without subcommand, show LLM model selection
         await self.llm_subcommand(ctx)
 
-    @model_command.command(
-        name="llm", description="사용할 LLM 모델을 선택합니다."
-    )
-    async def llm_subcommand(self, ctx: commands.Context):
+    @model_command.command(name="llm", description="사용할 LLM 모델을 선택합니다.")
+    async def llm_subcommand(self, ctx: commands.Context) -> None:
         """사용할 LLM 모델을 선택합니다."""
 
         # Determine current model for this channel
@@ -154,16 +154,14 @@ class ModelSelectorCog(commands.Cog):
     @model_command.command(
         name="image", aliases=["이미지"], description="사용할 이미지 생성 모델을 선택합니다."
     )
-    async def image_subcommand(self, ctx: commands.Context):
+    async def image_subcommand(self, ctx: commands.Context) -> None:
         """사용할 이미지 생성 모델을 선택합니다."""
 
         # Get current image model for this channel from the service
         current_api_model = get_channel_image_model(ctx.channel.id)
 
         # Build the image model selection view
-        view = ImageModelSelectorView(
-            self, current_api_model, original_message=ctx.message
-        )
+        view = ImageModelSelectorView(self, current_api_model, original_message=ctx.message)
 
         # Get display name for current model
         current_model_def = get_available_image_models()
@@ -220,7 +218,7 @@ class ImageModelSelect(discord.ui.Select):
             options=options,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         view: ImageModelSelectorView = self.view
         selected_display_name = self.values[0]
 
@@ -235,17 +233,13 @@ class ImageModelSelect(discord.ui.Select):
                 break
 
         if not selected_model:
-            await send_discord_message(
-                interaction, "❌ 선택한 모델을 찾을 수 없습니다."
-            )
+            await send_discord_message(interaction, "❌ 선택한 모델을 찾을 수 없습니다.")
             return
 
         # Update the channel's image model preference using the service
         set_channel_image_model(interaction.channel_id, selected_model.api_model_name)
 
-        confirmation_text = (
-            f"✅ 이미지 모델이 **{selected_display_name}** (`{selected_model.api_model_name}`)로 변경되었습니다."
-        )
+        confirmation_text = f"✅ 이미지 모델이 **{selected_display_name}** (`{selected_model.api_model_name}`)로 변경되었습니다."
 
         # Logic change: Reply to the original !model image command message, then delete the embed
         if view.original_message:

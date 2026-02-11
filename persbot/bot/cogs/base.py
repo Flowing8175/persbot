@@ -6,6 +6,7 @@ from abc import abstractmethod
 from typing import List, Optional
 
 import discord
+from persbot.tools.manager import ToolManager
 from discord.ext import commands
 
 from persbot.bot.buffer import MessageBuffer
@@ -33,11 +34,11 @@ class ActiveAPICall:
     2. The stacked messages are included in new request
     """
 
-    def __init__(self, task: asyncio.Task, cancel_event: asyncio.Event):
+    def __init__(self, task: asyncio.Task, cancel_event: asyncio.Event) -> None:
         self.task = task
         self.cancel_event = cancel_event
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel both task and set cancel event immediately."""
         if self.cancel_event:
             self.cancel_event.set()
@@ -54,8 +55,8 @@ class BaseChatCog(commands.Cog):
         config: AppConfig,
         llm_service: LLMService,
         session_manager: SessionManager,
-        tool_manager=None,
-    ):
+        tool_manager: Optional[ToolManager] = None,
+    ) -> None:
         self.bot = bot
         self.config = config
         self.llm_service = llm_service
@@ -83,8 +84,11 @@ class BaseChatCog(commands.Cog):
         return self.config.break_cut_mode
 
     async def _process_with_streaming(
-        self, messages: list[discord.Message], primary_message: discord.Message,
-        channel_id: int, cancel_event: asyncio.Event
+        self,
+        messages: list[discord.Message],
+        primary_message: discord.Message,
+        channel_id: int,
+        cancel_event: asyncio.Event,
     ):
         """Process using streaming API with fallback to non-streaming on failure."""
         anchor_message = messages[-1]
@@ -155,8 +159,11 @@ class BaseChatCog(commands.Cog):
             self.active_api_calls.pop(channel_id, None)
 
     async def _process_with_reply(
-        self, messages: list[discord.Message], primary_message: discord.Message,
-        channel_id: int, cancel_event: asyncio.Event
+        self,
+        messages: list[discord.Message],
+        primary_message: discord.Message,
+        channel_id: int,
+        cancel_event: asyncio.Event,
     ):
         """Process using non-streaming API (original behavior)."""
         anchor_message = messages[-1]
@@ -195,9 +202,7 @@ class BaseChatCog(commands.Cog):
             # Clean up API call tracking
             self.active_api_calls.pop(channel_id, None)
 
-    async def _send_streaming_response(
-        self, channel_id: int, channel, stream
-    ):
+    async def _send_streaming_response(self, channel_id: int, channel, stream):
         """Send streaming response to Discord.
 
         This method handles sending chunks as they arrive from LLM.
@@ -225,7 +230,7 @@ class BaseChatCog(commands.Cog):
         task = asyncio.create_task(_send_task())
         self.sending_tasks[channel_id] = task
 
-        def _cleanup(t):
+        def _cleanup(t) -> None:
             if self.sending_tasks.get(channel_id) == t:
                 self.sending_tasks.pop(channel_id, None)
 
@@ -274,9 +279,7 @@ class BaseChatCog(commands.Cog):
                 )
             else:
                 # Non-streaming path (original behavior)
-                await self._process_with_reply(
-                    messages, primary_message, channel_id, cancel_event
-                )
+                await self._process_with_reply(messages, primary_message, channel_id, cancel_event)
 
         except asyncio.CancelledError:
             logger.info("Batch processing cancelled for channel %s.", primary_message.channel.name)
@@ -338,7 +341,7 @@ class BaseChatCog(commands.Cog):
             task = asyncio.create_task(send_split_response(channel, reply, self.session_manager))
             self.sending_tasks[channel_id] = task
 
-            def _cleanup(t):
+            def _cleanup(t) -> None:
                 if self.sending_tasks.get(channel_id) == t:
                     self.sending_tasks.pop(channel_id, None)
 

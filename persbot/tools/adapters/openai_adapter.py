@@ -4,7 +4,6 @@ import logging
 from typing import Any, Dict, List
 
 from persbot.tools.adapters.base_adapter import OpenAIStyleAdapter
-from persbot.tools.base import ToolDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -48,4 +47,3 @@ class OpenAIToolAdapter(OpenAIStyleAdapter):
             )
 
         return messages
-

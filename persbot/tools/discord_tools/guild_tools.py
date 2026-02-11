@@ -186,7 +186,7 @@ async def get_guild_emojis(
         return ToolResult(success=False, error=str(e))
 
 
-def register_guild_tools(registry):
+def register_guild_tools(registry) -> None:
     """Register all guild tools with the given registry.
 
     Args:

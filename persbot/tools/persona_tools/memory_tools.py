@@ -423,7 +423,7 @@ def _filter_memories_by_keywords(
     return [memory for _, memory in scored_memories[:limit]]
 
 
-def register_memory_tools(registry):
+def register_memory_tools(registry) -> None:
     """Register episodic memory tools with the given registry.
 
     Args:

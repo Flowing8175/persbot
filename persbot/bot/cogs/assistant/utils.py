@@ -96,7 +96,7 @@ async def send_response(
     await handle_break_cut_sending_func(message.channel.id, message.channel, reply)
 
 
-async def handle_error(message: discord.Message, error: Exception):
+async def handle_error(message: discord.Message, error: Exception) -> None:
     """Handle errors during processing."""
     await message.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
 
@@ -213,28 +213,6 @@ def cancel_channel_tasks(
         task = sending_tasks[channel_id]
         if not task.done():
             logger.info("%s interrupted active sending in channel #%s", reason, channel_name)
-            task.cancel()
-            cancelled = True
-
-    return cancelled
-
-
-def cancel_auto_channel_tasks(channel_id: int, bot: commands.Bot) -> bool:
-    """Cancel tasks in AutoChannelCog for a channel. Returns True if any cancelled."""
-    cancelled = False
-    auto_cog = bot.get_cog("AutoChannelCog")
-    if not auto_cog:
-        return False
-
-    if channel_id in auto_cog.sending_tasks:
-        task = auto_cog.sending_tasks[channel_id]
-        if not task.done():
-            task.cancel()
-            cancelled = True
-
-    if hasattr(auto_cog, "processing_tasks") and channel_id in auto_cog.processing_tasks:
-        task = auto_cog.processing_tasks[channel_id]
-        if not task.done():
             task.cancel()
             cancelled = True
 

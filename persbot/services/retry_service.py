@@ -61,13 +61,14 @@ class RetryPolicy:
         elif self.strategy == RetryStrategy.LINEAR_BACKOFF:
             delay = self.base_delay * attempt
         else:  # EXPONENTIAL_BACKOFF (default)
-            delay = self.base_delay ** attempt
+            delay = self.base_delay**attempt
 
         delay = min(delay, self.max_delay)
 
         if self.jitter:
             # Add up to 25% randomness
             import random
+
             delay = delay * (0.75 + random.random() * 0.25)
 
         return delay
@@ -154,8 +155,7 @@ class RateLimitRetryCondition(RetryCondition):
 
         error_str = str(error).lower()
         return any(
-            pattern in error_str
-            for pattern in ("429", "rate limit", "quota", "too many requests")
+            pattern in error_str for pattern in ("429", "rate limit", "quota", "too many requests")
         )
 
 
@@ -181,7 +181,7 @@ class RetryService:
 
     async def execute(
         self,
-        func: Callable[[], T] -> Awaitable[T],
+        func: Callable[..., Awaitable[T]],
         policy: Optional[RetryPolicy] = None,
         operation_name: str = "operation",
         cancel_event: Optional[asyncio.Event] = None,
@@ -264,9 +264,7 @@ class RetryService:
 
         # All retries exhausted
         total_time = time.monotonic() - start_time
-        logger.error(
-            f"{operation_name} failed after {attempt} attempts ({total_time:.1f}s total)"
-        )
+        logger.error(f"{operation_name} failed after {attempt} attempts ({total_time:.1f}s total)")
         raise last_error
 
     def _extract_rate_limit_delay(self, error: Exception) -> Optional[float]:
@@ -353,18 +351,14 @@ class TokenBucketRateLimiter:
             ValueError: If requested tokens exceed capacity.
         """
         if tokens > self.capacity:
-            raise ValueError(
-                f"Requested {tokens} tokens exceeds capacity {self.capacity}"
-            )
+            raise ValueError(f"Requested {tokens} tokens exceeds capacity {self.capacity}")
 
         async with self._lock:
             now = time.monotonic()
             elapsed = now - self.last_update
 
             # Refill tokens based on elapsed time
-            self.tokens = min(
-                self.capacity, self.tokens + elapsed * self.rate
-            )
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
             self.last_update = now
 
             if self.tokens >= tokens:
@@ -385,8 +379,9 @@ class TokenBucketRateLimiter:
 
 # Convenience functions for common retry patterns
 
+
 async def retry_on_error(
-    func: Callable[[], T] -> Awaitable[T],
+    func: Callable[..., Awaitable[T]],
     max_retries: int = RetryConfig.MAX_RETRIES,
     operation_name: str = "operation",
     cancel_event: Optional[asyncio.Event] = None,

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 from persbot.config import AppConfig
 from persbot.constants import LLMDefaults, RetryConfig, ModelNames
-from persbot.services.base import BaseLLMService, ChatMessage
+from persbot.services.base import BaseLLMServiceCore, ChatMessage
 from persbot.services.model_wrappers.zai_model import ZAIChatModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
@@ -38,7 +38,7 @@ NON_VISION_MODELS = {"glm-4.7", "glm-4-flash"}
 VISION_MODEL = "glm-4.6v"
 
 
-class ZAIService(BaseLLMService):
+class ZAIService(BaseLLMServiceCore):
     """Z.AI Coding Plan API와의 모든 상호작용을 관리합니다."""
 
     def __init__(
@@ -75,24 +75,12 @@ class ZAIService(BaseLLMService):
             self.config.zai_base_url,
         )
 
-    def _create_retry_config(self) -> HandlerRetryConfig:
-        """Create retry configuration for Z.AI API."""
-        return HandlerRetryConfig(
-            max_retries=RetryConfig.MAX_RETRIES,
-            base_delay=RetryConfig.BACKOFF_BASE,
-            max_delay=RetryConfig.BACKOFF_MAX,
-            rate_limit_delay=RetryConfig.RATE_LIMIT_RETRY_AFTER,
-            request_timeout=self.config.zai_request_timeout,
-            backoff_strategy=BackoffStrategy.EXPONENTIAL,
-        )
-
     def _create_retry_handler(self) -> ZAIRetryHandler:
         """Create retry handler for Z.AI API."""
-        return ZAIRetryHandler(self._create_retry_config())
+        config = self._create_retry_config_core()
+        return ZAIRetryHandler(config)
 
-    def _get_or_create_assistant(
-        self, model_name: str, system_instruction: str
-    ) -> ZAIChatModel:
+    def _get_or_create_assistant(self, model_name: str, system_instruction: str) -> ZAIChatModel:
         """Get or create a chat model for the given model."""
         key = hash((model_name, system_instruction))
         if key not in self._assistant_cache:
@@ -279,18 +267,14 @@ class ZAIService(BaseLLMService):
         author_name = getattr(primary_msg.author, "name", str(author_id))
 
         # Extract images from messages first (before model selection)
-        images = []
-        if isinstance(discord_message, list):
-            for msg in discord_message:
-                imgs = await self._extract_images_from_message(msg)
-                images.extend(imgs)
-        else:
-            images = await self._extract_images_from_message(discord_message)
+        images = await self._extract_images_from_messages(discord_message)
 
         # Determine the actual model to use (switch to vision model if images present)
         actual_model = self._get_model_for_images(
-            model_name if model_name else getattr(chat_session, "_model_name", self._assistant_model_name),
-            len(images) > 0
+            model_name
+            if model_name
+            else getattr(chat_session, "_model_name", self._assistant_model_name),
+            len(images) > 0,
         )
 
         # Check for model switch
@@ -374,18 +358,14 @@ class ZAIService(BaseLLMService):
         author_name = getattr(primary_msg.author, "name", str(author_id))
 
         # Extract images from messages first (before model selection)
-        images = []
-        if isinstance(discord_message, list):
-            for msg in discord_message:
-                imgs = await self._extract_images_from_message(msg)
-                images.extend(imgs)
-        else:
-            images = await self._extract_images_from_message(discord_message)
+        images = await self._extract_images_from_messages(discord_message)
 
         # Determine the actual model to use (switch to vision model if images present)
         actual_model = self._get_model_for_images(
-            model_name if model_name else getattr(chat_session, "_model_name", self._assistant_model_name),
-            len(images) > 0
+            model_name
+            if model_name
+            else getattr(chat_session, "_model_name", self._assistant_model_name),
+            len(images) > 0,
         )
 
         # Check for model switch

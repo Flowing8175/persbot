@@ -6,7 +6,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import discord
 
@@ -16,7 +16,12 @@ from persbot.services.retry_handler import (
     RetryConfig,
     RetryHandler,
 )
-from persbot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE, process_image_sync
+from persbot.utils import (
+    ERROR_API_TIMEOUT,
+    ERROR_RATE_LIMIT,
+    GENERIC_ERROR_MESSAGE,
+    process_image_sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -181,9 +186,7 @@ class BaseLLMService(ABC):
 
         return images
 
-    async def _execute_model_call(
-        self, model_call: Callable[[], Any | Awaitable[Any]]
-    ) -> Any:
+    async def _execute_model_call(self, model_call: Callable[[], Any | Awaitable[Any]]) -> Any:
         """Execute a model call, handling both sync and async functions."""
         if asyncio.iscoroutinefunction(model_call):
             return await model_call()
@@ -254,3 +257,119 @@ class BaseLLMService(ABC):
             log_response=self._log_raw_response,
             extract_text=None if return_full_response else self._extract_text_from_response,
         )
+
+
+class BaseLLMServiceCore(BaseLLMService):
+    """Core LLM service with shared retry logic and utilities.
+
+    Provides common methods for retry configuration, image extraction,
+    and request/response logging that are shared across all providers.
+    """
+
+    def _create_retry_config_core(self) -> Any:
+        """Create retry configuration from AppConfig.
+
+        This method provides a common implementation that all providers
+        can use or override for provider-specific behavior.
+        """
+        from persbot.services.retry_handler import (
+            BackoffStrategy,
+            RetryConfig,
+        )
+
+        return RetryConfig(
+            max_retries=self.config.api_max_retries,
+            base_delay=self.config.api_retry_backoff_base,
+            max_delay=self.config.api_retry_backoff_max,
+            rate_limit_delay=self.config.api_rate_limit_retry_after,
+            request_timeout=self.config.api_request_timeout,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+        )
+
+    def _create_retry_config(self) -> Any:
+        """Create retry configuration from AppConfig.
+
+        Override this method in subclasses for custom retry config.
+        """
+        return self._create_retry_config_core()
+
+    def _log_raw_request_core(
+        self, user_message: str, chat_session: Any = None, prefix: str = "[RAW API REQUEST]"
+    ) -> None:
+        """Log raw API request data being sent (debug level only).
+
+        Args:
+            user_message: The user message being sent.
+            chat_session: Optional chat session with history.
+            prefix: Log prefix for the provider.
+        """
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
+        try:
+            from persbot.constants import DisplayConfig
+
+            logger.debug(
+                f"{prefix} User message preview: {user_message[: DisplayConfig.REQUEST_PREVIEW_LENGTH]!r}"
+            )
+
+            if chat_session and hasattr(chat_session, "history"):
+                history = chat_session.history
+                formatted_history = []
+                for msg in history[-DisplayConfig.HISTORY_DISPLAY_LIMIT :]:
+                    role = msg.role
+                    # Handle different content formats
+                    content = str(getattr(msg, "content", ""))
+                    if hasattr(msg, "parts"):
+                        texts = [part.get("text", "") for part in msg.parts]
+                        content = " ".join(texts)
+
+                    # Clean up content display if it starts with "Name: "
+                    author_label = str(msg.author_name or msg.author_id or "bot")
+                    display_content = content
+                    if msg.author_name and content.startswith(f"{msg.author_name}:"):
+                        display_content = content[len(msg.author_name) + 1 :].strip()
+
+                    formatted_history.append(f"{role} (author:{author_label}) {display_content}")
+                if formatted_history:
+                    logger.debug(f"{prefix} Recent history:\n" + "\n".join(formatted_history))
+        except Exception as e:
+            logger.error(f"{prefix} Error logging raw request: {e}", exc_info=True)
+
+    def _log_raw_response_core(
+        self, response_obj: Any, attempt: int, prefix: str = "[RAW API RESPONSE]"
+    ) -> None:
+        """Log raw API response data for debugging.
+
+        Args:
+            response_obj: The response object to log.
+            attempt: The attempt number for logging.
+            prefix: Log prefix for the provider.
+        """
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
+        try:
+            logger.debug(f"{prefix} {attempt} {response_obj}")
+        except Exception as e:
+            logger.error(f"{prefix} {attempt} Error logging raw response: {e}", exc_info=True)
+
+    async def _extract_images_from_messages(
+        self, discord_message: Union[discord.Message, List[discord.Message]]
+    ) -> List[bytes]:
+        """Extract image bytes from message(s), downscaling to ~1MP.
+
+        Args:
+            discord_message: Single Discord message or list of messages.
+
+        Returns:
+            List of processed image bytes.
+        """
+        images = []
+        if isinstance(discord_message, list):
+            for msg in discord_message:
+                imgs = await self._extract_images_from_message(msg)
+                images.extend(imgs)
+        else:
+            images = await self._extract_images_from_message(discord_message)
+        return images

@@ -24,11 +24,15 @@ from persbot.constants import (
     LLMDefaults,
     RetryConfig,
 )
-from persbot.services.base import BaseLLMService, ChatMessage
+from persbot.services.base import BaseLLMServiceCore, ChatMessage
 from persbot.services.cache_service import CacheService, GeminiCacheStrategy
 from persbot.services.model_wrappers.gemini_model import GeminiCachedModel
 from persbot.services.prompt_service import PromptService
-from persbot.services.retry_handler import GeminiRetryHandler, RetryConfig as HandlerRetryConfig, RetryHandler
+from persbot.services.retry_handler import (
+    GeminiRetryHandler,
+    RetryConfig as HandlerRetryConfig,
+    RetryHandler,
+)
 from persbot.services.session_wrappers.gemini_session import GeminiChatSession, extract_clean_text
 from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
 from persbot.utils import GENERIC_ERROR_MESSAGE
@@ -36,7 +40,7 @@ from persbot.utils import GENERIC_ERROR_MESSAGE
 logger = logging.getLogger(__name__)
 
 
-class GeminiService(BaseLLMService):
+class GeminiService(BaseLLMServiceCore):
     """Gemini API와의 모든 상호작용을 관리합니다."""
 
     def __init__(
@@ -188,13 +192,7 @@ class GeminiService(BaseLLMService):
 
     def _create_retry_handler(self) -> RetryHandler:
         """Create Gemini-specific retry handler."""
-        config = RetryConfig(
-            max_retries=self.config.api_max_retries,
-            base_delay=self.config.api_retry_backoff_base,
-            max_delay=self.config.api_retry_backoff_max,
-            rate_limit_delay=self.config.api_rate_limit_retry_after,
-            request_timeout=self.config.api_request_timeout,
-        )
+        config = self._create_retry_config_core()
         return GeminiRetryHandler(config)
 
     def get_user_role_name(self) -> str:
@@ -240,13 +238,13 @@ class GeminiService(BaseLLMService):
 
         try:
             logger.debug(
-                f"[RAW API REQUEST] User message preview: {user_message[:DisplayConfig.REQUEST_PREVIEW_LENGTH]!r}"
+                f"[RAW API REQUEST] User message preview: {user_message[: DisplayConfig.REQUEST_PREVIEW_LENGTH]!r}"
             )
 
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
                 formatted_history = []
-                for msg in history[-DisplayConfig.HISTORY_DISPLAY_LIMIT:]:
+                for msg in history[-DisplayConfig.HISTORY_DISPLAY_LIMIT :]:
                     role = msg.role
                     texts = [part.get("text", "") for part in msg.parts]
                     content = " ".join(texts)
@@ -302,7 +300,9 @@ class GeminiService(BaseLLMService):
                         for part in candidate.content.parts:
                             text = getattr(part, "text", "")
                             if text:
-                                texts.append(text[:DisplayConfig.RESPONSE_PREVIEW_LENGTH].replace("\n", " "))
+                                texts.append(
+                                    text[: DisplayConfig.RESPONSE_PREVIEW_LENGTH].replace("\n", " ")
+                                )
                         if texts:
                             logger.debug(
                                 f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}"
@@ -483,16 +483,8 @@ class GeminiService(BaseLLMService):
         author_id = primary_msg.author.id
         author_name = getattr(primary_msg.author, "name", str(author_id))
 
-        # Extract images from the primary message (and potentially others if batched?)
-        # BaseLLMService supports single message extraction.
-        # If batched, we might want to extract from all.
-        images = []
-        if isinstance(discord_message, list):
-            for msg in discord_message:
-                imgs = await self._extract_images_from_message(msg)
-                images.extend(imgs)
-        else:
-            images = await self._extract_images_from_message(discord_message)
+        # Extract images from message(s) - supports both single and list of messages
+        images = await self._extract_images_from_messages(discord_message)
 
         async def _refresh_chat_session():
             logger.warning("Refreshing chat session due to 403 Cache Error...")
@@ -770,7 +762,11 @@ class GeminiService(BaseLLMService):
             return False
 
     async def _handle_rate_limit_retry(
-        self, error: Exception, attempt: int, discord_message: Optional[discord.Message], cancel_event: Optional[asyncio.Event] = None
+        self,
+        error: Exception,
+        attempt: int,
+        discord_message: Optional[discord.Message],
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> None:
         """Handle rate limit error with countdown wait."""
         logger.warning("Gemini Rate Limit (Attempt %s). Waiting...", attempt)

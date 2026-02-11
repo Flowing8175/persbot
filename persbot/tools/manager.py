@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class ToolManager:
     """Manages tool registration, execution, and provider integration."""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.registry = ToolRegistry()
         self.executor = ToolExecutor(config, self.registry)
@@ -78,7 +78,7 @@ class ToolManager:
         parameters: Dict[str, Any],
         discord_context: Optional[discord.Message] = None,
         cancel_event: Optional[asyncio.Event] = None,
-    ):
+    ) -> Any:
         """Execute a single tool.
 
         Args:

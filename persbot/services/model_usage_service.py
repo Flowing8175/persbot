@@ -47,7 +47,7 @@ class ModelUsageService:
         data_file: str = "data/model_usage.json",
         models_file: str = "data/models.json",
         default_provider: str = "gemini",
-    ):
+    ) -> None:
         self.data_file = data_file
         self.models_file = models_file
         self.usage_data: Dict[str, Any] = {}
@@ -55,7 +55,7 @@ class ModelUsageService:
         self._load_models()
         self._load_usage()
 
-    def _load_models(self):
+    def _load_models(self) -> None:
         """Load model definitions from file with caching."""
         if os.path.exists(self.models_file):
             try:
@@ -95,7 +95,7 @@ class ModelUsageService:
                 logger.error(f"Failed to load model definitions: {e}")
                 # Fallback or empty? If critical, we might want to raise, but let's log.
 
-    def _load_usage(self):
+    def _load_usage(self) -> None:
         """Load usage data from file."""
         # Using sync load for initialization
         if os.path.exists(self.data_file):
@@ -111,7 +111,7 @@ class ModelUsageService:
         # Check date reset
         self._check_daily_reset()
 
-    async def _save_usage(self):
+    async def _save_usage(self) -> None:
         """Save usage data to file asynchronously."""
         try:
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
@@ -120,7 +120,7 @@ class ModelUsageService:
         except Exception as e:
             logger.error(f"Failed to save model usage data: {e}")
 
-    def _check_daily_reset(self):
+    def _check_daily_reset(self) -> None:
         """Reset usage if the date has changed (KST Midnight)."""
         # KST is UTC+9
         now_kst = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)

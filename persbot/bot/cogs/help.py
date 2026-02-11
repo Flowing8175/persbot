@@ -1,6 +1,7 @@
 """Help Cog for SoyeBot - displays comprehensive bot functionality."""
 
 import logging
+from typing import Optional
 
 import discord
 from config import AppConfig
@@ -27,7 +28,7 @@ class HelpCog(commands.Cog):
         description="봇의 전체 기능을 설명하는 도움말을 표시합니다.",
     )
     @discord.app_commands.describe(subcommand="도움말을 볼 특정 기능 (예: 요약, ai)")
-    async def show_help(self, ctx: commands.Context, subcommand: str = None):
+    async def show_help(self, ctx: commands.Context, subcommand: Optional[str] = None) -> None:
         """봇의 전체 기능을 설명하는 도움말을 표시합니다.
 
         사용법: !도움말 [기능명]
@@ -115,7 +116,7 @@ class HelpCog(commands.Cog):
                 mention_author=False,
             )
 
-    async def _show_specific_help(self, ctx: commands.Context, feature: str):
+    async def _show_specific_help(self, ctx: commands.Context, feature: str) -> None:
         """Display help for a specific feature.
 
         Args:
@@ -180,7 +181,7 @@ class HelpCog(commands.Cog):
     @commands.hybrid_command(
         name="features", aliases=["기능", "f"], description="봇의 주요 기능을 간단히 설명합니다."
     )
-    async def show_features(self, ctx: commands.Context):
+    async def show_features(self, ctx: commands.Context) -> None:
         """봇의 주요 기능을 간단히 설명합니다.
 
         사용법: !기능
@@ -212,6 +213,6 @@ class HelpCog(commands.Cog):
             )
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     """Setup function for loading the cog."""
     pass

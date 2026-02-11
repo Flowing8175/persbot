@@ -26,12 +26,12 @@ class ShowModalButton(discord.ui.View):
     to an interaction, not as a followup message.
     """
 
-    def __init__(self, modal: discord.ui.Modal, timeout: int = 300):
+    def __init__(self, modal: discord.ui.Modal, timeout: int = 300) -> None:
         super().__init__(timeout=timeout)
         self.modal = modal
 
     @discord.ui.button(label="질문 답변하기", style=discord.ButtonStyle.primary, emoji="📝")
-    async def show_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def show_modal(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Show the modal when button is clicked."""
         await interaction.response.send_modal(self.modal)
 
@@ -39,46 +39,37 @@ class ShowModalButton(discord.ui.View):
 class PromptModeSelectView(discord.ui.View):
     """View for selecting persona creation mode."""
 
-    def __init__(self, view: "PromptManagerView"):
+    def __init__(self, view: "PromptManagerView") -> None:
         super().__init__(timeout=180)
         self.parent_view = view
 
     @discord.ui.button(label="기본 모드", style=discord.ButtonStyle.secondary, emoji="⚡", row=0)
-    async def basic_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def basic_mode(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Basic mode - quick generation without questions."""
         logger.info("basic_mode button clicked - use_questions=False")
-        await interaction.response.send_modal(PromptCreateModal(self.parent_view, use_questions=False))
+        await interaction.response.send_modal(
+            PromptCreateModal(self.parent_view, use_questions=False)
+        )
 
     @discord.ui.button(label="AI 질문 모드", style=discord.ButtonStyle.primary, emoji="🧠", row=0)
-    async def qa_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def qa_mode(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """AI question mode - detailed generation with AI questions."""
         logger.info("qa_mode button clicked - use_questions=True")
-        await interaction.response.send_modal(PromptCreateModal(self.parent_view, use_questions=True))
+        await interaction.response.send_modal(
+            PromptCreateModal(self.parent_view, use_questions=True)
+        )
 
     @discord.ui.button(label="취소", style=discord.ButtonStyle.danger, emoji="❌", row=1)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Cancel mode selection."""
         await interaction.response.delete_message()
 
-
-class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성"):
-    concept = discord.ui.TextInput(
-        label="페르소나 컨셉",
-        placeholder="예: 츤데레 여사친, 게으른 천재 해커...",
-        style=discord.TextStyle.long,
-        required=True,
-        max_length=500,
-    )
-
-    def __init__(self, view: "PromptManagerView", use_questions: bool = False):
-        super().__init__()
-        self.view_ref = view
-        self.use_questions = use_questions
-
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         concept_str = self.concept.value
         use_qa = self.use_questions
-        logger.info(f"PromptCreateModal.on_submit: use_questions={use_qa}, concept={concept_str[:50]}...")
+        logger.info(
+            f"PromptCreateModal.on_submit: use_questions={use_qa}, concept={concept_str[:50]}..."
+        )
 
         if use_qa:
             # Defer and show loading, then send the questions modal
@@ -90,9 +81,7 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
             cog = self.view_ref.cog
             try:
-                questions_json = await cog.llm_service.generate_questions_from_concept(
-                    concept_str
-                )
+                questions_json = await cog.llm_service.generate_questions_from_concept(concept_str)
 
                 if not questions_json:
                     await msg.edit(content="❌ 질문 생성에 실패했습니다. 기본 모드로 진행합니다.")
@@ -117,21 +106,21 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
                     questions = questions_data.get("questions", [])
 
                     if not questions:
-                        await msg.edit(content="❌ 질문 파싱에 실패했습니다. 기본 모드로 진행합니다.")
+                        await msg.edit(
+                            content="❌ 질문 파싱에 실패했습니다. 기본 모드로 진행합니다."
+                        )
                         await self._generate_direct(interaction, concept_str, msg)
                         return
 
                     # Create answer modal and view with button to show it
                     # (Modals can only be sent as first response, so use a button)
-                    answer_modal = PromptAnswerModal(
-                        self.view_ref, concept_str, questions
-                    )
+                    answer_modal = PromptAnswerModal(self.view_ref, concept_str, questions)
                     modal_button_view = ShowModalButton(answer_modal)
 
                     # Edit the loading message to show the button
                     await msg.edit(
                         content="📝 **질문이 생성되었습니다! 아래 버튼을 눌러 답변을 입력하세요:**",
-                        view=modal_button_view
+                        view=modal_button_view,
                     )
 
                 except json.JSONDecodeError as e:
@@ -157,13 +146,11 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
     async def _generate_direct(
         self, interaction: discord.Interaction, concept_str: str, msg
-    ):
+    ) -> None:
         """Direct prompt generation without questions."""
         cog = self.view_ref.cog
         try:
-            generated_prompt = await cog.llm_service.generate_prompt_from_concept(
-                concept_str
-            )
+            generated_prompt = await cog.llm_service.generate_prompt_from_concept(concept_str)
 
             if not generated_prompt:
                 await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
@@ -198,7 +185,7 @@ class PromptAnswerModal(discord.ui.Modal):
         view: "PromptManagerView",
         concept: str,
         questions: List[Dict[str, str]],
-    ):
+    ) -> None:
         super().__init__(title="페르소나 질문 답변")
         self.view_ref = view
         self.concept = concept
@@ -208,42 +195,46 @@ class PromptAnswerModal(discord.ui.Modal):
         # Use discord.ui.Label to wrap TextInput with description for full question text
         # Label text: 45 chars max, Description: 100 chars max
         for i, q in enumerate(questions[:5]):
-            sample = q.get('sample_answer', '자유롭게 작성')
+            sample = q.get("sample_answer", "자유롭게 작성")
             # Create TextInput without label (label is deprecated, use Label wrapper)
             text_input = discord.ui.TextInput(
                 style=discord.TextStyle.long,
                 required=False,
                 max_length=500,
-                placeholder=sample[:100]
+                placeholder=sample[:100],
             )
             # Wrap TextInput in Label with short text + long description
             # Label text: Short identifier like "Q1" (45 chars max)
             # Description: Full question text (100 chars max, truncate if needed)
-            question_text = q['question'][:95] + " (비워두면 예시 사용)" if len(q['question']) > 95 else q['question'] + " (비워두면 예시 사용)"
-            label = discord.ui.Label(
-                text=f"Q{i+1}",
-                description=question_text[:100],
-                component=text_input
+            question_text = (
+                q["question"][:95] + " (비워두면 예시 사용)"
+                if len(q["question"]) > 95
+                else q["question"] + " (비워두면 예시 사용)"
             )
-            setattr(self, f'answer_{i}', text_input)
-            setattr(self, f'label_{i}', label)
+            label = discord.ui.Label(
+                text=f"Q{i + 1}", description=question_text[:100], component=text_input
+            )
+            setattr(self, f"answer_{i}", text_input)
+            setattr(self, f"label_{i}", label)
             self.add_item(label)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         # Use deferred response because generation takes time
         await interaction.response.defer(ephemeral=False)
 
         # Build Q&A string
         qa_pairs = []
         for i, q in enumerate(self.questions):
-            answer_field = getattr(self, f'answer_{i}', None)
+            answer_field = getattr(self, f"answer_{i}", None)
             if answer_field:
                 answer_value = answer_field.value.strip()
                 # Use user's answer, or fall back to sample answer if empty
-                final_answer = answer_value if answer_value else q.get('sample_answer', '')
+                final_answer = answer_value if answer_value else q.get("sample_answer", "")
                 qa_pairs.append(f"Q: {q['question']}\nA: {final_answer}")
 
-        questions_and_answers = "\n\n".join(qa_pairs) if qa_pairs else "No additional answers provided."
+        questions_and_answers = (
+            "\n\n".join(qa_pairs) if qa_pairs else "No additional answers provided."
+        )
 
         msg = await interaction.followup.send(
             f"🧠 답변을 바탕으로 페르소나 설계 중...", ephemeral=False
@@ -262,11 +253,7 @@ class PromptAnswerModal(discord.ui.Modal):
             name_match = re.search(
                 r"Project\s+['\"]?(.+?)['\"]?\]", generated_prompt, re.IGNORECASE
             )
-            name = (
-                name_match.group(1)
-                if name_match
-                else f"Generated ({self.concept[:10]}...)"
-            )
+            name = name_match.group(1) if name_match else f"Generated ({self.concept[:10]}...)"
             prompt_content = generated_prompt.strip()
 
             idx = await cog.prompt_service.add_prompt(name, prompt_content)
@@ -293,13 +280,13 @@ class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
         max_length=50,
     )
 
-    def __init__(self, view: "PromptManagerView", index: int, old_name: str):
+    def __init__(self, view: "PromptManagerView", index: int, old_name: str) -> None:
         super().__init__()
         self.view_ref = view
         self.index = index
         self.new_name.default = old_name
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         cog = self.view_ref.cog
         if await cog.prompt_service.rename_prompt(self.index, self.new_name.value):
             await send_discord_message(
@@ -311,7 +298,7 @@ class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
 
 
 class PromptManagerView(discord.ui.View):
-    def __init__(self, cog: "PersonaCog", ctx: commands.Context):
+    def __init__(self, cog: "PersonaCog", ctx: commands.Context) -> None:
         super().__init__(timeout=600)
         self.cog = cog
         self.ctx = ctx
@@ -319,7 +306,7 @@ class PromptManagerView(discord.ui.View):
         self.message: Optional[discord.Message] = None
         self.update_components()
 
-    def update_components(self):
+    def update_components(self) -> None:
         prompts = self.cog.prompt_service.list_prompts()
         self.clear_items()
 
@@ -404,7 +391,7 @@ class PromptManagerView(discord.ui.View):
         btn_close.callback = self.on_close
         self.add_item(btn_close)
 
-    async def refresh_view(self, interaction: Optional[discord.Interaction] = None):
+    async def refresh_view(self, interaction: Optional[discord.Interaction] = None) -> None:
         self.update_components()
         embed = self.build_embed()
 
@@ -416,7 +403,7 @@ class PromptManagerView(discord.ui.View):
         except Exception as e:
             logger.error(f"Failed to refresh view: {e}")
 
-    def build_embed(self):
+    def build_embed(self) -> discord.Embed:
         prompts = self.cog.prompt_service.list_prompts()
         embed = discord.Embed(title="🎭 페르소나 관리자", color=discord.Color.gold())
 
@@ -440,7 +427,7 @@ class PromptManagerView(discord.ui.View):
 
         return embed
 
-    async def on_select(self, interaction: discord.Interaction):
+    async def on_select(self, interaction: discord.Interaction) -> None:
         # Permission check handled by interaction_check
         val = int(interaction.data["values"][0])
         if val == -1:
@@ -449,7 +436,7 @@ class PromptManagerView(discord.ui.View):
         await interaction.response.defer()
         await self.refresh_view(interaction)
 
-    async def on_new(self, interaction: discord.Interaction):
+    async def on_new(self, interaction: discord.Interaction) -> None:
         if not await self.cog.prompt_service.check_today_limit(interaction.user.id):
             await send_discord_message(
                 interaction,
@@ -461,15 +448,19 @@ class PromptManagerView(discord.ui.View):
         embed = discord.Embed(
             title="✨ 페르소나 생성 모드 선택",
             description="원하시는 생성 모드를 선택해주세요.",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
         embed.add_field(name="⚡ 기본 모드", value="컨셉만 입력하여 빠르게 생성", inline=False)
-        embed.add_field(name="🧠 AI 질문 모드", value="AI가 질문을 생성하고 답변으로 상세하게 커스텀", inline=False)
+        embed.add_field(
+            name="🧠 AI 질문 모드",
+            value="AI가 질문을 생성하고 답변으로 상세하게 커스텀",
+            inline=False,
+        )
 
         view = PromptModeSelectView(self)
         await send_discord_message(interaction, "", embed=embed, view=view, ephemeral=True)
 
-    async def on_file_add(self, interaction: discord.Interaction):
+    async def on_file_add(self, interaction: discord.Interaction) -> None:
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.cog.config.no_check_permission:
             if not interaction.user.guild_permissions.manage_guild:
@@ -484,7 +475,7 @@ class PromptManagerView(discord.ui.View):
             ephemeral=True,
         )
 
-        def check(m):
+        def check(m) -> bool:
             return (
                 m.author.id == interaction.user.id
                 and m.channel.id == interaction.channel.id
@@ -535,7 +526,7 @@ class PromptManagerView(discord.ui.View):
                 interaction, "⏳ 시간 초과: 파일 업로드가 취소되었습니다.", ephemeral=True
             )
 
-    async def on_apply(self, interaction: discord.Interaction):
+    async def on_apply(self, interaction: discord.Interaction) -> None:
         if self.selected_index is not None:
             p = self.cog.prompt_service.get_prompt(self.selected_index)
             if p:
@@ -551,7 +542,7 @@ class PromptManagerView(discord.ui.View):
                     interaction, "❌ 페르소나를 찾을 수 없습니다.", ephemeral=True
                 )
 
-    async def on_rename(self, interaction: discord.Interaction):
+    async def on_rename(self, interaction: discord.Interaction) -> None:
         if self.selected_index is not None:
             p = self.cog.prompt_service.get_prompt(self.selected_index)
             if p:
@@ -559,7 +550,7 @@ class PromptManagerView(discord.ui.View):
                     PromptRenameModal(self, self.selected_index, p["name"])
                 )
 
-    async def on_delete(self, interaction: discord.Interaction):
+    async def on_delete(self, interaction: discord.Interaction) -> None:
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.cog.config.no_check_permission:
             if not interaction.user.guild_permissions.manage_guild:
@@ -579,7 +570,7 @@ class PromptManagerView(discord.ui.View):
                 else:
                     await send_discord_message(interaction, "❌ 삭제 실패.", ephemeral=True)
 
-    async def on_close(self, interaction: discord.Interaction):
+    async def on_close(self, interaction: discord.Interaction) -> None:
         # Allow anyone to close the menu, or just the author? Usually anyone or author.
         # Let's delete the message.
         await interaction.message.delete()
@@ -596,7 +587,7 @@ class PersonaCog(commands.Cog):
         llm_service: LLMService,
         session_manager: SessionManager,
         prompt_service: PromptService,
-    ):
+    ) -> None:
         self.bot = bot
         self.config = config
         self.llm_service = llm_service
@@ -604,7 +595,7 @@ class PersonaCog(commands.Cog):
         self.prompt_service = prompt_service
 
     @commands.hybrid_command(name="prompt", description="프롬프트(페르소나) 관리 UI를 엽니다.")
-    async def prompt_command(self, ctx: commands.Context):
+    async def prompt_command(self, ctx: commands.Context) -> None:
         """프롬프트(페르소나) 관리 UI를 엽니다."""
         view = PromptManagerView(self, ctx)
         embed = view.build_embed()
@@ -614,7 +605,7 @@ class PersonaCog(commands.Cog):
         if sent_messages:
             view.message = sent_messages[0]
 
-    async def cog_command_error(self, ctx: commands.Context, error: Exception):
+    async def cog_command_error(self, ctx: commands.Context, error: Exception) -> None:
         """Cog 내 명령어 에러 핸들러"""
         if isinstance(error, commands.MissingPermissions):
             await send_discord_message(

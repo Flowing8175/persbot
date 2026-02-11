@@ -20,7 +20,7 @@ __all__ = [
 ]
 
 
-def register_all_persona_tools(registry):
+def register_all_persona_tools(registry) -> None:
     """Register all persona tools with the given registry.
 
     Args:

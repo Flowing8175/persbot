@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 class ImageGenerationError(Exception):
     """Base exception for image generation errors."""
+
     pass
 
 
@@ -43,7 +44,7 @@ class ImageService(BaseLLMService):
     - Image-to-image generation with base64 input
     """
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig) -> None:
         """Initialize the image service.
 
         Args:
@@ -78,16 +79,13 @@ class ImageService(BaseLLMService):
         """Create retry handler for image generation."""
         # Use a generic retry handler since OpenAI's retry logic works for OpenRouter too
         from persbot.services.retry_handler import OpenAIRetryHandler
+
         return OpenAIRetryHandler(self._create_retry_config())
 
     def _is_rate_limit_error(self, error: Exception) -> bool:
         """Check if exception is a rate limit error."""
         error_str = str(error).lower()
-        return (
-            "rate limit" in error_str
-            or "429" in error_str
-            or isinstance(error, RateLimitError)
-        )
+        return "rate limit" in error_str or "429" in error_str or isinstance(error, RateLimitError)
 
     def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
         """Log raw request details for debugging."""
@@ -187,7 +185,7 @@ class ImageService(BaseLLMService):
             # Image-to-image: include both text prompt and input image
             user_content = [
                 {"type": "text", "text": enhanced_prompt},
-                {"type": "image_url", "image_url": {"url": image_input}}
+                {"type": "image_url", "image_url": {"url": image_input}},
             ]
             logger.info(
                 "Including input image in generation request (prompt_hash=%s)",

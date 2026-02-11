@@ -44,7 +44,7 @@ async def _download_and_convert_image(url: str) -> Optional[str]:
     """
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0)) as session:
-            async with session.get(url, headers={'User-Agent': 'Mozilla/5.0'}) as response:
+            async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}) as response:
                 if response.status != 200:
                     logger.error(
                         "Failed to download image from URL (status=%d): %s",
@@ -69,9 +69,7 @@ async def _download_and_convert_image(url: str) -> Optional[str]:
                 mime_type = _detect_mime_type(url, content_type, image_bytes)
 
                 # Downscale image to ~1MP to reduce API payload
-                img_bytes_processed = await asyncio.to_thread(
-                    process_image_sync, image_bytes, url
-                )
+                img_bytes_processed = await asyncio.to_thread(process_image_sync, image_bytes, url)
 
                 b64_str = base64.b64encode(img_bytes_processed).decode("utf-8")
                 return f"data:{mime_type};base64,{b64_str}"
@@ -105,6 +103,7 @@ def _detect_mime_type(url: str, content_type: str, data: bytes) -> str:
 
     # Priority 2: Try from URL extension (handle query parameters)
     from urllib.parse import urlparse
+
     parsed = urlparse(url)
     path = parsed.path.lower()  # Get path without query string
     if path.endswith((".png", ".png/")):
@@ -119,13 +118,13 @@ def _detect_mime_type(url: str, content_type: str, data: bytes) -> str:
     # Priority 3: Fallback to detection from content using file signatures
     if len(data) >= 8:
         # Check for common image file signatures (magic bytes)
-        if data[:8] == b'\x89PNG\r\n\x1a\n':
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
             return "image/png"
-        elif data[:2] == b'\xff\xd8':
+        elif data[:2] == b"\xff\xd8":
             return "image/jpeg"
-        elif data[:4] == b'RIFF' and len(data) >= 12 and data[8:12] == b'WEBP':
+        elif data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":
             return "image/webp"
-        elif data[:6] in (b'GIF87a', b'GIF89a'):
+        elif data[:6] in (b"GIF87a", b"GIF89a"):
             return "image/gif"
 
     # Priority 4: Ultimate fallback
@@ -165,7 +164,11 @@ async def generate_image(
         return ToolResult(success=False, error="Image prompt cannot be empty")
 
     # Check rate limits
-    user_id = discord_context.author.id if (discord_context and hasattr(discord_context, "author")) else "unknown"
+    user_id = (
+        discord_context.author.id
+        if (discord_context and hasattr(discord_context, "author"))
+        else "unknown"
+    )
     rate_limiter = get_image_rate_limiter()
     rate_limit_result = await rate_limiter.check_rate_limit(user_id)
 
@@ -219,9 +222,7 @@ async def generate_image(
                     b64_str = base64.b64encode(img_bytes_processed).decode("utf-8")
                     mime_type = get_mime_type(img_bytes_processed)
                     image_input = f"data:{mime_type};base64,{b64_str}"
-                    logger.info(
-                        "Using attached image as input for image generation"
-                    )
+                    logger.info("Using attached image as input for image generation")
                     break
                 except Exception as e:
                     logger.warning(
@@ -301,7 +302,9 @@ async def send_image(
 
     # Validate URL format
     if not image_url.startswith(("http://", "https://")):
-        return ToolResult(success=False, error="Invalid image URL format. Must start with http:// or https://")
+        return ToolResult(
+            success=False, error="Invalid image URL format. Must start with http:// or https://"
+        )
 
     try:
         # Fetch the image from the URL
@@ -372,7 +375,7 @@ async def send_image(
         )
 
 
-def register_image_tools(registry):
+def register_image_tools(registry) -> None:
     """Register image tools with the given registry.
 
     Args:

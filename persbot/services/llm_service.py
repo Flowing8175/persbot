@@ -6,7 +6,7 @@ It acts as a factory and registry for provider backends.
 
 import asyncio
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import discord
 
@@ -92,9 +92,7 @@ class ProviderRegistry:
             The created backend, or None if creation failed.
         """
         provider_str = provider_name.lower()
-        effective_model = model_name or self._get_default_model_for_provider(
-            provider_str
-        )
+        effective_model = model_name or self._get_default_model_for_provider(provider_str)
 
         try:
             if provider_str == Provider.OPENAI:
@@ -142,7 +140,7 @@ class ProviderRegistry:
         # which are already resolved based on the provider during load_config()
         defaults = {
             Provider.OPENAI: "gpt-5-mini",  # DEFAULT_OPENAI_ASSISTANT_MODEL
-            Provider.ZAI: "glm-4.7",        # DEFAULT_ZAI_ASSISTANT_MODEL
+            Provider.ZAI: "glm-4.7",  # DEFAULT_ZAI_ASSISTANT_MODEL
             Provider.GEMINI: "gemini-2.5-flash",  # DEFAULT_GEMINI_ASSISTANT_MODEL
         }
         return defaults.get(provider, self.config.assistant_model_name)
@@ -172,9 +170,7 @@ class LLMService:
         self._registry = ProviderRegistry(config, self.prompt_service)
 
         # Create primary backends
-        summarizer_provider = (
-            config.summarizer_llm_provider or assistant_provider
-        ).lower()
+        summarizer_provider = (config.summarizer_llm_provider or assistant_provider).lower()
 
         # Create assistant backend
         self.assistant_backend = self._registry.get_or_create_provider(
@@ -261,9 +257,7 @@ class LLMService:
         else:  # Gemini
             return isinstance(backend, GeminiService)
 
-    def create_chat_session_for_alias(
-        self, model_alias: str, system_instruction: str
-    ):
+    def create_chat_session_for_alias(self, model_alias: str, system_instruction: str) -> Any:
         """Create a chat session for the given model alias.
 
         Args:
@@ -299,9 +293,7 @@ class LLMService:
             return model.start_chat(system_instruction)
         return model
 
-    def create_assistant_model(
-        self, system_instruction: str, use_cache: bool = True
-    ):
+    def create_assistant_model(self, system_instruction: str, use_cache: bool = True) -> Any:
         """Create an assistant model with the default backend.
 
         Args:
@@ -391,7 +383,7 @@ class LLMService:
             )
 
             # Extract content from response
-            if hasattr(raw_response, 'choices') and raw_response.choices:
+            if hasattr(raw_response, "choices") and raw_response.choices:
                 return raw_response.choices[0].message.content
             return raw_response
 
@@ -406,7 +398,7 @@ class LLMService:
         )
 
         # For Gemini, extract text from response
-        if hasattr(result, 'text'):
+        if hasattr(result, "text"):
             return result.text
         return result
 
@@ -467,7 +459,7 @@ class LLMService:
         use_summarizer_backend: bool = False,
         tools: Optional[List[Any]] = None,
         cancel_event: Optional[asyncio.Event] = None,
-    ):
+    ) -> Optional[Tuple[Optional[str], Any]]:
         """Generate a chat response.
 
         Args:
@@ -483,17 +475,18 @@ class LLMService:
         """
         # Extract metadata
         model_alias = getattr(
-            chat_session, "model_alias",
-            self.model_usage_service.DEFAULT_MODEL_ALIAS
+            chat_session, "model_alias", self.model_usage_service.DEFAULT_MODEL_ALIAS
         )
-        user_id, channel_id, guild_id, primary_author = (
-            self._extract_message_metadata(discord_message)
+        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(
+            discord_message
         )
 
         # Check usage limits
-        is_allowed, final_alias, notification = (
-            await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
-        )
+        (
+            is_allowed,
+            final_alias,
+            notification,
+        ) = await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
         if final_alias != model_alias:
             chat_session.model_alias = final_alias
 
@@ -550,17 +543,18 @@ class LLMService:
         """
         # Extract metadata
         model_alias = getattr(
-            chat_session, "model_alias",
-            self.model_usage_service.DEFAULT_MODEL_ALIAS
+            chat_session, "model_alias", self.model_usage_service.DEFAULT_MODEL_ALIAS
         )
-        user_id, channel_id, guild_id, primary_author = (
-            self._extract_message_metadata(discord_message)
+        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(
+            discord_message
         )
 
         # Check usage limits
-        is_allowed, final_alias, notification = (
-            await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
-        )
+        (
+            is_allowed,
+            final_alias,
+            notification,
+        ) = await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
         if final_alias != model_alias:
             chat_session.model_alias = final_alias
 
@@ -583,7 +577,9 @@ class LLMService:
         # Check if backend supports streaming
         if not hasattr(active_backend, "generate_chat_response_stream"):
             # Fall back to non-streaming
-            logger.warning("Backend %s does not support streaming, falling back", type(active_backend).__name__)
+            logger.warning(
+                "Backend %s does not support streaming, falling back", type(active_backend).__name__
+            )
             result = await active_backend.generate_chat_response(
                 chat_session,
                 user_message,
@@ -634,7 +630,7 @@ class LLMService:
         use_summarizer_backend: bool = False,
         discord_message=None,
         cancel_event: Optional[asyncio.Event] = None,
-    ):
+    ) -> Optional[Tuple[Optional[str], Any]]:
         """Send tool results back to the model and get continuation response.
 
         Args:
@@ -719,7 +715,7 @@ class LLMService:
 
     def _prepare_response_with_notification(
         self, response, notification: Optional[str]
-    ):
+    ) -> Optional[Tuple[Optional[str], Any]]:
         """Prepend notification to response if exists.
 
         Args:

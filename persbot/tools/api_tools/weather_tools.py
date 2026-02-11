@@ -136,7 +136,7 @@ async def get_weather(
     )
 
 
-def register_weather_tools(registry):
+def register_weather_tools(registry) -> None:
     """Register weather tools with the given registry.
 
     Args:

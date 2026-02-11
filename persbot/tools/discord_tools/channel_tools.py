@@ -252,7 +252,7 @@ async def list_channels(
         return ToolResult(success=False, error=str(e))
 
 
-def register_channel_tools(registry):
+def register_channel_tools(registry) -> None:
     """Register all channel tools with the given registry.
 
     Args:

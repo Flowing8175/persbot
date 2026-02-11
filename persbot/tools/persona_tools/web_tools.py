@@ -175,7 +175,9 @@ async def _inspect_youtube_content(
     """
     # Check for cancellation before HTTP request
     if cancel_event and cancel_event.is_set():
-        logger.info("YouTube content inspection aborted due to cancellation signal before HTTP call")
+        logger.info(
+            "YouTube content inspection aborted due to cancellation signal before HTTP call"
+        )
         return ToolResult(success=False, error="YouTube content inspection aborted by user")
 
     # Try to get video info via YouTube's oEmbed endpoint (no API key needed)
@@ -241,7 +243,7 @@ def _extract_youtube_id(url: str) -> Optional[str]:
     return None
 
 
-def register_web_tools(registry):
+def register_web_tools(registry) -> None:
     """Register web content inspection tools with the given registry.
 
     Args:

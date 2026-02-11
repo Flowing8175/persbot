@@ -278,7 +278,7 @@ def _time_to_minutes(time_str: str) -> int:
     return hours * 60 + minutes
 
 
-def register_routine_tools(registry):
+def register_routine_tools(registry) -> None:
     """Register routine checking tools with the given registry.
 
     Args:

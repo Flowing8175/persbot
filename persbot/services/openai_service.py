@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from persbot.config import AppConfig
 from persbot.constants import APITimeout, LLMDefaults, RetryConfig
 from persbot.exceptions import RateLimitException
-from persbot.services.base import BaseLLMService, ChatMessage
+from persbot.services.base import BaseLLMServiceCore, ChatMessage
 from persbot.services.model_wrappers.openai_model import OpenAIChatCompletionModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
@@ -32,7 +32,7 @@ from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
 logger = logging.getLogger(__name__)
 
 
-class OpenAIService(BaseLLMService):
+class OpenAIService(BaseLLMServiceCore):
     """OpenAI API와의 모든 상호작용을 관리합니다."""
 
     def __init__(
@@ -61,20 +61,10 @@ class OpenAIService(BaseLLMService):
         )
         logger.info("OpenAI 모델 '%s' 준비 완료.", self._assistant_model_name)
 
-    def _create_retry_config(self) -> HandlerRetryConfig:
-        """Create retry configuration for OpenAI API."""
-        return HandlerRetryConfig(
-            max_retries=RetryConfig.MAX_RETRIES,
-            base_delay=RetryConfig.BACKOFF_BASE,
-            max_delay=RetryConfig.BACKOFF_MAX,
-            rate_limit_delay=RetryConfig.RATE_LIMIT_RETRY_AFTER,
-            request_timeout=self.config.api_request_timeout,
-            backoff_strategy=BackoffStrategy.EXPONENTIAL,
-        )
-
     def _create_retry_handler(self) -> OpenAIRetryHandler:
         """Create retry handler for OpenAI API."""
-        return OpenAIRetryHandler(self._create_retry_config())
+        config = self._create_retry_config_core()
+        return OpenAIRetryHandler(config)
 
     def _get_or_create_assistant(
         self, model_name: str, system_instruction: str
@@ -103,9 +93,7 @@ class OpenAIService(BaseLLMService):
             )
         return self._assistant_cache[key]
 
-    def create_assistant_model(
-        self, system_instruction: str
-    ) -> OpenAIChatCompletionModel:
+    def create_assistant_model(self, system_instruction: str) -> OpenAIChatCompletionModel:
         """Create an assistant model with custom system instruction."""
         return self._get_or_create_assistant(self._assistant_model_name, system_instruction)
 
@@ -299,14 +287,8 @@ class OpenAIService(BaseLLMService):
             )
             chat_session._model_name = model_name
 
-        # Extract images from messages
-        images = []
-        if isinstance(discord_message, list):
-            for msg in discord_message:
-                imgs = await self._extract_images_from_message(msg)
-                images.extend(imgs)
-        else:
-            images = await self._extract_images_from_message(discord_message)
+        # Extract images from message(s) - supports both single and list of messages
+        images = await self._extract_images_from_messages(discord_message)
 
         # Convert tools to OpenAI format if provided
         converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None
@@ -388,14 +370,8 @@ class OpenAIService(BaseLLMService):
             )
             chat_session._model_name = model_name
 
-        # Extract images from messages
-        images = []
-        if isinstance(discord_message, list):
-            for msg in discord_message:
-                imgs = await self._extract_images_from_message(msg)
-                images.extend(imgs)
-        else:
-            images = await self._extract_images_from_message(discord_message)
+        # Extract images from message(s) - supports both single and list of messages
+        images = await self._extract_images_from_messages(discord_message)
 
         # Convert tools to OpenAI format if provided
         converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None

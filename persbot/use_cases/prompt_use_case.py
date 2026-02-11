@@ -70,7 +70,7 @@ class PromptUseCase:
         self,
         config: AppConfig,
         llm_service: LLMService,
-    ):
+    ) -> None:
         """Initialize the prompt use case.
 
         Args:
@@ -174,9 +174,7 @@ class PromptUseCase:
 
         return True, None
 
-    async def optimize_prompt_for_cache(
-        self, prompt: str, target_tokens: int = 32768
-    ) -> str:
+    async def optimize_prompt_for_cache(self, prompt: str, target_tokens: int = 32768) -> str:
         """Optimize a prompt for context caching.
 
         Args:
@@ -186,8 +184,8 @@ class PromptUseCase:
         Returns:
             Optimized prompt.
         """
-        # TODO: Implement prompt optimization
-        # For now, return as-is
+        # TODO: Future enhancement - Implement prompt optimization for context caching
+        # Currently returns prompt as-is without optimization
         return prompt
 
     async def _generate_prompt_from_concept(
@@ -290,9 +288,7 @@ class PromptUseCase:
             timeout=60.0,
         )
 
-    async def _generate_questions_openai(
-        self, request: QuestionGenerationRequest
-    ) -> str:
+    async def _generate_questions_openai(self, request: QuestionGenerationRequest) -> str:
         """Generate questions using OpenAI-style API.
 
         Args:
@@ -321,9 +317,7 @@ class PromptUseCase:
             return raw_response.choices[0].message.content
         return raw_response
 
-    async def _generate_questions_gemini(
-        self, request: QuestionGenerationRequest
-    ) -> str:
+    async def _generate_questions_gemini(self, request: QuestionGenerationRequest) -> str:
         """Generate questions using Gemini API.
 
         Args:
@@ -333,9 +327,7 @@ class PromptUseCase:
             Raw response text.
         """
         backend = self.llm_service.summarizer_backend
-        question_model = backend.create_assistant_model(
-            QUESTION_GENERATION_PROMPT, use_cache=False
-        )
+        question_model = backend.create_assistant_model(QUESTION_GENERATION_PROMPT, use_cache=False)
 
         result = await backend.execute_with_retry(
             lambda: question_model.generate_content(request.concept),

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ImageUsageService:
     """Tracks daily image upload usage per user."""
 
-    def __init__(self, storage_path: str = "data/image_usage.json"):
+    def __init__(self, storage_path: str = "data/image_usage.json") -> None:
         self.storage_path = storage_path
         self._ensure_data_dir()
         self.usage_data: Dict[str, Dict[str, int]] = {}
@@ -22,7 +22,7 @@ class ImageUsageService:
         self._debounce_interval = 30  # seconds
         self._write_task: Optional[asyncio.Task] = None
 
-    def _ensure_data_dir(self):
+    def _ensure_data_dir(self) -> None:
         directory = os.path.dirname(self.storage_path)
         if directory:
             try:
@@ -35,7 +35,7 @@ class ImageUsageService:
         kst = datetime.timezone(datetime.timedelta(hours=9))
         return datetime.datetime.now(kst).strftime("%Y-%m-%d")
 
-    def _load(self):
+    def _load(self) -> None:
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
@@ -49,19 +49,19 @@ class ImageUsageService:
         # For simplicity, let's keep it simple for now, maybe cleanup on save.
         self._cleanup_old_entries()
 
-    def _save(self, data: Dict[str, Dict[str, int]]):
+    def _save(self, data: Dict[str, Dict[str, int]]) -> None:
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
         except Exception as e:
             logger.error(f"Failed to save image usage data: {e}")
 
-    async def _save_async(self):
+    async def _save_async(self) -> None:
         # Create a copy of the data in the main thread to avoid race conditions
         data_snapshot = self.usage_data.copy()
         await asyncio.to_thread(self._save, data_snapshot)
 
-    def _schedule_write(self):
+    def _schedule_write(self) -> None:
         """Schedule a debounced write operation."""
         # Cancel any existing write task
         if self._write_task and not self._write_task.done():
@@ -70,7 +70,7 @@ class ImageUsageService:
         # Schedule new write with debounce
         self._write_task = asyncio.create_task(self._flush_buffer())
 
-    async def _flush_buffer(self):
+    async def _flush_buffer(self) -> None:
         """Flush buffered changes to disk with debounce."""
         try:
             # Wait for debounce interval
@@ -86,7 +86,7 @@ class ImageUsageService:
         except Exception as e:
             logger.error(f"Error during flush buffer: {e}", exc_info=True)
 
-    def _cleanup_old_entries(self):
+    def _cleanup_old_entries(self) -> None:
         today = self._get_today_key()
         keys_to_remove = [k for k in self.usage_data.keys() if k != today]
         if keys_to_remove:
@@ -105,7 +105,7 @@ class ImageUsageService:
 
         return (current_usage + count) <= limit
 
-    async def record_upload(self, user_id: int, count: int):
+    async def record_upload(self, user_id: int, count: int) -> None:
         """Record an upload of 'count' images for the user."""
         today = self._get_today_key()
         if today not in self.usage_data:

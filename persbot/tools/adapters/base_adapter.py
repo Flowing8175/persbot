@@ -3,7 +3,7 @@
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from persbot.tools.base import ToolDefinition
 
@@ -98,7 +98,7 @@ class BaseToolAdapter(ABC):
     @staticmethod
     def _create_openai_style_tool_messages(
         results: List[Dict[str, Any]], handle_binary_data: bool = False
-) -> List[Dict[str, Any]]:
+    ) -> List[Dict[str, Any]]:
         """
         Create tool messages in OpenAI format (used by OpenAI and Z.AI).
 

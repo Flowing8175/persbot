@@ -22,7 +22,7 @@ __all__ = [
 
 
 # --- 페르소나 및 프롬프트 ---
-def load_persona():
+def load_persona() -> str:
     try:
         path = Path("persbot/assets/persona.md")
         if not path.exists():

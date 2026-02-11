@@ -128,7 +128,7 @@ async def get_time_basic(timezone_str: Optional[str] = None, **kwargs) -> ToolRe
             "time": now.strftime("%H:%M:%S"),
             "date": now.strftime("%Y-%m-%d"),
             "day_of_week": now.strftime("%A"),
-            "utc_offset": f"{int(offset/3600):+03d}:00",
+            "utc_offset": f"{int(offset / 3600):+03d}:00",
             "unix_timestamp": int(now.timestamp()),
         }
 
@@ -139,7 +139,7 @@ async def get_time_basic(timezone_str: Optional[str] = None, **kwargs) -> ToolRe
         return ToolResult(success=False, error=str(e))
 
 
-def register_time_tools(registry):
+def register_time_tools(registry) -> None:
     """Register time tools with the given registry.
 
     Args:

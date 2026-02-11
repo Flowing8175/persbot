@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 class PromptService:
-    def __init__(self, prompt_dir: str = "persbot/assets", usage_path: str = "prompt_usage.json"):
+    def __init__(
+        self, prompt_dir: str = "persbot/assets", usage_path: str = "prompt_usage.json"
+    ) -> None:
         self.prompt_dir = Path(prompt_dir)
         self.usage_path = usage_path
         self.prompts: List[Dict[str, str]] = []
@@ -28,7 +30,7 @@ class PromptService:
         self._load_sync()
         self._load_usage_sync()
 
-    def _load_sync(self):
+    def _load_sync(self) -> None:
         """Scans the assets directory for .md files and populates self.prompts."""
         self.prompts = []
 
@@ -78,7 +80,7 @@ class PromptService:
         elif not self.prompts:  # Only fallback if absolutely nothing and prev list empty
             self.prompts = [{"name": "기본값", "content": BOT_PERSONA_PROMPT, "path": ""}]
 
-    def _load_usage_sync(self):
+    def _load_usage_sync(self) -> None:
         if os.path.exists(self.usage_path):
             try:
                 with open(self.usage_path, "r", encoding="utf-8") as f:
@@ -89,7 +91,7 @@ class PromptService:
         else:
             self.usage_data = {}
 
-    async def _save_usage(self):
+    async def _save_usage(self) -> None:
         try:
             async with aiofiles.open(self.usage_path, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(self.usage_data, ensure_ascii=False, indent=4))
@@ -111,7 +113,7 @@ class PromptService:
         user_count = self.usage_data[today].get(str(user_id), 0)
         return user_count < limit
 
-    async def increment_today_usage(self, user_id: int):
+    async def increment_today_usage(self, user_id: int) -> None:
         """Increment the usage count for the user."""
         today = self._get_today_key()
         if today not in self.usage_data:

@@ -97,7 +97,7 @@ class SessionService:
         config: AppConfig,
         llm_service: LLMService,
         model_usage_service: ModelUsageService,
-    ):
+    ) -> None:
         """Initialize the session service.
 
         Args:
@@ -195,10 +195,7 @@ class SessionService:
         Returns:
             Number of sessions removed.
         """
-        to_remove = [
-            key for key, session in self._sessions.items()
-            if session.is_stale
-        ]
+        to_remove = [key for key, session in self._sessions.items() if session.is_stale]
 
         for key in to_remove:
             self._sessions.pop(key)

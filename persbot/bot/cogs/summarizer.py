@@ -61,7 +61,7 @@ class SummarizerCog(commands.Cog):
         대상: Optional[str] = None,
         방향: Optional[Literal["이후", "이전"]] = None,
         범위: Optional[str] = None,
-    ):
+    ) -> None:
         """
         채널의 대화 내용을 요약합니다.
 
@@ -85,7 +85,7 @@ class SummarizerCog(commands.Cog):
 
         await self._handle_summarize_args(ctx, tuple(args))
 
-    async def _handle_summarize_args(self, ctx: commands.Context, args: tuple):
+    async def _handle_summarize_args(self, ctx: commands.Context, args: tuple) -> None:
         """인자를 분석하여 적절한 요약 메서드를 호출합니다."""
         if len(args) == 0:
             # !요약 - 기본값: 최근 30분
@@ -159,7 +159,7 @@ class SummarizerCog(commands.Cog):
         # Discord 메시지 ID는 17-20자리 숫자
         return 17 <= len(arg) <= 20
 
-    async def _summarize_by_time(self, ctx: commands.Context, minutes: int):
+    async def _summarize_by_time(self, ctx: commands.Context, minutes: int) -> None:
         """시간 기반 요약을 수행합니다."""
         async with ctx.channel.typing():
             time_limit = datetime.now(timezone.utc) - timedelta(minutes=minutes)
@@ -182,7 +182,7 @@ class SummarizerCog(commands.Cog):
             else:
                 await send_discord_message(ctx, GENERIC_ERROR_MESSAGE)
 
-    async def summarize_by_id(self, ctx: commands.Context, message_id: int):
+    async def summarize_by_id(self, ctx: commands.Context, message_id: int) -> None:
         """특정 메시지 ID 이후의 메시지를 요약합니다."""
         try:
             start_message = await ctx.channel.fetch_message(message_id)
@@ -203,9 +203,7 @@ class SummarizerCog(commands.Cog):
                 count += 1
 
             if count == 0:
-                await send_discord_message(
-                    ctx, f"ℹ️ 메시지 ID `{message_id}` 이후 메시지가 없어요."
-                )
+                await send_discord_message(ctx, f"ℹ️ 메시지 ID `{message_id}` 이후 메시지가 없어요.")
                 return
 
             summary = await self.llm_service.summarize_text(full_text)
@@ -222,7 +220,7 @@ class SummarizerCog(commands.Cog):
         message_id: int,
         direction: Literal["이후", "이전"],
         time_str: str,
-    ):
+    ) -> None:
         """메시지 ID 기준 특정 시간 범위의 메시지를 요약합니다."""
         minutes = parse_korean_time(time_str)
         if minutes is None:
@@ -263,7 +261,7 @@ class SummarizerCog(commands.Cog):
                 await send_discord_message(ctx, GENERIC_ERROR_MESSAGE)
 
     @summarize.error
-    async def summarize_error(self, ctx, error):
+    async def summarize_error(self, ctx, error) -> None:
         if isinstance(error, commands.BadArgument):
             await send_discord_message(
                 ctx,

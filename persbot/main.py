@@ -51,7 +51,7 @@ def setup_logging(log_level: int) -> None:
     logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 
 
-async def main(config):
+async def main(config) -> None:
     """Initializes and runs the bot."""
     auto_channel_cog_cls = None
     if config.auto_reply_channel_ids:
@@ -96,7 +96,7 @@ async def main(config):
     tree_synced = False
 
     @bot.event
-    async def on_ready():
+    async def on_ready() -> None:
         nonlocal tree_synced
         if bot.user:
             logger.info(f"로그인 완료: {bot.user.name} ({bot.user.id})")
@@ -119,7 +119,7 @@ async def main(config):
                 logger.error(f"Failed to sync command tree: {e}")
 
     @bot.event
-    async def on_close():
+    async def on_close() -> None:
         """Cleanup on bot close."""
         logger.info("Services cleaned up successfully")
 

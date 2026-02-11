@@ -7,7 +7,7 @@ including session management, tool execution, and response handling.
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, Optional, Union
+from typing import Any, AsyncIterator, Callable, Optional, Tuple, Union
 
 import discord
 
@@ -57,7 +57,7 @@ class StreamChunk:
 
     text: str
     is_final: bool = False
-    metadata: dict[str, Any] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
 class ChatUseCase:
@@ -145,9 +145,7 @@ class ChatUseCase:
         tools = self._get_enabled_tools()
 
         # Check usage limits
-        notification = await self._check_usage_limits(
-            primary_message, chat_session
-        )
+        notification = await self._check_usage_limits(primary_message, chat_session)
         if notification and "초과" in notification:
             return ChatResponse(
                 text=notification,
@@ -240,7 +238,7 @@ class ChatUseCase:
         self,
         primary_message: discord.Message,
         resolution: ResolvedSession,
-    ) -> tuple:
+    ) -> Tuple[object, str]:
         """Get or create a chat session.
 
         Args:
@@ -260,7 +258,7 @@ class ChatUseCase:
             message_id=str(primary_message.id),
         )
 
-    def _get_enabled_tools(self) -> Optional[list]:
+    def _get_enabled_tools(self) -> Optional[list[Any]]:
         """Get list of enabled tools.
 
         Returns:
@@ -283,18 +281,17 @@ class ChatUseCase:
             Notification message if limit reached, None otherwise.
         """
         model_alias = getattr(
-            chat_session, "model_alias",
-            self.llm_service.model_usage_service.DEFAULT_MODEL_ALIAS
+            chat_session, "model_alias", self.llm_service.model_usage_service.DEFAULT_MODEL_ALIAS
         )
 
-        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(
-            message
-        )
+        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(message)
 
-        is_allowed, final_alias, notification = (
-            await self.llm_service.model_usage_service.check_and_increment_usage(
-                guild_id, model_alias
-            )
+        (
+            is_allowed,
+            final_alias,
+            notification,
+        ) = await self.llm_service.model_usage_service.check_and_increment_usage(
+            guild_id, model_alias
         )
 
         if final_alias != model_alias:
@@ -302,7 +299,9 @@ class ChatUseCase:
 
         return notification if not is_allowed else None
 
-    def _extract_message_metadata(self, message: discord.Message) -> tuple:
+    def _extract_message_metadata(
+        self, message: discord.Message
+    ) -> Tuple[int, int, int, discord.abc.User]:
         """Extract metadata from a Discord message.
 
         Args:
@@ -431,9 +430,7 @@ class ChatUseCase:
             )
 
             # Send progress notification
-            progress_msg = await self._send_tool_progress(
-                function_calls, primary_message.channel
-            )
+            progress_msg = await self._send_tool_progress(function_calls, primary_message.channel)
 
             try:
                 # Execute tools

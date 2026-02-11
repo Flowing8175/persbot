@@ -47,7 +47,7 @@ class AutoChannelCog(BaseChatCog):
         # Load dynamic channels (async)
         asyncio.create_task(self._load_dynamic_channels())
 
-    async def _load_dynamic_channels(self):
+    async def _load_dynamic_channels(self) -> None:
         """Loads auto-channels from JSON and updates config."""
         # Using async load for consistency with write operations
         self.dynamic_channel_ids = set()
@@ -68,7 +68,7 @@ class AutoChannelCog(BaseChatCog):
             f"Loaded auto-channels. Env: {len(self.env_channel_ids)}, Dynamic: {len(self.dynamic_channel_ids)}, Total: {len(self.config.auto_reply_channel_ids)}"
         )
 
-    async def _save_dynamic_channels(self):
+    async def _save_dynamic_channels(self) -> None:
         """Saves dynamic auto-channels to JSON and updates config."""
         try:
             # Create data dir if not exists (though it should exist)
@@ -84,7 +84,7 @@ class AutoChannelCog(BaseChatCog):
             logger.error(f"Failed to save auto channels to {self.json_file_path}: {e}")
 
     @commands.group(name="자동채널", aliases=["auto"], invoke_without_command=True)
-    async def auto_channel_group(self, ctx: commands.Context):
+    async def auto_channel_group(self, ctx: commands.Context) -> None:
         """자동 응답 채널 설정 관리 명령어"""
         # Check permissions unless NO_CHECK_PERMISSION is set
         if not self.config.no_check_permission:
@@ -100,7 +100,7 @@ class AutoChannelCog(BaseChatCog):
         await ctx.send_help(ctx.command)
 
     @auto_channel_group.command(name="등록", aliases=["register", "add"])
-    async def register_channel(self, ctx: commands.Context):
+    async def register_channel(self, ctx: commands.Context) -> None:
         """현재 채널을 자동 응답 채널로 등록합니다."""
         channel_id = ctx.channel.id
 
@@ -113,7 +113,7 @@ class AutoChannelCog(BaseChatCog):
         await ctx.message.add_reaction("✅")
 
     @auto_channel_group.command(name="해제", aliases=["unregister", "remove"])
-    async def unregister_channel(self, ctx: commands.Context):
+    async def unregister_channel(self, ctx: commands.Context) -> None:
         """현재 채널을 자동 응답 채널에서 해제합니다."""
         channel_id = ctx.channel.id
 
@@ -140,11 +140,11 @@ class AutoChannelCog(BaseChatCog):
         # Use base class method (handles streaming/non-streaming based on break_cut_mode)
         await self._handle_break_cut_sending(message.channel.id, message.channel, reply)
 
-    async def _handle_error(self, message: discord.Message, error: Exception):
+    async def _handle_error(self, message: discord.Message, error: Exception) -> None:
         await message.channel.send(GENERIC_ERROR_MESSAGE)
 
     @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
+    async def on_message(self, message: discord.Message) -> None:
         if message.author.bot:
             return
 
@@ -173,7 +173,7 @@ class AutoChannelCog(BaseChatCog):
     @commands.Cog.listener()
     async def on_typing(
         self, channel: discord.abc.Messageable, user: discord.abc.User, when: float
-    ):
+    ) -> None:
         """Interrupt auto-reply if user starts typing."""
         if user.bot:
             return
@@ -189,7 +189,9 @@ class AutoChannelCog(BaseChatCog):
             self.message_buffer.handle_typing(channel.id, self._process_batch)
 
     @commands.command(name="@", aliases=["undo"])
-    async def undo_command(self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"):
+    async def undo_command(
+        self, ctx: commands.Context, num_to_undo_str: Optional[str] = "1"
+    ) -> None:
         """Deletes the last N user/assistant message pairs from the chat history."""
         if ctx.channel.id not in self.config.auto_reply_channel_ids:
             return
@@ -233,7 +235,7 @@ class AutoChannelCog(BaseChatCog):
         else:
             await ctx.message.add_reaction("❌")
 
-    def _validate_undo_arg(self, num_to_undo_str: str) -> Optional[int]:
+    def _validate_undo_arg(self, num_to_undo_str: Optional[str]) -> Optional[int]:
         """Validate undo count argument. Returns None if invalid."""
         try:
             num = int(num_to_undo_str)
@@ -334,7 +336,7 @@ class AutoChannelCog(BaseChatCog):
         except (discord.Forbidden, discord.HTTPException, discord.NotFound):
             pass
 
-    async def cog_command_error(self, ctx: commands.Context, error: Exception):
+    async def cog_command_error(self, ctx: commands.Context, error: Exception) -> None:
         """Cog 내 명령어 에러 핸들러"""
         if isinstance(error, commands.MissingPermissions):
             await ctx.reply(

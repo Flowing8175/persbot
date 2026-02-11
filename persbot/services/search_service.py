@@ -18,11 +18,13 @@ logger = logging.getLogger(__name__)
 
 class SearchError(Exception):
     """Base exception for search errors."""
+
     pass
 
 
 class SearchRateLimitError(SearchError):
     """Exception raised when search rate limit is exceeded."""
+
     pass
 
 
@@ -36,7 +38,7 @@ class SearchService:
     - Proper timeout handling
     """
 
-    def __init__(self, config: Optional[AppConfig] = None):
+    def __init__(self, config: Optional[AppConfig] = None) -> None:
         """Initialize the search service.
 
         Args:
