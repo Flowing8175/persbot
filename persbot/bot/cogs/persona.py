@@ -193,16 +193,6 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 class PromptAnswerModal(discord.ui.Modal):
     """Modal for answering LLM-generated questions about the persona."""
 
-    # Checkbox-like toggle for using sample answers
-    use_examples = discord.ui.TextInput(
-        label="예시 답변 사용 (비워두면 예시 사용)",
-        placeholder="Y: 빈칸에 예시 자동적용 / N: 직접 입력만",
-        style=discord.TextStyle.short,
-        required=False,
-        max_length=1,
-        default="Y",
-    )
-
     def __init__(
         self,
         view: "PromptManagerView",
@@ -214,21 +204,25 @@ class PromptAnswerModal(discord.ui.Modal):
         self.concept = concept
         self.questions = questions
 
-        # Dynamically create TextInput fields for each question (max 4 due to checkbox taking 1 slot)
-        for i, q in enumerate(questions[:4]):  # Reduced to 4 to make room for checkbox
+        # Dynamically create TextInput fields for each question
+        # Use discord.ui.Label to wrap TextInput with description for full question text
+        # Label text: 45 chars max, Description: 100 chars max
+        for i, q in enumerate(questions[:5]):
             sample = q.get('sample_answer', '자유롭게 작성')
             # Create TextInput without label (label is deprecated, use Label wrapper)
             text_input = discord.ui.TextInput(
                 style=discord.TextStyle.long,
                 required=False,
                 max_length=500,
-                placeholder=f"예시: {sample}"[:100]
+                placeholder=sample[:100]
             )
             # Wrap TextInput in Label with short text + long description
-            question_text = q['question'][:95] if len(q['question']) > 95 else q['question']
+            # Label text: Short identifier like "Q1" (45 chars max)
+            # Description: Full question text (100 chars max, truncate if needed)
+            question_text = q['question'][:95] + " (비워두면 예시 사용)" if len(q['question']) > 95 else q['question'] + " (비워두면 예시 사용)"
             label = discord.ui.Label(
                 text=f"Q{i+1}",
-                description=question_text,
+                description=question_text[:100],
                 component=text_input
             )
             setattr(self, f'answer_{i}', text_input)
@@ -239,29 +233,15 @@ class PromptAnswerModal(discord.ui.Modal):
         # Use deferred response because generation takes time
         await interaction.response.defer(ephemeral=False)
 
-        # Check if user wants to use examples for blank fields
-        use_examples = self.use_examples.value.strip().upper() in ("Y", "YES", "예", "1", "")
-
         # Build Q&A string
         qa_pairs = []
-        for i, q in enumerate(self.questions[:4]):
+        for i, q in enumerate(self.questions):
             answer_field = getattr(self, f'answer_{i}', None)
             if answer_field:
                 answer_value = answer_field.value.strip()
-                # If field is empty and use_examples is enabled, use the sample answer
-                if not answer_value and use_examples:
-                    answer_value = q.get('sample_answer', '')
-                # Only add if we have a value (either user input or sample)
-                if answer_value:
-                    qa_pairs.append(f"Q: {q['question']}\nA: {answer_value}")
-
-        # Handle remaining questions (5th question if exists) - auto-use example since no field
-        if len(self.questions) > 4 and use_examples:
-            for i in range(4, min(len(self.questions), 5)):
-                q = self.questions[i]
-                sample = q.get('sample_answer', '')
-                if sample:
-                    qa_pairs.append(f"Q: {q['question']}\nA: {sample}")
+                # Use user's answer, or fall back to sample answer if empty
+                final_answer = answer_value if answer_value else q.get('sample_answer', '')
+                qa_pairs.append(f"Q: {q['question']}\nA: {final_answer}")
 
         questions_and_answers = "\n\n".join(qa_pairs) if qa_pairs else "No additional answers provided."
 
