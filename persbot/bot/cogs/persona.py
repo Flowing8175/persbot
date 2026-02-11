@@ -190,15 +190,8 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
             await msg.edit(content=f"❌ 오류 발생: {str(e)}")
 
 
-class PromptAnswerModal(discord.ui.Modal, title="페르소나 질문 답변"):
+class PromptAnswerModal(discord.ui.Modal):
     """Modal for answering LLM-generated questions about the persona."""
-
-    # Define maximum number of questions as class attributes
-    answer_1 = discord.ui.TextInput(label="질문 1", style=discord.TextStyle.long, required=False, max_length=500)
-    answer_2 = discord.ui.TextInput(label="질문 2", style=discord.TextStyle.long, required=False, max_length=500)
-    answer_3 = discord.ui.TextInput(label="질문 3", style=discord.TextStyle.long, required=False, max_length=500)
-    answer_4 = discord.ui.TextInput(label="질문 4", style=discord.TextStyle.long, required=False, max_length=500)
-    answer_5 = discord.ui.TextInput(label="질문 5", style=discord.TextStyle.long, required=False, max_length=500)
 
     def __init__(
         self,
@@ -211,18 +204,19 @@ class PromptAnswerModal(discord.ui.Modal, title="페르소나 질문 답변"):
         self.concept = concept
         self.questions = questions
 
-        # Update labels and placeholders dynamically
-        answer_fields = [self.answer_1, self.answer_2, self.answer_3, self.answer_4, self.answer_5]
+        # Dynamically create TextInput fields for each question
+        # Create attributes dynamically and add them to the modal
         for i, q in enumerate(questions[:5]):
             sample = q.get('sample_answer', '자유롭게 작성')
-            answer_fields[i].label = f"Q{i+1}: {q['question'][:45]}..."
-            answer_fields[i].placeholder = f"예시: {sample}"[:100]
-
-        # Hide unused fields by removing them from children
-        # Note: Discord.py doesn't support removing items after init, so we set placeholder for unused
-        for i in range(len(questions), 5):
-            answer_fields[i].label = f"(사용 안함 - 생략 가능)"
-            answer_fields[i].placeholder = "이 필드는 비워두세요"
+            text_input = discord.ui.TextInput(
+                label=f"Q{i+1}: {q['question'][:45]}...",
+                style=discord.TextStyle.long,
+                required=False,
+                max_length=500,
+                placeholder=f"예시: {sample}"[:100]
+            )
+            setattr(self, f'answer_{i}', text_input)
+            self.add_item(text_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         # Use deferred response because generation takes time
@@ -230,10 +224,10 @@ class PromptAnswerModal(discord.ui.Modal, title="페르소나 질문 답변"):
 
         # Build Q&A string
         qa_pairs = []
-        answer_fields = [self.answer_1, self.answer_2, self.answer_3, self.answer_4, self.answer_5]
         for i, q in enumerate(self.questions):
-            if i < len(answer_fields):
-                answer_value = answer_fields[i].value.strip()
+            answer_field = getattr(self, f'answer_{i}', None)
+            if answer_field:
+                answer_value = answer_field.value.strip()
                 if answer_value:
                     qa_pairs.append(f"Q: {q['question']}\nA: {answer_value}")
 
