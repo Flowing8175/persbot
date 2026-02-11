@@ -27,17 +27,19 @@ logger = logging.getLogger(__name__)
 class BotReloader(FileSystemEventHandler):
     """Handles file system events and triggers bot reload."""
 
-    def __init__(self, bot_process_args, debounce_seconds=1.0, ignore_patterns=None):
+    def __init__(self, bot_process_args, project_root, debounce_seconds=1.0, ignore_patterns=None):
         """
         Initialize the BotReloader.
 
         Args:
             bot_process_args: List of arguments to pass to subprocess to run the bot
+            project_root: Path to the project root directory (needed for module imports)
             debounce_seconds: Seconds to wait before restarting (prevents multiple restarts)
             ignore_patterns: List of glob patterns to ignore (e.g., ['*.pyc', '__pycache__'])
         """
         super().__init__()
         self.bot_process_args = bot_process_args
+        self.project_root = project_root
         self.debounce_seconds = debounce_seconds
         self.ignore_patterns = ignore_patterns or ["*.pyc", "__pycache__", "*.pyo", ".git"]
         self.last_restart_time = 0
@@ -104,13 +106,20 @@ class BotReloader(FileSystemEventHandler):
             except Exception as e:
                 logger.error(f"❌ Error stopping bot: {e}")
 
-        # Start a new bot process
+        # Start a new bot process with proper environment
+        import os as os_module
+        env = os_module.environ.copy()
+        # Add project root to PYTHONPATH for module resolution
+        env["PYTHONPATH"] = str(self.project_root)
+
         try:
             logger.info("🚀 Starting new bot instance...")
             self.process = subprocess.Popen(
                 self.bot_process_args,
                 stdout=None,  # Inherit stdout from parent
                 stderr=None,  # Inherit stderr from parent
+                cwd=str(self.project_root),  # Set working directory to project root
+                env=env,  # Pass environment with PYTHONPATH set
             )
             logger.info(f"✅ Bot started with PID: {self.process.pid}")
         except Exception as e:
@@ -160,18 +169,21 @@ def main():
         logger.error(f"❌ Path does not exist: {watch_path}")
         sys.exit(1)
 
-    # Main bot script
+    # Main bot script - verify it exists
     main_script = Path(__file__).parent / "persbot" / "main.py"
     if not main_script.exists():
         logger.error(f"❌ Main bot script not found: {main_script}")
         sys.exit(1)
 
-    # Bot process arguments
-    bot_process_args = [args.python, str(main_script)]
+    # Bot process arguments - run as module to ensure proper import resolution
+    # Using -m flag ensures persbot package is properly recognized
+    project_root = Path(__file__).parent.resolve()
+    bot_process_args = [args.python, "-m", "persbot.main"]
 
     # Create and setup the reloader
     event_handler = BotReloader(
         bot_process_args=bot_process_args,
+        project_root=project_root,
         debounce_seconds=args.debounce,
         ignore_patterns=["*.pyc", "__pycache__", "*.pyo", ".git", ".pytest_cache", "htmlcov"],
     )
