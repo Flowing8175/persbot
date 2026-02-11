@@ -75,6 +75,23 @@ class TestLLMService(BaseLLMService):
         """Generate chat response."""
         return self._extracted_text, self._response_obj
 
+    def get_tools_for_provider(self, tools):
+        """Return tools as-is for testing."""
+        return tools
+
+    def extract_function_calls(self, response):
+        """Return empty list for testing."""
+        return []
+
+    def format_function_results(self, results):
+        """Return results as-is for testing."""
+        return results
+
+    def _create_retry_handler(self):
+        """Return a retry handler for testing."""
+        from persbot.services.retry_handler import GeminiRetryHandler, RetryConfig
+        return GeminiRetryHandler(RetryConfig())
+
 
 class RateLimitError(Exception):
     """Mock rate limit error."""

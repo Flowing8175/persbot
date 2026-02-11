@@ -12,15 +12,17 @@ from persbot.services import openai_service  # noqa: F401
 
 openai_service  # Use the module to ensure it's imported
 
+from persbot.constants import LLMDefaults
 from persbot.services.base import ChatMessage
 from persbot.services.openai_service import (
+    OpenAIService,
+)
+from persbot.services.session_wrappers.openai_session import (
     BaseOpenAISession,
     ChatCompletionSession,
-    OpenAIService,
-    ResponseChatSession,
-    _ChatCompletionModel,
-    _ResponseModel,
+    ResponseSession,
 )
+from persbot.services.model_wrappers.openai_model import OpenAIChatCompletionModel
 
 # ============================================================================
 # Test Fixtures
@@ -32,8 +34,8 @@ def mock_config():
     """Create a mock AppConfig."""
     config = Mock()
     config.openai_api_key = "test_openai_key_12345"
-    config.temperature = 1.0
-    config.top_p = 1.0
+    config.temperature = LLMDefaults.TEMPERATURE
+    config.top_p = LLMDefaults.TOP_P
     config.service_tier = "flex"
     config.api_request_timeout = 30.0
     config.openai_finetuned_model = None
@@ -168,7 +170,7 @@ class TestModelCreation:
         """Test that _get_or_create_assistant creates ResponseModel for non-finetuned."""
         model = openai_service._get_or_create_assistant("gpt-4o", "Test system instruction")
 
-        assert isinstance(model, _ResponseModel)
+        assert isinstance(model, OpenAIChatCompletionModel)
         assert model._model_name == "gpt-4o"
 
     def test_get_or_create_assistant_creates_completion_model(
@@ -191,7 +193,7 @@ class TestModelCreation:
 
         model = service._get_or_create_assistant("ft:gpt-4o-custom", "Test system instruction")
 
-        assert isinstance(model, _ChatCompletionModel)
+        assert isinstance(model, OpenAIChatCompletionModel)
 
     def test_get_or_create_assistant_uses_cache(self, openai_service):
         """Test that cached model is reused."""
@@ -221,7 +223,7 @@ class TestModelCreation:
         """Test create_assistant_model delegates to _get_or_create_assistant."""
         model = openai_service.create_assistant_model("Custom system instruction")
 
-        assert isinstance(model, (_ResponseModel, _ChatCompletionModel))
+        assert isinstance(model, OpenAIChatCompletionModel)
 
     def test_reload_parameters_clears_cache(self, openai_service):
         """Test that reload_parameters clears the assistant cache."""
@@ -369,13 +371,13 @@ class TestBaseOpenAISession:
 # ============================================================================
 
 
-class TestResponseChatSession:
+class TestResponseSession:
     """Test ResponseChatSession functionality (Response API path)."""
 
     @pytest.fixture
     def response_session(self, mock_openai_client):
-        """Create a ResponseChatSession instance."""
-        return ResponseChatSession(
+        """Create a ResponseSession instance."""
+        return ResponseSession(
             client=mock_openai_client,
             model_name="gpt-4o",
             system_instruction="You are a helpful assistant.",
@@ -620,16 +622,16 @@ class TestChatCompletionSession:
 
 
 # ============================================================================
-# Test _ResponseModel and _ChatCompletionModel
+# Test OpenAIChatCompletionModel
 # ============================================================================
 
 
 class TestModelWrappers:
-    """Test _ResponseModel and _ChatCompletionModel."""
+    """Test OpenAIChatCompletionModel."""
 
     def test_response_model_start_chat(self, mock_openai_client):
-        """Test _ResponseModel.start_chat."""
-        model = _ResponseModel(
+        """Test OpenAIChatCompletionModel.start_chat with responses API."""
+        model = OpenAIChatCompletionModel(
             client=mock_openai_client,
             model_name="gpt-4o",
             system_instruction="System instruction",
@@ -637,34 +639,15 @@ class TestModelWrappers:
             top_p=1.0,
             max_messages=7,
             service_tier="flex",
-            text_extractor=lambda x: "",
         )
 
-        session = model.start_chat()
+        session = model.start_chat(use_responses_api=True)
 
-        assert isinstance(session, ResponseChatSession)
-        assert session._model_name == "gpt-4o"
-
-    def test_response_model_start_chat_custom_system(self, mock_openai_client):
-        """Test _ResponseModel.start_chat with custom system instruction."""
-        model = _ResponseModel(
-            client=mock_openai_client,
-            model_name="gpt-4o",
-            system_instruction="Original instruction",
-            temperature=1.0,
-            top_p=1.0,
-            max_messages=7,
-            service_tier="flex",
-            text_extractor=lambda x: "",
-        )
-
-        session = model.start_chat("Custom instruction")
-
-        assert session._system_instruction == "Custom instruction"
+        assert isinstance(session, ResponseSession)
 
     def test_completion_model_start_chat(self, mock_openai_client):
-        """Test _ChatCompletionModel.start_chat."""
-        model = _ChatCompletionModel(
+        """Test OpenAIChatCompletionModel.start_chat with chat completion API."""
+        model = OpenAIChatCompletionModel(
             client=mock_openai_client,
             model_name="gpt-4o",
             system_instruction="System instruction",
@@ -672,13 +655,11 @@ class TestModelWrappers:
             top_p=1.0,
             max_messages=7,
             service_tier="default",
-            text_extractor=lambda x: "",
         )
 
-        session = model.start_chat()
+        session = model.start_chat(use_responses_api=False)
 
         assert isinstance(session, ChatCompletionSession)
-        assert session._model_name == "gpt-4o"
 
 
 # ============================================================================

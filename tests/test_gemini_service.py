@@ -8,17 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 import pytest
 import pytest_asyncio
 
+from persbot.constants import CacheConfig, LLMDefaults
 from persbot.services.base import ChatMessage
 from persbot.services.gemini_service import (
-    DEFAULT_CACHE_MIN_TOKENS,
-    DEFAULT_CACHE_TTL_MINUTES,
-    DEFAULT_TEMPERATURE,
-    DEFAULT_TOP_P,
     GeminiService,
-    _CachedModel,
-    _ChatSession,
     extract_clean_text,
 )
+from persbot.services.model_wrappers.gemini_model import GeminiCachedModel
+from persbot.services.session_wrappers.gemini_session import GeminiChatSession
 
 # ============================================================================
 # Test Fixtures
@@ -30,11 +27,11 @@ def mock_config():
     """Create a mock AppConfig."""
     config = Mock()
     config.gemini_api_key = "test_gemini_key_12345"
-    config.temperature = 1.0
-    config.top_p = 1.0
+    config.temperature = LLMDefaults.TEMPERATURE
+    config.top_p = LLMDefaults.TOP_P
     config.thinking_budget = None
-    config.gemini_cache_min_tokens = DEFAULT_CACHE_MIN_TOKENS
-    config.gemini_cache_ttl_minutes = DEFAULT_CACHE_TTL_MINUTES
+    config.gemini_cache_min_tokens = CacheConfig.MIN_TOKENS
+    config.gemini_cache_ttl_minutes = CacheConfig.TTL_MINUTES
     config.api_request_timeout = 30.0
     config.api_max_retries = 3
     config.api_rate_limit_retry_after = 10.0
@@ -349,7 +346,7 @@ class TestModelCaching:
             "gemini-2.5-flash", "Test system instruction", use_cache=False
         )
 
-        assert isinstance(model, _CachedModel)
+        assert isinstance(model, GeminiCachedModel)
         assert model._model_name == "gemini-2.5-flash"
 
     def test_get_or_create_model_uses_cache(self, gemini_service):
@@ -533,14 +530,14 @@ class TestContentGeneration:
     """Test content generation methods."""
 
     def test_cached_model_generate_content(self, mock_genai_client, mock_genai_types):
-        """Test _CachedModel.generate_content."""
+        """Test GeminiCachedModel.generate_content."""
         mock_config_obj = Mock()
         mock_config_obj.temperature = 1.0
         mock_config_obj.top_p = 1.0
         mock_config_obj.cached_content = None
         mock_config_obj.system_instruction = "Test instruction"
 
-        model = _CachedModel(mock_genai_client, "gemini-2.5-flash", mock_config_obj)
+        model = GeminiCachedModel(mock_genai_client, "gemini-2.5-flash", mock_config_obj)
 
         contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
         model.generate_content(contents)
@@ -548,14 +545,14 @@ class TestContentGeneration:
         mock_genai_client.models.generate_content.assert_called_once()
 
     def test_cached_model_generate_content_with_tools(self, mock_genai_client, mock_genai_types):
-        """Test _CachedModel.generate_content with tools."""
+        """Test GeminiCachedModel.generate_content with tools."""
         mock_config_obj = Mock()
         mock_config_obj.temperature = 1.0
         mock_config_obj.top_p = 1.0
         mock_config_obj.cached_content = None
         mock_config_obj.system_instruction = "Test instruction"
 
-        model = _CachedModel(mock_genai_client, "gemini-2.5-flash", mock_config_obj)
+        model = GeminiCachedModel(mock_genai_client, "gemini-2.5-flash", mock_config_obj)
 
         contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
         mock_tools = [Mock()]
@@ -566,14 +563,14 @@ class TestContentGeneration:
     def test_cached_model_generate_content_with_cached_content(
         self, mock_genai_client, mock_genai_types
     ):
-        """Test _CachedModel.generate_content ignores tools when cached_content is set."""
+        """Test GeminiCachedModel.generate_content ignores tools when cached_content is set."""
         mock_config_obj = Mock()
         mock_config_obj.temperature = 1.0
         mock_config_obj.top_p = 1.0
         mock_config_obj.cached_content = "cached-name"
         mock_config_obj.thinking_config = None
 
-        model = _CachedModel(mock_genai_client, "gemini-2.5-flash", mock_config_obj)
+        model = GeminiCachedModel(mock_genai_client, "gemini-2.5-flash", mock_config_obj)
 
         contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
         mock_tools = [Mock()]
@@ -590,12 +587,12 @@ class TestContentGeneration:
 
 
 class TestChatSession:
-    """Test _ChatSession functionality."""
+    """Test GeminiChatSession functionality."""
 
     def test_chat_session_initialization(self):
-        """Test _ChatSession initialization."""
+        """Test GeminiChatSession initialization."""
         mock_factory = Mock()
-        session = _ChatSession("System instruction", mock_factory)
+        session = GeminiChatSession("System instruction", mock_factory)
 
         assert session._system_instruction == "System instruction"
         assert session._factory is mock_factory
@@ -604,14 +601,14 @@ class TestChatSession:
     def test_chat_session_history_maxlen(self):
         """Test that chat session history has maxlen."""
         mock_factory = Mock()
-        session = _ChatSession("System instruction", mock_factory)
+        session = GeminiChatSession("System instruction", mock_factory)
 
         assert session.history.maxlen == 50
 
     def test_get_api_history_empty(self):
         """Test _get_api_history with empty history."""
         mock_factory = Mock()
-        session = _ChatSession("System instruction", mock_factory)
+        session = GeminiChatSession("System instruction", mock_factory)
 
         api_history = session._get_api_history()
         assert api_history == []
@@ -619,7 +616,7 @@ class TestChatSession:
     def test_get_api_history_with_messages(self):
         """Test _get_api_history with messages."""
         mock_factory = Mock()
-        session = _ChatSession("System instruction", mock_factory)
+        session = GeminiChatSession("System instruction", mock_factory)
 
         msg = ChatMessage(role="user", content="Hello", parts=[{"text": "Hello"}], author_id=123456)
         session.history.append(msg)
@@ -636,7 +633,7 @@ class TestChatSession:
         mock_factory = Mock()
         mock_factory.generate_content = Mock(return_value=mock_response)
 
-        session = _ChatSession("System instruction", mock_factory)
+        session = GeminiChatSession("System instruction", mock_factory)
 
         result = session.send_message(
             "Hello bot", author_id=123456, author_name="TestUser", message_ids=["123"]
@@ -657,7 +654,7 @@ class TestChatSession:
         mock_factory = Mock()
         mock_factory.generate_content = Mock(return_value=mock_response)
 
-        session = _ChatSession("System instruction", mock_factory)
+        session = GeminiChatSession("System instruction", mock_factory)
 
         image_data = b"\x89PNG\r\n\x1a\n"
         result = session.send_message("Hello", author_id=123456, images=[image_data])
@@ -674,7 +671,7 @@ class TestChatSession:
         mock_factory = Mock()
         mock_factory.generate_content = Mock(return_value=mock_response)
 
-        session = _ChatSession("System instruction", mock_factory)
+        session = GeminiChatSession("System instruction", mock_factory)
 
         mock_tools = [Mock()]
         result = session.send_message("Hello", author_id=123456, tools=mock_tools)
@@ -973,7 +970,7 @@ class TestCreateAssistantModel:
         """Test creating assistant model."""
         model = gemini_service.create_assistant_model("Custom system instruction", use_cache=False)
 
-        assert isinstance(model, _CachedModel)
+        assert isinstance(model, GeminiCachedModel)
 
     def test_create_assistant_model_with_cache(self, gemini_service):
         """Test creating assistant model with cache."""
