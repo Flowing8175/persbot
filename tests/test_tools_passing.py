@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock, call, patch
 import pytest
 
 from persbot.services.llm_service import LLMService
+from persbot.services.gemini_service import GeminiService
 from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter
 
