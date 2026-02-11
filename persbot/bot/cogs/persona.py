@@ -41,7 +41,7 @@ class PromptModeSelectView(discord.ui.View):
     @discord.ui.button(label="취소", style=discord.ButtonStyle.danger, emoji="❌", row=1)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Cancel mode selection."""
-        await interaction.response.delete_message()
+        await interaction.response.edit_message(content="❌ 페르소나 생성이 취소되었습니다.", view=None)
 
 
 class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성"):
@@ -441,7 +441,7 @@ class PromptManagerView(discord.ui.View):
         embed.add_field(name="🧠 AI 질문 모드", value="AI가 질문을 생성하고 답변으로 상세하게 커스텀", inline=False)
 
         view = PromptModeSelectView(self)
-        await send_discord_message(interaction, "", embed=embed, view=view, ephemeral=True)
+        await send_discord_message(interaction, "", embed=embed, view=view, ephemeral=False)
 
     async def on_file_add(self, interaction: discord.Interaction):
         # Check permissions unless NO_CHECK_PERMISSION is set
