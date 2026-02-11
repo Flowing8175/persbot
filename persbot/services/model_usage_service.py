@@ -85,9 +85,12 @@ class ModelUsageService:
                         {v.api_model_name: k for k, v in self.MODEL_DEFINITIONS.items()}
                     )
                     # Update default model alias based on configured provider
-                    self.DEFAULT_MODEL_ALIAS = self.PROVIDER_DEFAULTS.get(
+                    # Update BOTH instance and class variable since class variable is accessed directly elsewhere
+                    default_alias = self.PROVIDER_DEFAULTS.get(
                         self._default_provider, "Gemini 2.5 flash"
                     )
+                    self.DEFAULT_MODEL_ALIAS = default_alias
+                    ModelUsageService.DEFAULT_MODEL_ALIAS = default_alias
             except Exception as e:
                 logger.error(f"Failed to load model definitions: {e}")
                 # Fallback or empty? If critical, we might want to raise, but let's log.
