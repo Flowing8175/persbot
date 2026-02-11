@@ -5,7 +5,7 @@ must implement, ensuring consistent behavior across different backends.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
 
@@ -329,7 +329,7 @@ class ProviderCaps:
     )
 
     ZAI = ProviderCapabilities(
-        supports_streaming=False,
+        supports_streaming=True,
         supports_function_calling=True,
         supports_vision=True,
         supports_context_cache=False,

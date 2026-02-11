@@ -6,7 +6,7 @@ It acts as a factory and registry for provider backends.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union
 
 import discord
 
@@ -519,6 +519,98 @@ class LLMService:
         )
 
         return self._prepare_response_with_notification(response, notification)
+
+    async def generate_chat_response_stream(
+        self,
+        chat_session,
+        user_message: str,
+        discord_message,
+        use_summarizer_backend: bool = False,
+        tools: Optional[List[Any]] = None,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> AsyncIterator[str]:
+        """Generate a streaming chat response.
+
+        Yields text chunks as they arrive from the API.
+        Chunks are yielded after each line break for faster initial response.
+
+        Args:
+            chat_session: The chat session.
+            user_message: The user's message.
+            discord_message: The Discord message(s).
+            use_summarizer_backend: Whether to use summarizer backend.
+            tools: Optional list of tools for function calling.
+            cancel_event: Optional cancellation event.
+
+        Yields:
+            Text chunks as they are generated.
+        """
+        # Extract metadata
+        model_alias = getattr(
+            chat_session, "model_alias",
+            self.model_usage_service.DEFAULT_MODEL_ALIAS
+        )
+        user_id, channel_id, guild_id, primary_author = (
+            self._extract_message_metadata(discord_message)
+        )
+
+        # Check usage limits
+        is_allowed, final_alias, notification = (
+            await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
+        )
+        if final_alias != model_alias:
+            chat_session.model_alias = final_alias
+
+        if not is_allowed:
+            yield notification or "❌ 사용 한도를 초과했습니다."
+            return
+
+        # Get backend
+        api_model_name = self.model_usage_service.get_api_model_name(final_alias)
+        active_backend = (
+            self.summarizer_backend
+            if use_summarizer_backend
+            else self.get_backend_for_model(final_alias)
+        )
+
+        if not active_backend:
+            yield "❌ 선택한 모델을 사용할 수 없습니다."
+            return
+
+        # Check if backend supports streaming
+        if not hasattr(active_backend, "generate_chat_response_stream"):
+            # Fall back to non-streaming
+            logger.warning("Backend %s does not support streaming, falling back", type(active_backend).__name__)
+            result = await active_backend.generate_chat_response(
+                chat_session,
+                user_message,
+                discord_message,
+                model_name=api_model_name,
+                tools=tools,
+                cancel_event=cancel_event,
+            )
+            if result:
+                text, _ = result
+                if notification:
+                    yield f"📢 {notification}\n\n{text}"
+                else:
+                    yield text
+            return
+
+        # Prepend notification if exists
+        if notification:
+            yield f"📢 {notification}\n\n"
+
+        # Stream response
+        async for chunk in active_backend.generate_chat_response_stream(
+            chat_session,
+            user_message,
+            discord_message,
+            model_name=api_model_name,
+            tools=tools,
+            cancel_event=cancel_event,
+        ):
+            yield chunk
 
     def get_active_backend(
         self, chat_session, use_summarizer_backend: bool = False

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, AsyncIterator, Optional, Union
 
 import discord
 
@@ -22,7 +22,9 @@ __all__ = [
     "ChatReply",
     "resolve_session_for_message",
     "create_chat_reply",
+    "create_chat_reply_stream",
     "send_split_response",
+    "send_streaming_response",
 ]
 
 # Tool name to Korean translation mapping for progress notifications
@@ -338,3 +340,126 @@ async def send_split_response(
     except asyncio.CancelledError:
         logger.info(f"Sending interrupted for channel {channel.id}.")
         raise  # Re-raise to signal cancellation
+
+
+async def create_chat_reply_stream(
+    message: Union[discord.Message, list[discord.Message]],
+    *,
+    resolution: ResolvedSession,
+    llm_service: LLMService,
+    session_manager: SessionManager,
+    cancel_event: Optional[asyncio.Event] = None,
+) -> AsyncIterator[str]:
+    """Create a streaming chat reply.
+
+    This function yields text chunks as they arrive from the LLM,
+    allowing for faster perceived response times.
+
+    Args:
+        message: The Discord message(s).
+        resolution: The resolved session.
+        llm_service: The LLM service.
+        session_manager: The session manager.
+        cancel_event: Optional cancellation event.
+
+    Yields:
+        Text chunks as they are generated.
+    """
+    # Determine primary message for metadata
+    if isinstance(message, list):
+        primary_msg = message[0]
+        msg_id_for_session = str(primary_msg.id)
+    else:
+        primary_msg = message
+        msg_id_for_session = str(message.id)
+
+    chat_session, session_key = await session_manager.get_or_create(
+        user_id=primary_msg.author.id,
+        username=primary_msg.author.name,
+        session_key=resolution.session_key,
+        channel_id=primary_msg.channel.id,
+        message_content=resolution.cleaned_message,
+        message_ts=primary_msg.created_at,
+        message_id=msg_id_for_session,
+    )
+
+    # Stream the response
+    async for chunk in llm_service.generate_chat_response_stream(
+        chat_session,
+        resolution.cleaned_message,
+        message,
+        use_summarizer_backend=resolution.is_reply_to_summary,
+        cancel_event=cancel_event,
+    ):
+        yield chunk
+
+
+async def send_streaming_response(
+    channel: discord.abc.Messageable,
+    stream: AsyncIterator[str],
+    session_key: str,
+    session_manager: SessionManager,
+) -> list[discord.Message]:
+    """Send a streaming response to Discord channel.
+
+    This function consumes the stream and sends text chunks as they arrive.
+    Chunks are sent immediately after receiving them (the stream already
+    buffers until line breaks for optimal latency).
+
+    Args:
+        channel: The Discord channel to send to.
+        stream: Async iterator yielding text chunks.
+        session_key: The session key for linking messages.
+        session_manager: The session manager for linking.
+
+    Returns:
+        List of sent Discord messages.
+
+    Raises:
+        asyncio.CancelledError: If sending is interrupted.
+    """
+    sent_messages: list[discord.Message] = []
+
+    try:
+        async for chunk in stream:
+            # Skip empty chunks
+            if not chunk.strip():
+                continue
+
+            # Split chunk into lines for Discord (respect max message length)
+            lines_to_send = []
+            for line in chunk.split("\n"):
+                if not line.strip():
+                    continue
+
+                # If line is too long, split it
+                if len(line) > 1900:
+                    lines_to_send.extend(smart_split(line))
+                else:
+                    lines_to_send.append(line)
+
+            # Send each line
+            for line in lines_to_send:
+                if not line.strip():
+                    continue
+
+                # Minimal delay for natural feel (faster than non-streaming)
+                delay = max(0.1, min(0.3, len(line) * 0.02))
+
+                async with channel.typing():
+                    await asyncio.sleep(delay)
+                    sent_msg = await channel.send(line)
+                    session_manager.link_message_to_session(str(sent_msg.id), session_key)
+                    sent_messages.append(sent_msg)
+
+        logger.debug(
+            "Streaming response complete: %d messages sent",
+            len(sent_messages),
+        )
+
+    except asyncio.CancelledError:
+        logger.info("Streaming response interrupted for channel %s", channel.id)
+        raise
+
+    return sent_messages
+

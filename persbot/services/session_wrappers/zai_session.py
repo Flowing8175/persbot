@@ -2,9 +2,13 @@
 
 import base64
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Callable
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Callable
 
 from openai import OpenAI
+
+if TYPE_CHECKING:
+    from openai import Stream
+    from openai.types.chat import ChatCompletionChunk
 
 from persbot.services.base import ChatMessage
 from persbot.services.session_wrappers.openai_session import BaseOpenAISession
@@ -88,6 +92,42 @@ class ZAIChatSession(BaseOpenAISession):
         model_msg = ChatMessage(role="assistant", content=message_content)
 
         return user_msg, model_msg, response
+
+    def send_message_stream(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
+        images: Optional[List[bytes]] = None,
+        tools: Optional[Any] = None,
+    ) -> Tuple["Stream[ChatCompletionChunk]", ChatMessage]:
+        """Send message to Z.AI API and get a streaming response.
+
+        Returns a tuple of (stream, user_msg).
+        The caller is responsible for iterating and collecting the response.
+        """
+        user_msg = self._create_user_message(
+            user_message, author_id, author_name, message_ids, images
+        )
+
+        # Build messages list
+        messages = self._build_messages(user_message, images)
+
+        # Call API with streaming
+        api_kwargs = {
+            "model": self._model_name,
+            "messages": messages,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "stream": True,
+        }
+
+        if tools:
+            api_kwargs["tools"] = tools
+
+        stream = self._client.chat.completions.create(**api_kwargs)
+        return stream, user_msg
 
     def _build_messages(
         self, user_message: str, images: Optional[List[bytes]]

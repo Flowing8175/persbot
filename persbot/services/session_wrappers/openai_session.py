@@ -4,9 +4,13 @@ import base64
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, List, Optional, Tuple, Callable
+from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Tuple, Callable
 
 from openai import OpenAI
+
+if TYPE_CHECKING:
+    from openai import Stream
+    from openai.types.chat import ChatCompletionChunk
 
 from persbot.services.base import ChatMessage
 from persbot.utils import get_mime_type
@@ -149,6 +153,43 @@ class ChatCompletionSession(BaseOpenAISession):
         model_msg = ChatMessage(role="assistant", content=message_content)
 
         return user_msg, model_msg, response
+
+    def send_message_stream(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
+        images: Optional[List[bytes]] = None,
+        tools: Optional[Any] = None,
+    ) -> Tuple["Stream[ChatCompletionChunk]", ChatMessage]:
+        """Send a message and get a streaming response.
+
+        Returns a stream that yields ChatCompletionChunk objects.
+        The caller is responsible for iterating and collecting the response.
+        """
+        user_msg = self._create_user_message(
+            user_message, author_id, author_name, message_ids, images
+        )
+
+        # Build messages list
+        messages = self._build_system_message()
+        messages.extend(self._convert_history_to_api_format())
+        messages.append(self._build_user_content(user_message, images))
+
+        api_kwargs = {
+            "model": self._model_name,
+            "messages": messages,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "service_tier": self._service_tier,
+            "stream": True,
+        }
+
+        if tools:
+            api_kwargs["tools"] = tools
+
+        return self._client.chat.completions.create(**api_kwargs), user_msg
 
     def _build_system_message(self) -> List[Dict[str, Any]]:
         """Build system message list."""

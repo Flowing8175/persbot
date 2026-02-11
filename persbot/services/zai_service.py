@@ -9,14 +9,18 @@ Enable Coding Plan API by setting ZAI_CODING_PLAN=true in environment.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import discord
 from openai import OpenAI
 
+if TYPE_CHECKING:
+    from openai import Stream
+    from openai.types.chat import ChatCompletionChunk
+
 from persbot.config import AppConfig
 from persbot.constants import LLMDefaults, RetryConfig
-from persbot.services.base import BaseLLMService
+from persbot.services.base import BaseLLMService, ChatMessage
 from persbot.services.model_wrappers.zai_model import ZAIChatModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
@@ -301,6 +305,123 @@ class ZAIService(BaseLLMService):
         chat_session._history.append(model_msg)
 
         return model_msg.content, response
+
+    async def generate_chat_response_stream(
+        self,
+        chat_session: ZAIChatSession,
+        user_message: str,
+        discord_message: Union[discord.Message, List[discord.Message]],
+        model_name: Optional[str] = None,
+        tools: Optional[Any] = None,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> AsyncIterator[str]:
+        """Generate a streaming chat response from Z.AI.
+
+        Yields text chunks as they arrive from the API.
+        Chunks are yielded after each line break for faster initial response.
+
+        Args:
+            chat_session: The Z.AI chat session.
+            user_message: The user's message.
+            discord_message: The Discord message(s) for context.
+            model_name: Optional specific model to use.
+            tools: Optional tools for function calling.
+            cancel_event: Optional event to check for cancellation.
+
+        Yields:
+            Text chunks as they are generated.
+        """
+        # Check cancellation event before starting API call
+        if cancel_event and cancel_event.is_set():
+            logger.info("Streaming API call aborted due to cancellation signal")
+            raise asyncio.CancelledError("LLM API call aborted by user")
+
+        self._log_raw_request(user_message, chat_session)
+
+        if isinstance(discord_message, list):
+            primary_msg = discord_message[0]
+            message_ids = [str(m.id) for m in discord_message]
+        else:
+            primary_msg = discord_message
+            message_ids = [str(discord_message.id)]
+
+        author_id = primary_msg.author.id
+        author_name = getattr(primary_msg.author, "name", str(author_id))
+
+        # Check for model switch
+        current_model_name = getattr(chat_session, "_model_name", None)
+        if model_name and current_model_name != model_name:
+            logger.info(
+                "Switching Z.AI chat session model from %s to %s",
+                current_model_name,
+                model_name,
+            )
+            chat_session._model_name = model_name
+
+        # Extract images from messages
+        images = []
+        if isinstance(discord_message, list):
+            for msg in discord_message:
+                imgs = await self._extract_images_from_message(msg)
+                images.extend(imgs)
+        else:
+            images = await self._extract_images_from_message(discord_message)
+
+        # Convert tools to Z.AI format if provided
+        converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None
+
+        # Start streaming
+        stream, user_msg = await asyncio.to_thread(
+            chat_session.send_message_stream,
+            user_message,
+            author_id,
+            author_name=author_name,
+            message_ids=message_ids,
+            images=images,
+            tools=converted_tools,
+        )
+
+        # Buffer to accumulate text until we see a line break
+        buffer = ""
+        full_content = ""
+
+        try:
+            for chunk in stream:
+                # Check for cancellation
+                if cancel_event and cancel_event.is_set():
+                    logger.info("Streaming aborted due to cancellation signal")
+                    stream.close()
+                    raise asyncio.CancelledError("LLM streaming aborted by user")
+
+                # Extract text delta from chunk
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        text = delta.content
+                        buffer += text
+                        full_content += text
+
+                        # Yield when we see a line break (faster initial response)
+                        if "\n" in buffer:
+                            lines = buffer.split("\n")
+                            # Yield all complete lines
+                            for line in lines[:-1]:
+                                if line:  # Skip empty lines
+                                    yield line + "\n"
+                            # Keep the last incomplete line in buffer
+                            buffer = lines[-1]
+
+            # Yield any remaining content in buffer
+            if buffer:
+                yield buffer
+
+        finally:
+            stream.close()
+
+        # Update history with the full conversation
+        model_msg = ChatMessage(role="assistant", content=full_content)
+        chat_session._history.append(user_msg)
+        chat_session._history.append(model_msg)
 
     async def send_tool_results(
         self,
