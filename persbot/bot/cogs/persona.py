@@ -116,16 +116,26 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
 
                 except json.JSONDecodeError as e:
                     logger.error(f"JSON parse error: {e}, Response: {questions_json[:200]}")
-                    await msg.edit(content=f"❌ 질문 파싱 오류. 기본 모드로 진행합니다.")
+                    try:
+                        await msg.edit(content=f"❌ 질문 파싱 오류. 기본 모드로 진행합니다.")
+                    except discord.NotFound:
+                        await interaction.followup.send(f"❌ 질문 파싱 오류. 기본 모드로 진행합니다.", ephemeral=True)
                     await self._generate_direct(interaction, concept_str, msg)
                 except Exception as e:
                     logger.error(f"Error in question modal: {e}", exc_info=True)
-                    await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+                    try:
+                        await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+                    except discord.NotFound:
+                        await interaction.followup.send(f"❌ 오류 발생: {str(e)}", ephemeral=True)
                     await self._generate_direct(interaction, concept_str, msg)
 
             except Exception as e:
                 logger.error(f"Error generating questions: {e}", exc_info=True)
-                await msg.edit(content=f"❌ 질문 생성 오류: {str(e)}")
+                try:
+                    await msg.edit(content=f"❌ 질문 생성 오류: {str(e)}")
+                except discord.NotFound:
+                    # Message expired or deleted, send new error message
+                    await interaction.followup.send(f"❌ 질문 생성 오류: {str(e)}", ephemeral=True)
                 await self._generate_direct(interaction, concept_str, msg)
         else:
             # Direct generation path
@@ -146,7 +156,10 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
             )
 
             if not generated_prompt:
-                await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                try:
+                    await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                except discord.NotFound:
+                    await interaction.followup.send("❌ 프롬프트 생성에 실패했습니다.", ephemeral=True)
                 return
 
             name_match = re.search(
@@ -160,14 +173,22 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
             # Record usage after successful creation
             await cog.prompt_service.increment_today_usage(interaction.user.id)
 
-            await msg.edit(
-                content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})"
-            )
+            try:
+                await msg.edit(
+                    content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})"
+                )
+            except discord.NotFound:
+                await interaction.followup.send(
+                    f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})", ephemeral=True
+                )
             await self.view_ref.refresh_view(interaction)
 
         except Exception as e:
             logger.error(f"Error in PromptCreateModal: {e}", exc_info=True)
-            await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+            try:
+                await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+            except discord.NotFound:
+                await interaction.followup.send(f"❌ 오류 발생: {str(e)}", ephemeral=True)
 
 
 class PromptAnswerModal(discord.ui.Modal, title="페르소나 질문 답변"):
@@ -230,7 +251,10 @@ class PromptAnswerModal(discord.ui.Modal, title="페르소나 질문 답변"):
             )
 
             if not generated_prompt:
-                await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                try:
+                    await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                except discord.NotFound:
+                    await interaction.followup.send("❌ 프롬프트 생성에 실패했습니다.", ephemeral=False)
                 return
 
             name_match = re.search(
@@ -248,14 +272,22 @@ class PromptAnswerModal(discord.ui.Modal, title="페르소나 질문 답변"):
             # Record usage after successful creation
             await cog.prompt_service.increment_today_usage(interaction.user.id)
 
-            await msg.edit(
-                content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})"
-            )
+            try:
+                await msg.edit(
+                    content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})"
+                )
+            except discord.NotFound:
+                await interaction.followup.send(
+                    f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})", ephemeral=False
+                )
             await self.view_ref.refresh_view(interaction)
 
         except Exception as e:
             logger.error(f"Error in PromptAnswerModal: {e}", exc_info=True)
-            await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+            try:
+                await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+            except discord.NotFound:
+                await interaction.followup.send(f"❌ 오류 발생: {str(e)}", ephemeral=False)
 
 
 class PromptRenameModal(discord.ui.Modal, title="페르소나 이름 변경"):
