@@ -411,9 +411,11 @@ class OpenAIService(BaseLLMService):
             tools=converted_tools,
         )
 
-        # Buffer to accumulate text until we see a line break
+        # Buffer for streaming - yield on newline OR after ~100 chars for faster initial response
         buffer = ""
         full_content = ""
+        # Minimum chars to yield (ensures first chunk appears quickly)
+        MIN_YIELD_CHARS = 100
 
         try:
             for chunk in stream:
@@ -431,7 +433,7 @@ class OpenAIService(BaseLLMService):
                         buffer += text
                         full_content += text
 
-                        # Yield when we see a line break (faster initial response)
+                        # Yield when we see a line break OR buffer is large enough
                         if "\n" in buffer:
                             lines = buffer.split("\n")
                             # Yield all complete lines
@@ -440,6 +442,10 @@ class OpenAIService(BaseLLMService):
                                     yield line + "\n"
                             # Keep the last incomplete line in buffer
                             buffer = lines[-1]
+                        elif len(buffer) >= MIN_YIELD_CHARS:
+                            # Yield buffer to show progress even without newline
+                            yield buffer
+                            buffer = ""
 
             # Yield any remaining content in buffer
             if buffer:

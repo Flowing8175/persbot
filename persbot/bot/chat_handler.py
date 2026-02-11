@@ -438,16 +438,13 @@ async def send_streaming_response(
                 else:
                     lines_to_send.append(line)
 
-            # Send each line
+            # Send each line immediately (no artificial delay for streaming)
             for line in lines_to_send:
                 if not line.strip():
                     continue
 
-                # Minimal delay for natural feel (faster than non-streaming)
-                delay = max(0.1, min(0.3, len(line) * 0.02))
-
+                # Show typing indicator briefly, but send immediately
                 async with channel.typing():
-                    await asyncio.sleep(delay)
                     sent_msg = await channel.send(line)
                     session_manager.link_message_to_session(str(sent_msg.id), session_key)
                     sent_messages.append(sent_msg)
