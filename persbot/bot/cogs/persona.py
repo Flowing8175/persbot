@@ -19,6 +19,23 @@ logger = logging.getLogger(__name__)
 # --- UI Components for Prompt Manager ---
 
 
+class ShowModalButton(discord.ui.View):
+    """View with a button that shows a modal when clicked.
+
+    This is needed because modals can only be sent as the first response
+    to an interaction, not as a followup message.
+    """
+
+    def __init__(self, modal: discord.ui.Modal, timeout: int = 300):
+        super().__init__(timeout=timeout)
+        self.modal = modal
+
+    @discord.ui.button(label="질문 답변하기", style=discord.ButtonStyle.primary, emoji="📝")
+    async def show_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show the modal when button is clicked."""
+        await interaction.response.send_modal(self.modal)
+
+
 class PromptModeSelectView(discord.ui.View):
     """View for selecting persona creation mode."""
 
@@ -104,15 +121,18 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
                         await self._generate_direct(interaction, concept_str, msg)
                         return
 
-                    # Delete the loading message and send the answer modal
-                    await msg.delete()
-
-                    # Create and send the answer modal
+                    # Create answer modal and view with button to show it
+                    # (Modals can only be sent as first response, so use a button)
                     answer_modal = PromptAnswerModal(
                         self.view_ref, concept_str, questions
                     )
-                    await interaction.followup.send("📝 **아래 질문에 답변해 주세요:**", ephemeral=True)
-                    await interaction.followup.send_modal(answer_modal)
+                    modal_button_view = ShowModalButton(answer_modal)
+
+                    # Edit the loading message to show the button
+                    await msg.edit(
+                        content="📝 **질문이 생성되었습니다! 아래 버튼을 눌러 답변을 입력하세요:**",
+                        view=modal_button_view
+                    )
 
                 except json.JSONDecodeError as e:
                     logger.error(f"JSON parse error: {e}, Response: {questions_json[:200]}")
