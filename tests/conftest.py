@@ -415,8 +415,10 @@ def _run_task_now(*args, **kwargs):
             task._done_callback(task)
 
     # Schedule the coroutine to run immediately
-    loop = asyncio.get_event_loop()
-    loop.create_task(wrapper)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pass  # No running loop, skip actual scheduling
     # Return the mock task as if it were returned by create_task
     return task
 
