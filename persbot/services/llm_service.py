@@ -165,13 +165,14 @@ class LLMService:
         self.config = config
         self.prompt_service = PromptService()
         self.image_usage_service = ImageUsageService()
-        self.model_usage_service = ModelUsageService()
+        # Get provider before creating ModelUsageService to pass as default_provider
+        assistant_provider = (config.assistant_llm_provider or Provider.GEMINI).lower()
+        self.model_usage_service = ModelUsageService(default_provider=assistant_provider)
 
         # Initialize provider registry
         self._registry = ProviderRegistry(config, self.prompt_service)
 
         # Create primary backends
-        assistant_provider = (config.assistant_llm_provider or Provider.GEMINI).lower()
         summarizer_provider = (
             config.summarizer_llm_provider or assistant_provider
         ).lower()

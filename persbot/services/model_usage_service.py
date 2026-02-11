@@ -28,19 +28,30 @@ class ModelUsageService:
 
     # Helper maps
     ALIAS_TO_API: Dict[str, str] = {}
+    API_TO_ALIAS: Dict[str, str] = {}  # Reverse mapping: api_model_name -> display_name (alias)
     DEFAULT_MODEL_ALIAS = "Gemini 2.5 flash"
+
+    # Provider-specific defaults (fallback when model not found)
+    PROVIDER_DEFAULTS: Dict[str, str] = {
+        "gemini": "Gemini 2.5 flash",
+        "openai": "GPT 5 mini",
+        "zai": "GLM 4.7",
+    }
 
     # In-memory cache for model definitions
     _model_definition_cache: Dict[str, ModelDefinition] = {}
+    _default_provider: str = "gemini"  # Track the configured default provider
 
     def __init__(
         self,
         data_file: str = "data/model_usage.json",
         models_file: str = "data/models.json",
+        default_provider: str = "gemini",
     ):
         self.data_file = data_file
         self.models_file = models_file
         self.usage_data: Dict[str, Any] = {}
+        self._default_provider = default_provider
         self._load_models()
         self._load_usage()
 
@@ -68,6 +79,14 @@ class ModelUsageService:
                     # Update helper maps
                     self.ALIAS_TO_API.update(
                         {k: v.api_model_name for k, v in self.MODEL_DEFINITIONS.items()}
+                    )
+                    # Build reverse mapping: api_model_name -> display_name (alias)
+                    self.API_TO_ALIAS.update(
+                        {v.api_model_name: k for k, v in self.MODEL_DEFINITIONS.items()}
+                    )
+                    # Update default model alias based on configured provider
+                    self.DEFAULT_MODEL_ALIAS = self.PROVIDER_DEFAULTS.get(
+                        self._default_provider, "Gemini 2.5 flash"
                     )
             except Exception as e:
                 logger.error(f"Failed to load model definitions: {e}")
@@ -173,6 +192,7 @@ class ModelUsageService:
         return False, current_alias, "❌ 모델 전환 오류."
 
     def get_api_model_name(self, model_alias: str) -> str:
+        # Try direct lookup by display name (alias)
         if model_alias in self._model_definition_cache:
             def_obj = self._model_definition_cache[model_alias]
             return def_obj.api_model_name
@@ -181,8 +201,22 @@ class ModelUsageService:
         if def_obj:
             return def_obj.api_model_name
 
+        # Try reverse lookup: model_alias might be an API model name
+        if model_alias in self.API_TO_ALIAS:
+            display_name = self.API_TO_ALIAS[model_alias]
+            def_obj = self.MODEL_DEFINITIONS.get(display_name)
+            if def_obj:
+                return def_obj.api_model_name
+
+        # Fallback to provider-specific default
         default_def = self._model_definition_cache.get(self.DEFAULT_MODEL_ALIAS)
         if default_def:
             return default_def.api_model_name
 
-        return "gemini-2.5-flash"
+        # Ultimate fallback: use provider-specific API model name
+        provider_defaults = {
+            "gemini": "gemini-2.5-flash",
+            "openai": "gpt-5-mini",
+            "zai": "glm-4.7",
+        }
+        return provider_defaults.get(self._default_provider, "gemini-2.5-flash")
