@@ -348,7 +348,7 @@ async def create_chat_reply_stream(
     resolution: ResolvedSession,
     llm_service: LLMService,
     session_manager: SessionManager,
-    tool_manager=None,
+    tool_manager: Optional["persbot.tools.ToolManager"] = None,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> AsyncIterator[str]:
     """Create a streaming chat reply.
