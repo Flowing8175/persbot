@@ -5,9 +5,10 @@ import logging
 import re
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import discord
 
@@ -135,7 +136,7 @@ class RetryHandler(ABC):
 
     async def _execute_with_timeout(
         self,
-        api_call: Callable[[], Union[Any, Awaitable[Any]]],
+        api_call: Callable[[], Any | Awaitable[Any]],
     ) -> Any:
         """Execute a call with timeout, handling both sync and async functions."""
         if asyncio.iscoroutinefunction(api_call):
@@ -144,7 +145,7 @@ class RetryHandler(ABC):
 
     async def execute_with_retry(
         self,
-        api_call: Callable[[], Union[Any, Awaitable[Any]]],
+        api_call: Callable[[], Any | Awaitable[Any]],
         *,
         error_prefix: str = "요청",
         discord_message: Optional[discord.Message] = None,
@@ -152,6 +153,8 @@ class RetryHandler(ABC):
         log_response: Optional[Callable[[Any, int], None]] = None,
         extract_text: Optional[Callable[[Any], str]] = None,
         return_full_response: bool = False,
+        timeout: Optional[float] = None,
+        fallback_call: Optional[Callable[[], Any | Awaitable[Any]]] = None,
     ) -> Optional[Any]:
         """
         Execute API call with retries, logging, and countdown notifications.
@@ -164,12 +167,16 @@ class RetryHandler(ABC):
             log_response: Optional callback to log responses (response, attempt).
             extract_text: Optional callback to extract text from response.
             return_full_response: If True, return full response object.
+            timeout: Optional custom timeout to override config.request_timeout.
+            fallback_call: Optional fallback API call to try on rate limit errors.
 
         Returns:
             The response text (or full response if return_full_response=True),
             or None if all retries fail.
         """
         last_error: Optional[Exception] = None
+        # Use custom timeout if provided, otherwise use config timeout
+        request_timeout = timeout if timeout is not None else self.config.request_timeout
 
         for attempt in range(1, self.config.max_retries + 1):
             # Check for cancellation at the start of each retry iteration
@@ -183,7 +190,7 @@ class RetryHandler(ABC):
                 # asyncio.wait_for properly raises CancelledError when task is cancelled
                 response = await asyncio.wait_for(
                     self._execute_with_timeout(api_call),
-                    timeout=self.config.request_timeout,
+                    timeout=request_timeout,
                 )
 
                 if log_response:
@@ -228,6 +235,25 @@ class RetryHandler(ABC):
                     raise e
 
                 if self._is_rate_limit_error(e):
+                    # Try fallback call if provided
+                    if fallback_call is not None:
+                        logger.info("Rate limit detected, trying fallback API...")
+                        try:
+                            fallback_response = await asyncio.wait_for(
+                                self._execute_with_timeout(fallback_call),
+                                timeout=request_timeout,
+                            )
+                            if log_response:
+                                log_response(fallback_response, attempt)
+                            if return_full_response:
+                                return fallback_response
+                            if extract_text:
+                                return extract_text(fallback_response)
+                            return fallback_response
+                        except Exception as fallback_error:
+                            logger.warning("Fallback API also failed: %s", fallback_error)
+                            # Continue with normal retry logic after fallback fails
+
                     delay = self._extract_retry_delay(e) or self.config.rate_limit_delay
                     await self._wait_with_countdown(delay, discord_message, cancel_event)
                     continue

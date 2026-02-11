@@ -11,8 +11,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 import discord
 
 from persbot.config import AppConfig
-from persbot.constants import META_PROMPT, QUESTION_GENERATION_PROMPT
-from persbot.domain import Provider
+from persbot.constants import META_PROMPT, Provider, QUESTION_GENERATION_PROMPT
 from persbot.exceptions import ProviderUnavailableException
 from persbot.services.base import BaseLLMService
 from persbot.services.gemini_service import GeminiService

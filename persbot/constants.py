@@ -430,5 +430,5 @@ UserId = int
 GuildId = int
 MessageId = str
 SessionKey = str
-ModelAlias = str
-Provider = str
+ModelAliasType = str
+ProviderType = str

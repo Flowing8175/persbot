@@ -23,6 +23,13 @@ sys.modules["google.genai.errors"] = mock_genai_errors
 sys.modules["openai"] = Mock()
 sys.modules["anthropic"] = Mock()
 
+# Save real PIL reference before mocking (for tests that need actual image processing)
+try:
+    real_pillow = __import__("PIL")
+    real_pil_image = real_pillow.Image
+except (ImportError, AttributeError):
+    real_pil_image = None
+
 mock_pil = Mock()
 mock_pil.Image = Mock()
 mock_pil.Image.Resampling = Mock()
@@ -247,6 +254,7 @@ def mock_llm_service():
     service.get_user_role_name = Mock(return_value="user")
     service.get_assistant_role_name = Mock(return_value="model")
     service.get_backend_for_model = Mock(return_value=Mock())
+    service.process_image_sync = service.process_image
     return service
 
 

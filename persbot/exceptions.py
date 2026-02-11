@@ -111,7 +111,8 @@ class ProviderException(SoyeBotException):
 class ProviderUnavailableException(ProviderException):
     """Exception raised when a provider is unavailable or misconfigured."""
 
-    pass
+    def __init__(self, message: str, provider: str = "unknown"):
+        super().__init__(message, provider)
 
 
 class ModelNotFoundException(ProviderException):
@@ -129,7 +130,8 @@ class ModelNotFoundException(ProviderException):
 class ContextCacheException(ProviderException):
     """Exception raised when context cache operations fail."""
 
-    pass
+    def __init__(self, message: str, provider: str = "unknown"):
+        super().__init__(message, provider)
 
 
 # =============================================================================

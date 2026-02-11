@@ -2,17 +2,48 @@
 
 import asyncio
 import io
+import sys
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import discord
 import pytest
+
+# Restore real PIL for image processing tests
+# First remove the mock from sys.modules
+for module in list(sys.modules.keys()):
+    if module.startswith("PIL"):
+        del sys.modules[module]
+
+# Now import real PIL
 from PIL import Image
 
 from persbot.services.base import BaseLLMService, ChatMessage
+from persbot.services.retry_handler import RetryHandler, RetryConfig
+from persbot.utils import process_image_sync
 
 # =============================================================================
 # Concrete Test Implementation of BaseLLMService
 # =============================================================================
+
+
+class TestRetryHandler(RetryHandler):
+    """Custom retry handler for testing that delegates to service methods."""
+
+    def __init__(self, config, service):
+        super().__init__(config)
+        self.service = service
+
+    def _is_rate_limit_error(self, error: Exception) -> bool:
+        """Delegate to service's rate limit error detection."""
+        return self.service._is_rate_limit_error(error)
+
+    def _is_fatal_error(self, error: Exception) -> bool:
+        """Delegate to service's fatal error detection."""
+        return self.service._is_fatal_error(error)
+
+    def _extract_retry_delay(self, error: Exception) -> float | None:
+        """Delegate to service's retry delay extraction."""
+        return self.service._extract_retry_delay(error)
 
 
 class TestLLMService(BaseLLMService):
@@ -89,8 +120,20 @@ class TestLLMService(BaseLLMService):
 
     def _create_retry_handler(self):
         """Return a retry handler for testing."""
-        from persbot.services.retry_handler import GeminiRetryHandler, RetryConfig
-        return GeminiRetryHandler(RetryConfig())
+        # Map config attributes to RetryConfig
+        config = RetryConfig(
+            max_retries=self.config.api_max_retries,
+            base_delay=self.config.api_retry_backoff_base,
+            max_delay=self.config.api_retry_backoff_max,
+            rate_limit_delay=int(self.config.api_rate_limit_retry_after),
+            request_timeout=self.config.api_request_timeout,
+        )
+        # Use TestRetryHandler that delegates to service's methods
+        return TestRetryHandler(config, self)
+
+    def _process_image_sync(self, image_data: bytes, filename: str) -> bytes:
+        """Process image synchronously (delegates to utility function)."""
+        return process_image_sync(image_data, filename)
 
 
 class RateLimitError(Exception):
@@ -977,7 +1020,13 @@ class TestEdgeCases:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # All should complete without interference
-        assert all(r is not None or isinstance(r, Exception) for r in results)
+        # Note: Some calls may return None if they exhaust retries
+        # (attempt_ids 0, 1, 2 will fail all retries since they're < 3)
+        # Expected: [None, None, None, "Success 3", "Success 4"]
+        assert len(results) == 5
+        assert results.count(None) == 3  # First 3 exhaust retries
+        assert "Success 3" in results
+        assert "Success 4" in results
 
     async def test_empty_response_from_model(self, test_service):
         """Test empty response from model."""

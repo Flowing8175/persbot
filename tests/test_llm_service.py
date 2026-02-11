@@ -8,7 +8,7 @@ import pytest_asyncio
 
 from persbot.services.gemini_service import GeminiService
 from persbot.services.llm_service import LLMService
-from persbot.services.model_usage_service import ModelUsageService
+from persbot.services.model_usage_service import ModelDefinition, ModelUsageService
 from persbot.services.openai_service import OpenAIService
 from persbot.services.prompt_service import PromptService
 from persbot.services.usage_service import ImageUsageService
@@ -646,7 +646,14 @@ class TestGenerateChatResponse:
         with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
             mock_instance = Mock()
             mock_instance.MODEL_DEFINITIONS = {
-                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gemini-2.5-flash": ModelDefinition(
+                    display_name="Gemini 2.5 Flash",
+                    api_model_name="gemini-2.5-flash",
+                    daily_limit=100,
+                    scope="guild",
+                    provider="gemini",
+                    fallback_alias=None,
+                ),
             }
             mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
             mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"

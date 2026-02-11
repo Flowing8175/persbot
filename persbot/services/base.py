@@ -4,8 +4,9 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import discord
 
@@ -81,7 +82,7 @@ class BaseLLMService(ABC):
         self,
         chat_session: Any,
         user_message: str,
-        discord_message: Union[discord.Message, List[discord.Message]],
+        discord_message: discord.Message | List[discord.Message],
     ) -> Optional[Tuple[str, Any]]:
         """
         Generate chat response.
@@ -181,7 +182,7 @@ class BaseLLMService(ABC):
         return images
 
     async def _execute_model_call(
-        self, model_call: Callable[[], Union[Any, Awaitable[Any]]]
+        self, model_call: Callable[[], Any | Awaitable[Any]]
     ) -> Any:
         """Execute a model call, handling both sync and async functions."""
         if asyncio.iscoroutinefunction(model_call):
@@ -228,12 +229,12 @@ class BaseLLMService(ABC):
 
     async def execute_with_retry(
         self,
-        model_call: Callable[[], Union[Any, Awaitable[Any]]],
+        model_call: Callable[[], Any | Awaitable[Any]],
         error_prefix: str = "요청",
         return_full_response: bool = False,
         discord_message: Optional[discord.Message] = None,
         timeout: Optional[float] = None,
-        fallback_call: Optional[Callable[[], Union[Any, Awaitable[Any]]]] = None,
+        fallback_call: Optional[Callable[[], Any | Awaitable[Any]]] = None,
         cancel_event: Optional[asyncio.Event] = None,
     ) -> Optional[Any]:
         """
@@ -248,6 +249,8 @@ class BaseLLMService(ABC):
             return_full_response=return_full_response,
             discord_message=discord_message,
             cancel_event=cancel_event,
+            timeout=timeout,
+            fallback_call=fallback_call,
             log_response=self._log_raw_response,
             extract_text=None if return_full_response else self._extract_text_from_response,
         )
