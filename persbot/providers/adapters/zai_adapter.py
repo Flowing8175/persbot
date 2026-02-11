@@ -19,7 +19,8 @@ class ZAIToolAdapter(OpenAIToolAdapter):
     binary data in tool results (useful for image generation).
     """
 
-    def format_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    @staticmethod
+    def format_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Format function results for Z.AI with binary data support.
 
         Args:

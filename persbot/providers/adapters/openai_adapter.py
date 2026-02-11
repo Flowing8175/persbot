@@ -20,7 +20,8 @@ class OpenAIToolAdapter(BaseToolAdapter):
     This format is used by OpenAI, Z.AI, and other OpenAI-compatible APIs.
     """
 
-    def convert_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
+    @staticmethod
+    def convert_tools(tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
         """Convert tool definitions to OpenAI format.
 
         Args:
@@ -50,8 +51,9 @@ class OpenAIToolAdapter(BaseToolAdapter):
 
         return converted
 
+    @staticmethod
     def extract_function_calls(
-        self, response: Any
+        response: Any
     ) -> List[Dict[str, Any]]:
         """Extract function calls from an OpenAI-style response.
 
@@ -79,7 +81,8 @@ class OpenAIToolAdapter(BaseToolAdapter):
 
         return calls
 
-    def format_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    @staticmethod
+    def format_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Format function results for OpenAI.
 
         Args:

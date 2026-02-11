@@ -22,7 +22,8 @@ class GeminiToolAdapter(BaseToolAdapter):
     Gemini uses a declarative function calling format with JSON schemas.
     """
 
-    def convert_tools(self, tools: List[ToolDefinition]) -> List[genai_types.Tool]:
+    @staticmethod
+    def convert_tools(tools: List[ToolDefinition]) -> List[genai_types.Tool]:
         """Convert tool definitions to Gemini format.
 
         Args:
@@ -34,15 +35,16 @@ class GeminiToolAdapter(BaseToolAdapter):
         converted = []
         for tool in tools:
             try:
-                function_decl = self._create_function_declaration(tool)
+                function_decl = GeminiToolAdapter._create_function_declaration(tool)
                 converted.append(genai_types.Tool(function_declarations=function_decl))
             except Exception as e:
                 logger.warning(f"Failed to convert tool {tool.name}: {e}")
 
         return converted
 
+    @staticmethod
     def _create_function_declaration(
-        self, tool: ToolDefinition
+        tool: ToolDefinition
     ) -> genai_types.FunctionDeclaration:
         """Create a FunctionDeclaration from a ToolDefinition.
 
@@ -61,8 +63,9 @@ class GeminiToolAdapter(BaseToolAdapter):
             parameters=parameters,
         )
 
+    @staticmethod
     def extract_function_calls(
-        self, response: Any
+        response: Any
     ) -> List[Dict[str, Any]]:
         """Extract function calls from a Gemini response.
 
@@ -91,7 +94,8 @@ class GeminiToolAdapter(BaseToolAdapter):
 
         return calls
 
-    def format_results(self, results: List[Dict[str, Any]]) -> List[genai_types.Part]:
+    @staticmethod
+    def format_results(results: List[Dict[str, Any]]) -> List[genai_types.Part]:
         """Format function results for Gemini.
 
         Args:

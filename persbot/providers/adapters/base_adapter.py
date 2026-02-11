@@ -37,8 +37,9 @@ class BaseToolAdapter(ABC):
     and the format required by specific LLM providers.
     """
 
+    @staticmethod
     @abstractmethod
-    def convert_tools(self, tools: List[ToolDefinition]) -> Any:
+    def convert_tools(tools: List[ToolDefinition]) -> Any:
         """Convert tool definitions to provider format.
 
         Args:
@@ -49,8 +50,9 @@ class BaseToolAdapter(ABC):
         """
         pass
 
+    @staticmethod
     @abstractmethod
-    def extract_function_calls(self, response: Any) -> List[Dict[str, Any]]:
+    def extract_function_calls(response: Any) -> List[Dict[str, Any]]:
         """Extract function calls from a provider response.
 
         Args:
@@ -61,8 +63,9 @@ class BaseToolAdapter(ABC):
         """
         pass
 
+    @staticmethod
     @abstractmethod
-    def format_results(self, results: List[Dict[str, Any]]) -> Any:
+    def format_results(results: List[Dict[str, Any]]) -> Any:
         """Format function results for the provider.
 
         Args:
