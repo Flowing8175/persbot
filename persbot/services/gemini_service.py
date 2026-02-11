@@ -17,29 +17,23 @@ from google.genai import types as genai_types
 from google.genai.errors import ClientError
 
 from persbot.config import AppConfig
+from persbot.constants import (
+    APITimeout,
+    CacheConfig,
+    DisplayConfig,
+    LLMDefaults,
+    RetryConfig,
+)
 from persbot.services.base import BaseLLMService, ChatMessage
+from persbot.services.cache_service import CacheService, GeminiCacheStrategy
 from persbot.services.model_wrappers.gemini_model import GeminiCachedModel
 from persbot.services.prompt_service import PromptService
-from persbot.services.retry_handler import GeminiRetryHandler, RetryConfig, RetryHandler
+from persbot.services.retry_handler import GeminiRetryHandler, RetryConfig as HandlerRetryConfig, RetryHandler
 from persbot.services.session_wrappers.gemini_session import GeminiChatSession, extract_clean_text
-from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
+from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
 from persbot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
-
-# Configuration Constants
-DEFAULT_TEMPERATURE = 1.0
-DEFAULT_TOP_P = 1.0
-DEFAULT_CACHE_MIN_TOKENS = 32768
-DEFAULT_CACHE_TTL_MINUTES = 60
-DEFAULT_MAX_HISTORY = 50
-CACHE_REFRESH_BUFFER_MIN_MINUTES = 1
-CACHE_REFRESH_BUFFER_MAX_MINUTES = 5
-
-# Display Constants
-REQUEST_PREVIEW_LENGTH = 200
-RESPONSE_TEXT_PREVIEW_LENGTH = 200
-HISTORY_DISPLAY_LIMIT = 5
 
 
 class GeminiService(BaseLLMService):
@@ -159,8 +153,8 @@ class GeminiService(BaseLLMService):
     ) -> genai_types.GenerateContentConfig:
         """Build GenerateContentConfig with appropriate settings."""
         config_kwargs = {
-            "temperature": getattr(self.config, "temperature", DEFAULT_TEMPERATURE),
-            "top_p": getattr(self.config, "top_p", DEFAULT_TOP_P),
+            "temperature": getattr(self.config, "temperature", LLMDefaults.TEMPERATURE),
+            "top_p": getattr(self.config, "top_p", LLMDefaults.TOP_P),
         }
 
         if cache_name:
@@ -246,13 +240,13 @@ class GeminiService(BaseLLMService):
 
         try:
             logger.debug(
-                f"[RAW API REQUEST] User message preview: {user_message[:REQUEST_PREVIEW_LENGTH]!r}"
+                f"[RAW API REQUEST] User message preview: {user_message[:DisplayConfig.REQUEST_PREVIEW_LENGTH]!r}"
             )
 
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
                 formatted_history = []
-                for msg in history[-HISTORY_DISPLAY_LIMIT:]:
+                for msg in history[-DisplayConfig.HISTORY_DISPLAY_LIMIT:]:
                     role = msg.role
                     texts = [part.get("text", "") for part in msg.parts]
                     content = " ".join(texts)
@@ -308,7 +302,7 @@ class GeminiService(BaseLLMService):
                         for part in candidate.content.parts:
                             text = getattr(part, "text", "")
                             if text:
-                                texts.append(text[:RESPONSE_TEXT_PREVIEW_LENGTH].replace("\n", " "))
+                                texts.append(text[:DisplayConfig.RESPONSE_PREVIEW_LENGTH].replace("\n", " "))
                         if texts:
                             logger.debug(
                                 f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}"
@@ -352,7 +346,7 @@ class GeminiService(BaseLLMService):
             )
             return None, None
 
-        min_tokens = getattr(self.config, "gemini_cache_min_tokens", DEFAULT_CACHE_MIN_TOKENS)
+        min_tokens = getattr(self.config, "gemini_cache_min_tokens", CacheConfig.MIN_TOKENS)
         if token_count < min_tokens:
             logger.info(
                 "Gemini Context Caching skipped: Token count (%d) < min_tokens (%d). Using standard context.",
@@ -365,14 +359,14 @@ class GeminiService(BaseLLMService):
 
         # 2. Config setup
         cache_display_name = self._get_cache_key(model_name, system_instruction, tools)
-        ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", DEFAULT_CACHE_TTL_MINUTES)
+        ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", CacheConfig.TTL_MINUTES)
         ttl_seconds = ttl_minutes * 60
 
         now = datetime.datetime.now(datetime.timezone.utc)
         # local_expiration: trigger refresh halfway through TTL window or with a buffer
         refresh_buffer_minutes = min(
-            CACHE_REFRESH_BUFFER_MAX_MINUTES,
-            max(CACHE_REFRESH_BUFFER_MIN_MINUTES, ttl_minutes // 2),
+            CacheConfig.REFRESH_BUFFER_MAX,
+            max(CacheConfig.REFRESH_BUFFER_MIN, ttl_minutes // 2),
         )
         local_expiration = now + datetime.timedelta(minutes=ttl_minutes - refresh_buffer_minutes)
 

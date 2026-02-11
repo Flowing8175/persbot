@@ -3,7 +3,7 @@
 import io
 import logging
 import re
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import discord
 from PIL import Image
@@ -65,9 +65,19 @@ async def _send_to_interaction(
     target: discord.Interaction,
     chunk: str,
     chunk_index: int,
-    current_kwargs: dict,
+    current_kwargs: dict[str, Any],
 ) -> discord.Message:
-    """Send message to Discord Interaction."""
+    """Send message to Discord Interaction.
+
+    Args:
+        target: The Discord interaction to send to.
+        chunk: The message content to send.
+        chunk_index: The index of this chunk in the message.
+        current_kwargs: Additional keyword arguments for the send.
+
+    Returns:
+        The sent message.
+    """
     if chunk_index == 0:
         if target.response.is_done():
             return await target.followup.send(chunk, **current_kwargs)
@@ -81,9 +91,20 @@ async def _send_to_message(
     chunk: str,
     chunk_index: int,
     mention_author: bool,
-    current_kwargs: dict,
+    current_kwargs: dict[str, Any],
 ) -> discord.Message:
-    """Send message to Discord Message with reply fallback."""
+    """Send message to Discord Message with reply fallback.
+
+    Args:
+        target: The Discord message to reply to.
+        chunk: The message content to send.
+        chunk_index: The index of this chunk in the message.
+        mention_author: Whether to mention the author.
+        current_kwargs: Additional keyword arguments for the send.
+
+    Returns:
+        The sent message.
+    """
     if chunk_index == 0:
         try:
             return await target.reply(chunk, mention_author=mention_author, **current_kwargs)
@@ -98,16 +119,42 @@ async def _send_to_message(
 async def _send_to_messageable(
     target: Any,
     chunk: str,
-    current_kwargs: dict,
+    current_kwargs: dict[str, Any],
 ) -> discord.Message:
-    """Send message to any target with a send() method."""
+    """Send message to any target with a send() method.
+
+    Args:
+        target: Any object with a send() method.
+        chunk: The message content to send.
+        current_kwargs: Additional keyword arguments for the send.
+
+    Returns:
+        The sent message.
+    """
     return await target.send(chunk, **current_kwargs)
 
 
-async def send_discord_message(target, content: str, **kwargs) -> list[discord.Message]:
+async def send_discord_message(
+    target: Union[
+        discord.abc.Messageable,
+        discord.Message,
+        discord.Interaction,
+        Any,  # commands.Context
+    ],
+    content: str,
+    **kwargs: Any,
+) -> list[discord.Message]:
     """
     Unified method to send Discord messages with automatic splitting.
-    target: discord.abc.Messageable, discord.Message, discord.Interaction, or commands.Context
+
+    Args:
+        target: discord.abc.Messageable, discord.Message, discord.Interaction,
+                or commands.Context.
+        content: The message content to send.
+        **kwargs: Additional arguments to pass to the send method.
+
+    Returns:
+        List of sent messages.
     """
     if not content and not any(k in kwargs for k in ("embed", "embeds", "file", "files", "view")):
         return []
@@ -154,19 +201,35 @@ class DiscordUI:
     """Discord UI 상호작용을 위한 헬퍼 클래스"""
 
     @staticmethod
-    async def safe_send(channel: discord.TextChannel, content: str) -> Optional[discord.Message]:
+    async def safe_send(channel: discord.abc.Messageable, content: str) -> Optional[discord.Message]:
+        """Send a message to a channel with error handling.
+
+        Args:
+            channel: The Discord channel or messageable to send to.
+            content: The message content to send.
+
+        Returns:
+            The sent message, or None if sending failed.
+        """
         try:
             return await channel.send(content)
         except discord.Forbidden:
-            logger.warning(f"{channel.name}에 메시지 전송 실패 (권한 부족)")
+            logger.warning(f"{getattr(channel, 'name', 'channel')}에 메시지 전송 실패 (권한 부족)")
             return None
         except Exception as e:
-            logger.error(f"{channel.name}에 메시지 전송 중 에러: {e}")
+            logger.error(f"{getattr(channel, 'name', 'channel')}에 메시지 전송 중 에러: {e}")
             return None
 
 
 def parse_korean_time(time_str: str) -> Optional[int]:
-    """Convert strings such as '1시간30분' into minutes."""
+    """Convert strings such as '1시간30분' into minutes.
+
+    Args:
+        time_str: A string containing time units like '1시간30분'.
+
+    Returns:
+        The total number of minutes, or None if parsing failed.
+    """
 
     if not time_str:
         return None
@@ -181,7 +244,14 @@ def parse_korean_time(time_str: str) -> Optional[int]:
 
 
 def extract_message_content(message: discord.Message) -> str:
-    """메시지에서 봇 mention을 제거한 내용을 추출합니다."""
+    """메시지에서 봇 mention을 제거한 내용을 추출합니다.
+
+    Args:
+        message: The Discord message to extract content from.
+
+    Returns:
+        The message content with bot mentions removed.
+    """
     user_message = message.content
     for mention in message.mentions:
         user_message = user_message.replace(f"<@{mention.id}>", "")
@@ -190,7 +260,14 @@ def extract_message_content(message: discord.Message) -> str:
 
 
 def get_mime_type(data: bytes) -> str:
-    """Detect basic image mime type from bytes."""
+    """Detect basic image mime type from bytes.
+
+    Args:
+        data: Raw image bytes.
+
+    Returns:
+        The detected MIME type (e.g., 'image/jpeg').
+    """
     if data.startswith(b"\xff\xd8"):
         return "image/jpeg"
     elif data.startswith(b"\x89PNG"):
@@ -213,6 +290,9 @@ def process_image_sync(image_data: bytes, filename: str) -> bytes:
 
     Returns:
         Processed image bytes (JPEG format, downscaled if needed).
+
+    Raises:
+        Exception: If image processing fails (returns original data on error).
     """
     target_pixels = 1_000_000  # 1 Megapixel
     try:

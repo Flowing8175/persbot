@@ -15,16 +15,17 @@ import discord
 from openai import OpenAI
 
 from persbot.config import AppConfig
+from persbot.constants import LLMDefaults, RetryConfig
 from persbot.services.base import BaseLLMService
 from persbot.services.model_wrappers.zai_model import ZAIChatModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
     BackoffStrategy,
-    RetryConfig,
+    RetryConfig as HandlerRetryConfig,
     ZAIRetryHandler,
 )
 from persbot.services.session_wrappers.zai_session import ZAIChatSession
-from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
+from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +67,13 @@ class ZAIService(BaseLLMService):
             self.config.zai_base_url,
         )
 
-    def _create_retry_config(self) -> RetryConfig:
+    def _create_retry_config(self) -> HandlerRetryConfig:
         """Create retry configuration for Z.AI API."""
-        return RetryConfig(
-            max_retries=2,
-            base_delay=2.0,
-            max_delay=32.0,
-            rate_limit_delay=5,
+        return HandlerRetryConfig(
+            max_retries=RetryConfig.MAX_RETRIES,
+            base_delay=RetryConfig.BACKOFF_BASE,
+            max_delay=RetryConfig.BACKOFF_MAX,
+            rate_limit_delay=RetryConfig.RATE_LIMIT_RETRY_AFTER,
             request_timeout=self.config.api_request_timeout,
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
         )
@@ -91,8 +92,8 @@ class ZAIService(BaseLLMService):
                 client=self.client,
                 model_name=model_name,
                 system_instruction=system_instruction,
-                temperature=getattr(self.config, "temperature", 1.0),
-                top_p=getattr(self.config, "top_p", 1.0),
+                temperature=getattr(self.config, "temperature", LLMDefaults.TEMPERATURE),
+                top_p=getattr(self.config, "top_p", LLMDefaults.TOP_P),
                 max_messages=self._max_messages,
                 text_extractor=self._extract_text_from_response,
             )

@@ -8,6 +8,7 @@ import discord
 from openai import OpenAI, RateLimitError
 
 from persbot.config import AppConfig
+from persbot.constants import APITimeout, LLMDefaults, RetryConfig
 from persbot.exceptions import RateLimitException
 from persbot.services.base import BaseLLMService, ChatMessage
 from persbot.services.model_wrappers.openai_model import OpenAIChatCompletionModel
@@ -15,14 +16,14 @@ from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
     BackoffStrategy,
     OpenAIRetryHandler,
-    RetryConfig,
+    RetryConfig as HandlerRetryConfig,
 )
 from persbot.services.session_wrappers.openai_session import (
     ChatCompletionSession,
     encode_image_to_url,
     ResponseSession,
 )
-from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
+from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +57,13 @@ class OpenAIService(BaseLLMService):
         )
         logger.info("OpenAI 모델 '%s' 준비 완료.", self._assistant_model_name)
 
-    def _create_retry_config(self) -> RetryConfig:
+    def _create_retry_config(self) -> HandlerRetryConfig:
         """Create retry configuration for OpenAI API."""
-        return RetryConfig(
-            max_retries=2,
-            base_delay=2.0,
-            max_delay=32.0,
-            rate_limit_delay=5,
+        return HandlerRetryConfig(
+            max_retries=RetryConfig.MAX_RETRIES,
+            base_delay=RetryConfig.BACKOFF_BASE,
+            max_delay=RetryConfig.BACKOFF_MAX,
+            rate_limit_delay=RetryConfig.RATE_LIMIT_RETRY_AFTER,
             request_timeout=self.config.api_request_timeout,
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
         )
@@ -91,8 +92,8 @@ class OpenAIService(BaseLLMService):
                 client=self.client,
                 model_name=model_name,
                 system_instruction=system_instruction,
-                temperature=getattr(self.config, "temperature", 1.0),
-                top_p=getattr(self.config, "top_p", 1.0),
+                temperature=getattr(self.config, "temperature", LLMDefaults.TEMPERATURE),
+                top_p=getattr(self.config, "top_p", LLMDefaults.TOP_P),
                 max_messages=self._max_messages,
                 service_tier=service_tier,
             )

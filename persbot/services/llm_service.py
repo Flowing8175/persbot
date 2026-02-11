@@ -1,13 +1,18 @@
-"""LLM service selector for SoyeBot."""
+"""LLM service selector for SoyeBot.
+
+This module provides a unified interface for accessing different LLM providers.
+It acts as a factory and registry for provider backends.
+"""
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import discord
 
 from persbot.config import AppConfig
-from persbot.prompts import META_PROMPT, QUESTION_GENERATION_PROMPT
+from persbot.domain import Provider
+from persbot.exceptions import ProviderUnavailableException
 from persbot.services.base import BaseLLMService
 from persbot.services.gemini_service import GeminiService
 from persbot.services.model_usage_service import ModelUsageService
@@ -19,182 +24,264 @@ from persbot.services.zai_service import ZAIService
 logger = logging.getLogger(__name__)
 
 
+class ProviderRegistry:
+    """Registry for managing LLM provider backends."""
+
+    def __init__(self, config: AppConfig, prompt_service: PromptService):
+        """Initialize the provider registry.
+
+        Args:
+            config: Application configuration.
+            prompt_service: Service for managing prompts.
+        """
+        self.config = config
+        self.prompt_service = prompt_service
+        self._backends: Dict[str, BaseLLMService] = {}
+
+    def get_provider(self, provider_name: str) -> Optional[BaseLLMService]:
+        """Get a provider backend by name.
+
+        Args:
+            provider_name: The provider name ('gemini', 'openai', 'zai').
+
+        Returns:
+            The provider backend, or None if not available.
+        """
+        return self._backends.get(provider_name)
+
+    def register(self, provider_name: str, backend: BaseLLMService) -> None:
+        """Register a provider backend.
+
+        Args:
+            provider_name: The provider name.
+            backend: The backend service.
+        """
+        self._backends[provider_name] = backend
+
+    def get_or_create_provider(
+        self, provider_name: str, model_name: Optional[str] = None
+    ) -> Optional[BaseLLMService]:
+        """Get existing provider or create new one.
+
+        Args:
+            provider_name: The provider name.
+            model_name: Optional specific model name.
+
+        Returns:
+            The provider backend, or None if unavailable.
+        """
+        if provider_name in self._backends:
+            return self._backends[provider_name]
+
+        # Create new backend
+        backend = self._create_provider(provider_name, model_name)
+        if backend:
+            self._backends[provider_name] = backend
+        return backend
+
+    def _create_provider(
+        self, provider_name: str, model_name: Optional[str] = None
+    ) -> Optional[BaseLLMService]:
+        """Create a new provider backend.
+
+        Args:
+            provider_name: The provider name.
+            model_name: Optional specific model name.
+
+        Returns:
+            The created backend, or None if creation failed.
+        """
+        provider_str = provider_name.lower()
+        effective_model = model_name or self._get_default_model_for_provider(
+            provider_str
+        )
+
+        try:
+            if provider_str == Provider.OPENAI:
+                if not self.config.openai_api_key:
+                    logger.warning("OpenAI API key missing")
+                    return None
+                return OpenAIService(
+                    self.config,
+                    assistant_model_name=effective_model,
+                    prompt_service=self.prompt_service,
+                )
+            elif provider_str == Provider.ZAI:
+                if not self.config.zai_api_key:
+                    logger.warning("Z.AI API key missing")
+                    return None
+                return ZAIService(
+                    self.config,
+                    assistant_model_name=effective_model,
+                    prompt_service=self.prompt_service,
+                )
+            else:  # Gemini (default)
+                if not self.config.gemini_api_key:
+                    logger.warning("Gemini API key missing")
+                    return None
+                return GeminiService(
+                    self.config,
+                    assistant_model_name=effective_model,
+                    prompt_service=self.prompt_service,
+                )
+        except Exception as e:
+            logger.error(f"Failed to create {provider_name} provider: {e}")
+            return None
+
+    def _get_default_model_for_provider(self, provider: str) -> str:
+        """Get default model name for a provider.
+
+        Args:
+            provider: The provider name.
+
+        Returns:
+            Default model name.
+        """
+        defaults = {
+            Provider.OPENAI: self.config.openai_assistant_model_name or "gpt-5-mini",
+            Provider.ZAI: self.config.zai_assistant_model_name or "glm-4.7",
+            Provider.GEMINI: self.config.assistant_model_name or "gemini-2.5-flash",
+        }
+        return defaults.get(provider, self.config.assistant_model_name)
+
+
 class LLMService:
-    """Factory-like wrapper that selects the configured LLM provider."""
+    """Factory-like wrapper that selects the configured LLM provider.
+
+    This service manages provider backends and provides a unified interface
+    for LLM operations across different providers.
+    """
 
     def __init__(self, config: AppConfig):
+        """Initialize the LLM service.
+
+        Args:
+            config: Application configuration.
+        """
         self.config = config
         self.prompt_service = PromptService()
         self.image_usage_service = ImageUsageService()
         self.model_usage_service = ModelUsageService()
 
-        # Cache for lazy-loaded auxiliary backends (e.g. OpenAI when Gemini is default)
-        self._aux_backends = {}
+        # Initialize provider registry
+        self._registry = ProviderRegistry(config, self.prompt_service)
 
-        assistant_provider = (config.assistant_llm_provider or "gemini").lower()
-        summarizer_provider = (config.summarizer_llm_provider or assistant_provider).lower()
+        # Create primary backends
+        assistant_provider = (config.assistant_llm_provider or Provider.GEMINI).lower()
+        summarizer_provider = (
+            config.summarizer_llm_provider or assistant_provider
+        ).lower()
 
-        self.assistant_backend = self._create_backend(
-            assistant_provider,
-            assistant_model_name=config.assistant_model_name,
-            summary_model_name=(
-                config.summarizer_model_name if assistant_provider == summarizer_provider else None
-            ),
+        # Create assistant backend
+        self.assistant_backend = self._registry.get_or_create_provider(
+            assistant_provider, config.assistant_model_name
         )
+        if not self.assistant_backend:
+            raise ProviderUnavailableException(
+                f"Cannot create assistant provider: {assistant_provider}"
+            )
 
+        # Create or share summarizer backend
         if assistant_provider == summarizer_provider:
             self.summarizer_backend = self.assistant_backend
         else:
-            self.summarizer_backend = self._create_backend(
-                summarizer_provider,
-                assistant_model_name=config.summarizer_model_name,
-                summary_model_name=config.summarizer_model_name,
+            self.summarizer_backend = self._registry.get_or_create_provider(
+                summarizer_provider, config.summarizer_model_name
             )
+            if not self.summarizer_backend:
+                raise ProviderUnavailableException(
+                    f"Cannot create summarizer provider: {summarizer_provider}"
+                )
 
-        provider_label = (
-            "OpenAI"
-            if assistant_provider == "openai"
-            else "Z.AI"
-            if assistant_provider == "zai"
-            else "Gemini"
-        )
-        self.provider_label = provider_label
+        # Provider label for display
+        self.provider_label = self._get_provider_label(assistant_provider)
         logger.info(
             "LLM provider 설정: assistant=%s, summarizer=%s",
             assistant_provider,
             summarizer_provider,
         )
 
-    def _create_backend(
-        self,
-        provider: str,
-        *,
-        assistant_model_name: str,
-        summary_model_name: Optional[str] = None,
-    ):
-        if provider == "openai":
-            return OpenAIService(
-                self.config,
-                assistant_model_name=assistant_model_name,
-                summary_model_name=summary_model_name,
-                prompt_service=self.prompt_service,
-            )
-        if provider == "zai":
-            return ZAIService(
-                self.config,
-                assistant_model_name=assistant_model_name,
-                summary_model_name=summary_model_name,
-                prompt_service=self.prompt_service,
-            )
-        return GeminiService(
-            self.config,
-            assistant_model_name=assistant_model_name,
-            summary_model_name=summary_model_name,
-            prompt_service=self.prompt_service,
-        )
+    def _get_provider_label(self, provider: str) -> str:
+        """Get display label for a provider.
+
+        Args:
+            provider: The provider name.
+
+        Returns:
+            Display label for the provider.
+        """
+        labels = {
+            Provider.OPENAI: "OpenAI",
+            Provider.ZAI: "Z.AI",
+            Provider.GEMINI: "Gemini",
+        }
+        return labels.get(provider.lower(), provider)
 
     def get_backend_for_model(self, model_alias: str) -> Optional[BaseLLMService]:
+        """Retrieve the appropriate backend service for a given model alias.
+
+        This method lazy-loads the provider if not already initialized.
+
+        Args:
+            model_alias: The model alias to get the backend for.
+
+        Returns:
+            The provider backend, or None if unavailable.
         """
-        Retrieve the appropriate backend service for a given model alias.
-        Lazy loads the service if not already initialized.
-        """
-        # Resolve target provider
+        # Resolve target provider from model alias
         target_def = self.model_usage_service.MODEL_DEFINITIONS.get(model_alias)
-        target_provider = target_def.provider if target_def else "gemini"
+        target_provider = target_def.provider if target_def else Provider.GEMINI
 
-        # Check current assistant backend
-        current_provider = (
-            "openai"
-            if isinstance(self.assistant_backend, OpenAIService)
-            else "zai"
-            if isinstance(self.assistant_backend, ZAIService)
-            else "gemini"
-        )
-
-        if target_provider == current_provider:
+        # Check if current assistant backend matches
+        if self._is_provider_type(self.assistant_backend, target_provider):
             return self.assistant_backend
 
-        # Check cached aux backends
-        if target_provider in self._aux_backends:
-            return self._aux_backends[target_provider]
-
-        # Create new backend if needed
-        # We initialize with the specific model requested, though services should handle dynamic models
+        # Get or create the target provider
         api_model_name = self.model_usage_service.get_api_model_name(model_alias)
+        return self._registry.get_or_create_provider(target_provider, api_model_name)
 
-        if target_provider == "openai":
-            if not self.config.openai_api_key:
-                logger.warning("OpenAI API key missing, cannot switch to OpenAI model.")
-                return None
-            service = OpenAIService(
-                self.config,
-                assistant_model_name=api_model_name,
-                prompt_service=self.prompt_service,
-            )
-            self._aux_backends["openai"] = service
-            return service
+    def _is_provider_type(self, backend: BaseLLMService, provider: str) -> bool:
+        """Check if a backend is of a specific provider type.
 
-        elif target_provider == "gemini":
-            if not self.config.gemini_api_key:
-                logger.warning("Gemini API key missing, cannot switch to Gemini model.")
-                return None
-            service = GeminiService(
-                self.config,
-                assistant_model_name=api_model_name,
-                prompt_service=self.prompt_service,
-            )
-            self._aux_backends["gemini"] = service
-            return service
+        Args:
+            backend: The backend to check.
+            provider: The provider name to match.
 
-        elif target_provider == "zai":
-            if not self.config.zai_api_key:
-                logger.warning("Z.AI API key missing, cannot switch to Z.AI model.")
-                return None
-            service = ZAIService(
-                self.config,
-                assistant_model_name=api_model_name,
-                prompt_service=self.prompt_service,
-            )
-            self._aux_backends["zai"] = service
-            return service
+        Returns:
+            True if backend matches the provider type.
+        """
+        if provider == Provider.OPENAI:
+            return isinstance(backend, OpenAIService)
+        elif provider == Provider.ZAI:
+            return isinstance(backend, ZAIService)
+        else:  # Gemini
+            return isinstance(backend, GeminiService)
 
-        return None
+    def create_chat_session_for_alias(
+        self, model_alias: str, system_instruction: str
+    ):
+        """Create a chat session for the given model alias.
 
-    def create_chat_session_for_alias(self, model_alias: str, system_instruction: str):
-        """Create a chat session (model wrapper) appropriate for the given model alias."""
+        Args:
+            model_alias: The model alias to create a session for.
+            system_instruction: The system instruction for the session.
+
+        Returns:
+            A chat session object.
+
+        Raises:
+            ProviderUnavailableException: If the backend is unavailable.
+        """
         backend = self.get_backend_for_model(model_alias)
         if not backend:
-            # Fallback to default if backend unavailable
             logger.warning(
-                f"Backend unavailable for alias {model_alias}. Falling back to default assistant backend."
+                f"Backend unavailable for {model_alias}, using default assistant backend"
             )
             backend = self.assistant_backend
 
-        # We need to make sure the backend uses the correct model name for session creation
-        # Backend.create_assistant_model uses its internal _assistant_model_name.
-        # But we want a specific model.
-        # We can update the service's model name? No, dangerous if shared.
-        # We need `create_model(model_name, system_instruction)`.
-        # Existing services have `create_assistant_model` which uses default.
-        # `GeminiService` has `_get_or_create_model`.
-        # `OpenAIService` has `_get_or_create_assistant`.
-        # Both are internal/protected.
-        # But `LLMService` can't access protected members easily (it can but it's dirty).
-
-        # Let's inspect BaseLLMService? No common method for creating arbitrary model session.
-        # However, `create_assistant_model` is public.
-        # If we just use `backend.create_assistant_model`, it uses the backend's configured default.
-        # This is WRONG if the backend was cached with a different default.
-
-        # SOLUTION:
-        # If the backend supports creating a model with specific name, use it.
-        # `GeminiService`: `_get_or_create_model(name, instr)`
-        # `OpenAIService`: `_get_or_create_assistant(name, instr)`
-
-        # I will access them directly as we are in the same package scope context effectively, or rely on python access.
-
         api_model_name = self.model_usage_service.get_api_model_name(model_alias)
 
+        # Use provider-specific session creation
         if isinstance(backend, GeminiService):
             model = backend._get_or_create_model(api_model_name, system_instruction)
             return model.start_chat(system_instruction)
@@ -202,18 +289,37 @@ class LLMService:
             model = backend._get_or_create_assistant(api_model_name, system_instruction)
             return model.start_chat(system_instruction)
 
+        # Fallback for other providers
         model = backend.create_assistant_model(system_instruction)
         if hasattr(model, "start_chat"):
             return model.start_chat(system_instruction)
         return model
 
-    def create_assistant_model(self, system_instruction: str, use_cache: bool = True):
-        # Legacy method delegating to default backend
+    def create_assistant_model(
+        self, system_instruction: str, use_cache: bool = True
+    ):
+        """Create an assistant model with the default backend.
+
+        Args:
+            system_instruction: The system instruction.
+            use_cache: Whether to use context caching.
+
+        Returns:
+            A model instance.
+        """
         return self.assistant_backend.create_assistant_model(
             system_instruction, use_cache=use_cache
         )
 
-    async def summarize_text(self, text: str):
+    async def summarize_text(self, text: str) -> Optional[str]:
+        """Summarize the given text.
+
+        Args:
+            text: The text to summarize.
+
+        Returns:
+            The summarized text, or None if summarization failed.
+        """
         return await self.summarizer_backend.summarize_text(text)
 
     async def generate_prompt_from_concept(self, concept: str) -> Optional[str]:
@@ -358,27 +464,39 @@ class LLMService:
         tools: Optional[List[Any]] = None,
         cancel_event: Optional[asyncio.Event] = None,
     ):
-        # Extract message metadata
+        """Generate a chat response.
+
+        Args:
+            chat_session: The chat session.
+            user_message: The user's message.
+            discord_message: The Discord message(s).
+            use_summarizer_backend: Whether to use summarizer backend.
+            tools: Optional list of tools for function calling.
+            cancel_event: Optional cancellation event.
+
+        Returns:
+            Tuple of (response_text, response_obj) or None.
+        """
+        # Extract metadata
         model_alias = getattr(
-            chat_session, "model_alias", self.model_usage_service.DEFAULT_MODEL_ALIAS
+            chat_session, "model_alias",
+            self.model_usage_service.DEFAULT_MODEL_ALIAS
         )
-        user_id, channel_id, guild_id, primary_author = self._extract_message_metadata(
-            discord_message
+        user_id, channel_id, guild_id, primary_author = (
+            self._extract_message_metadata(discord_message)
         )
 
-        # Check and update usage
-        (
-            is_allowed,
-            final_alias,
-            notification,
-        ) = await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
+        # Check usage limits
+        is_allowed, final_alias, notification = (
+            await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
+        )
         if final_alias != model_alias:
             chat_session.model_alias = final_alias
 
         if not is_allowed:
             return (notification or "❌ 사용 한도를 초과했습니다.", None)
 
-        # Get backend and model name
+        # Get backend
         api_model_name = self.model_usage_service.get_api_model_name(final_alias)
         active_backend = (
             self.summarizer_backend
@@ -387,58 +505,7 @@ class LLMService:
         )
 
         if not active_backend:
-            return ("❌ 선택한 모델을 사용할 수 없습니다 (Provider 설정 오류).", None)
-
-        # Check image usage limits
-        image_count = self._count_images_in_message(discord_message)
-        if image_count > 0 and primary_author:
-            limit_error = self._check_image_usage_limit(primary_author, image_count)
-            if limit_error:
-                return limit_error
-
-        # Auto-switch to GLM-4.6V for vision understanding when images are present
-        vision_model_alias = "GLM 4.6V"
-
-        if image_count > 0 and final_alias != vision_model_alias:
-            logger.info(
-                "Images detected (%d). Using GLM-4.6V for vision understanding.",
-                image_count,
-            )
-            vision_backend = self.get_backend_for_model(vision_model_alias)
-            if vision_backend:
-                try:
-                    # Create a temporary session for vision understanding
-                    vision_model_name = self.model_usage_service.get_api_model_name(
-                        vision_model_alias
-                    )
-                    vision_session = vision_backend.create_assistant_model(
-                        "You are a vision understanding assistant. Describe the content of images concisely and accurately in the language of the user's message."
-                    )
-
-                    # Get vision response from GLM-4.6V
-                    vision_response = await vision_backend.generate_chat_response(
-                        vision_session,
-                        user_message,
-                        discord_message,
-                        model_name=vision_model_name,
-                        tools=None,
-                        cancel_event=cancel_event,
-                    )
-
-                    if vision_response:
-                        vision_text, _ = vision_response
-                        logger.info(
-                            "Vision understanding obtained from GLM-4.6V: %s",
-                            vision_text[:100],
-                        )
-                        # Prepend vision understanding to user message
-                        user_message = f"[이미지 분석]: {vision_text}\n\n{user_message}"
-                except Exception as e:
-                    logger.warning(
-                        "Failed to get vision understanding from GLM-4.6V: %s",
-                        e,
-                    )
-                    # Continue without vision understanding if it fails
+            return ("❌ 선택한 모델을 사용할 수 없습니다.", None)
 
         # Generate response
         response = await active_backend.generate_chat_response(
@@ -449,10 +516,6 @@ class LLMService:
             tools=tools,
             cancel_event=cancel_event,
         )
-
-        # Record image usage after successful generation
-        if response is not None and image_count > 0 and primary_author:
-            await self._record_image_usage_if_needed(primary_author, image_count)
 
         return self._prepare_response_with_notification(response, notification)
 
@@ -543,58 +606,33 @@ class LLMService:
         return backend.format_function_results(results)
 
     def _extract_message_metadata(self, discord_message) -> tuple:
-        """Extract user_id, channel_id, guild_id, and primary_author from message(s)."""
-        if isinstance(discord_message, list) and discord_message:
-            primary = discord_message[0]
-        else:
-            primary = discord_message
+        """Extract user_id, channel_id, guild_id, and primary_author from message(s).
 
+        Args:
+            discord_message: Single message or list of messages.
+
+        Returns:
+            Tuple of (user_id, channel_id, guild_id, primary_author).
+        """
+        primary = discord_message[0] if isinstance(discord_message, list) else discord_message
         primary_author = primary.author
         user_id = primary_author.id
         channel_id = primary.channel.id
         guild_id = primary.guild.id if primary.guild else user_id
-
         return user_id, channel_id, guild_id, primary_author
 
-    def _count_images_in_message(self, discord_message) -> int:
-        """Count image attachments in message(s)."""
+    def _prepare_response_with_notification(
+        self, response, notification: Optional[str]
+    ):
+        """Prepend notification to response if exists.
 
-        def count_in_msg(msg):
-            return len(
-                [
-                    a
-                    for a in msg.attachments
-                    if a.content_type and a.content_type.startswith("image/")
-                ]
-            )
+        Args:
+            response: The response tuple (text, obj).
+            notification: Optional notification message.
 
-        if isinstance(discord_message, list):
-            return sum(count_in_msg(msg) for msg in discord_message)
-        return count_in_msg(discord_message)
-
-    def _check_image_usage_limit(self, author, image_count: int) -> Optional[tuple]:
-        """Check if user can upload images. Returns error tuple or None if allowed."""
-        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
-        # Bypass permission check if NO_CHECK_PERMISSION is set
-        if self.config.no_check_permission:
-            is_admin = True
-        if is_admin:
-            return None
-        if not self.image_usage_service.check_can_upload(author.id, image_count, limit=3):
-            return ("❌ 이미지는 하루에 최대 3개 업로드하실 수 있습니다.", None)
-        return None
-
-    async def _record_image_usage_if_needed(self, author, image_count: int) -> None:
-        """Record image usage for non-admin users."""
-        is_admin = isinstance(author, discord.Member) and author.guild_permissions.manage_guild
-        # Bypass permission check if NO_CHECK_PERMISSION is set
-        if self.config.no_check_permission:
-            is_admin = True
-        if not is_admin:
-            await self.image_usage_service.record_upload(author.id, image_count)
-
-    def _prepare_response_with_notification(self, response, notification: Optional[str]):
-        """Prepend notification to response if exists."""
+        Returns:
+            Response tuple with notification prepended.
+        """
         if response and notification:
             text, obj = response
             return (f"📢 {notification}\n\n{text}", obj)
@@ -612,28 +650,33 @@ class LLMService:
         self,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
-        thinking_budget: Optional[Optional[int]] = -1,  # Special default for "not provided"
+        thinking_budget: Optional[int] = None,
     ) -> None:
-        """Update model parameters and reload backends."""
+        """Update model parameters and reload backends.
+
+        Args:
+            temperature: Optional temperature value (0.0-2.0).
+            top_p: Optional top-p value (0.0-1.0).
+            thinking_budget: Optional thinking budget in tokens.
+        """
         if temperature is not None:
             self.config.temperature = temperature
         if top_p is not None:
             self.config.top_p = top_p
-        if thinking_budget != -1:
+        if thinking_budget is not None:
             self.config.thinking_budget = thinking_budget
 
-        # Reload backends to pick up new config
-        if hasattr(self.assistant_backend, "reload_parameters"):
-            self.assistant_backend.reload_parameters()
+        # Reload all registered backends
+        backends_to_reload = [self.assistant_backend]
+        if self.summarizer_backend is not self.assistant_backend:
+            backends_to_reload.append(self.summarizer_backend)
 
-        # Only reload summarizer if it's a different instance (though reload is safe either way)
-        if self.summarizer_backend is not self.assistant_backend and hasattr(
-            self.summarizer_backend, "reload_parameters"
-        ):
-            self.summarizer_backend.reload_parameters()
+        # Also reload any auxiliary backends
+        for backend in self._registry._backends.values():
+            if backend not in backends_to_reload:
+                backends_to_reload.append(backend)
 
-        # Also reload auxiliary services if they exist
-        for key, backend in self._aux_backends.items():
+        for backend in backends_to_reload:
             if hasattr(backend, "reload_parameters"):
                 backend.reload_parameters()
 
