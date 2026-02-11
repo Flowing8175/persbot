@@ -165,7 +165,7 @@ def mock_message(mock_user, mock_channel):
 @pytest.fixture
 def mock_mention_message(mock_message, mock_bot):
     """Create a mock message with bot mention."""
-    message = Mock(spec=mock_message)
+    message = Mock()
     message.id = "999888777666555445"
     message.author = mock_message.author
     message.channel = mock_message.channel
@@ -197,7 +197,7 @@ def mock_attachment():
 @pytest.fixture
 def mock_image_message(mock_user, mock_channel, mock_attachment):
     """Create a mock message with image attachment."""
-    message = Mock(spec=mock_message)
+    message = Mock()
     message.id = "999888777666555446"
     message.author = mock_user
     message.channel = mock_channel

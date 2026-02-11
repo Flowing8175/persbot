@@ -1,16 +1,39 @@
 """Tests for the Assistant Cog."""
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from typing import AsyncIterator, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from discord.ext import commands
 
+from persbot.bot.chat_handler import ChatReply, create_chat_reply
 from persbot.bot.cogs.assistant import AssistantCog
-from persbot.bot.cogs.assistant.utils import should_ignore_message
+from persbot.bot.cogs.assistant.utils import (
+    cancel_auto_channel_tasks,
+    delete_assistant_messages,
+    process_removed_messages,
+    regenerate_response,
+    should_ignore_message,
+)
 from persbot.bot.session import ResolvedSession
 from persbot.services.base import ChatMessage
+
+
+def async_iterable(items):
+    """Helper to create an async iterator for mocking."""
+    async def _aiter():
+        for item in items:
+            yield item
+    return _aiter()
+
+
+@asynccontextmanager
+async def async_context_manager():
+    """Helper to create an async context manager for mocking."""
+    yield
 
 
 class TestAssistantCogInitialization:
@@ -171,7 +194,7 @@ class TestHelpCommand:
         ctx.channel = mock_message.channel
         ctx.interaction = None
 
-        await cog.help_command(ctx)
+        await cog.help_command.callback(cog, ctx)
 
         # Verify send_discord_message was called (it's mocked in utils)
         # The actual verification would check that embed was sent
@@ -206,7 +229,7 @@ class TestRetryCommand:
         ctx.defer = AsyncMock()
         ctx.send = AsyncMock()
 
-        await cog.retry_command(ctx)
+        await cog.retry_command.callback(cog, ctx)
 
         ctx.send.assert_called_once()
         assert "되돌릴 대화가 없습니다" in ctx.send.call_args[0][0]
@@ -237,25 +260,26 @@ class TestRetryCommand:
             prompt_service=mock_prompt_service,
         )
 
+        # Create a mock channel with a proper typing() async context manager
+        mock_channel = Mock()
+        mock_channel.fetch_message = AsyncMock()
+        mock_channel.typing = lambda: async_context_manager()
+
         ctx = Mock()
-        ctx.channel = mock_message.channel
+        ctx.channel = mock_channel
         ctx.interaction = None
         ctx.message = mock_message
         ctx.defer = AsyncMock()
 
         # Mock create_chat_reply to return a response
-        with patch("persbot.bot.cogs.assistant.create_chat_reply") as mock_create_reply:
+        with patch("persbot.bot.chat_handler.create_chat_reply") as mock_create_reply:
             mock_create_reply.return_value = ChatReply(
                 text="New response",
                 session_key="channel:111222333",
                 response=None,
             )
 
-            # Mock fetch_message for deletion
-            mock_channel = Mock()
-            mock_channel.fetch_message = AsyncMock()
-
-            await cog.retry_command(ctx)
+            await cog.retry_command.callback(cog, ctx)
 
             # Verify the retry flow was triggered
             mock_session_manager.undo_last_exchanges.assert_called_once()
@@ -293,7 +317,7 @@ class TestAbortCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.abort_command(ctx)
+        await cog.abort_command.callback(cog, ctx)
 
         ctx.reply.assert_called_once()
         assert "권한이 없습니다" in ctx.reply.call_args[0][0]
@@ -311,6 +335,8 @@ class TestAbortCommand:
     ):
         """Test abort command with proper permissions."""
         mock_app_config.no_check_permission = True  # Disable permission check
+        # Mock get_cog to return None (no AutoChannelCog)
+        mock_bot.get_cog = Mock(return_value=None)
 
         cog = AssistantCog(
             bot=mock_bot,
@@ -331,10 +357,10 @@ class TestAbortCommand:
         ctx.channel.name = "test-channel"
         ctx.reply = AsyncMock()
         ctx.message = Mock()
-        ctx.message.add_reaction = Mock()
+        ctx.message.add_reaction = AsyncMock()
         ctx.interaction = None
 
-        await cog.abort_command(ctx)
+        await cog.abort_command.callback(cog, ctx)
 
         # Verify task was cancelled
         mock_task.cancel.assert_called_once()
@@ -369,7 +395,7 @@ class TestResetCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.reset_session(ctx)
+        await cog.reset_session.callback(cog, ctx)
 
         mock_session_manager.reset_session_by_channel.assert_called_once_with(
             mock_message.channel.id
@@ -403,7 +429,7 @@ class TestResetCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.reset_session(ctx)
+        await cog.reset_session.callback(cog, ctx)
 
         # Should send error message
         ctx.reply.assert_called_once()
@@ -440,7 +466,7 @@ class TestTemperatureCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.set_temperature(ctx, value=None)
+        await cog.set_temperature.callback(cog, ctx, value=None)
 
         ctx.reply.assert_called_once()
         assert "0.7" in ctx.reply.call_args[0][0]
@@ -473,7 +499,7 @@ class TestTemperatureCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.set_temperature(ctx, value=0.5)
+        await cog.set_temperature.callback(cog, ctx, value=0.5)
 
         mock_llm_service.update_parameters.assert_called_once_with(temperature=0.5)
 
@@ -504,7 +530,7 @@ class TestTemperatureCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.set_temperature(ctx, value=3.0)  # Out of range (0.0-2.0)
+        await cog.set_temperature.callback(cog, ctx, value=3.0)  # Out of range (0.0-2.0)
 
         ctx.reply.assert_called_once()
         assert "0.0에서 2.0 사이여야 합니다" in ctx.reply.call_args[0][0]
@@ -541,7 +567,7 @@ class TestTopPCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.set_top_p(ctx, value=None)
+        await cog.set_top_p.callback(cog, ctx, value=None)
 
         ctx.reply.assert_called_once()
         assert "0.9" in ctx.reply.call_args[0][0]
@@ -574,7 +600,7 @@ class TestTopPCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.set_top_p(ctx, value=0.8)
+        await cog.set_top_p.callback(cog, ctx, value=0.8)
 
         mock_llm_service.update_parameters.assert_called_once_with(top_p=0.8)
 
@@ -610,7 +636,7 @@ class TestBreakCutCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.toggle_break_cut(ctx, mode=None)
+        await cog.toggle_break_cut.callback(cog, ctx, mode=None)
 
         assert cog.config.break_cut_mode is True
         ctx.reply.assert_called_once()
@@ -644,7 +670,7 @@ class TestBreakCutCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.toggle_break_cut(ctx, mode="on")
+        await cog.toggle_break_cut.callback(cog, ctx, mode="on")
 
         assert cog.config.break_cut_mode is True
 
@@ -676,7 +702,7 @@ class TestBreakCutCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.toggle_break_cut(ctx, mode="off")
+        await cog.toggle_break_cut.callback(cog, ctx, mode="off")
 
         assert cog.config.break_cut_mode is False
 
@@ -712,7 +738,7 @@ class TestThinkingBudgetCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.set_thinking_budget(ctx, value=None)
+        await cog.set_thinking_budget.callback(cog, ctx, value=None)
 
         ctx.reply.assert_called_once()
         assert "OFF" in ctx.reply.call_args[0][0]
@@ -745,7 +771,7 @@ class TestThinkingBudgetCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.set_thinking_budget(ctx, value="off")
+        await cog.set_thinking_budget.callback(cog, ctx, value="off")
 
         mock_llm_service.update_parameters.assert_called_once_with(thinking_budget=None)
 
@@ -777,7 +803,7 @@ class TestThinkingBudgetCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.set_thinking_budget(ctx, value="auto")
+        await cog.set_thinking_budget.callback(cog, ctx, value="auto")
 
         mock_llm_service.update_parameters.assert_called_once_with(thinking_budget=-1)
 
@@ -809,7 +835,7 @@ class TestThinkingBudgetCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.set_thinking_budget(ctx, value="1024")
+        await cog.set_thinking_budget.callback(cog, ctx, value="1024")
 
         mock_llm_service.update_parameters.assert_called_once_with(thinking_budget=1024)
 
@@ -840,7 +866,7 @@ class TestThinkingBudgetCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.set_thinking_budget(ctx, value="100")  # Below minimum (512)
+        await cog.set_thinking_budget.callback(cog, ctx, value="100")  # Below minimum (512)
 
         ctx.reply.assert_called_once()
         assert "512에서 32768 사이여야 합니다" in ctx.reply.call_args[0][0]
@@ -876,7 +902,7 @@ class TestDelayCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.set_buffer_delay(ctx, value=None)
+        await cog.set_buffer_delay.callback(cog, ctx, value=None)
 
         ctx.reply.assert_called_once()
 
@@ -908,7 +934,7 @@ class TestDelayCommand:
         ctx.reply = AsyncMock()
         ctx.interaction = None
 
-        await cog.set_buffer_delay(ctx, value=5.0)
+        await cog.set_buffer_delay.callback(cog, ctx, value=5.0)
 
         # Verify delay was updated
         assert cog.message_buffer.default_delay == 5.0
@@ -940,7 +966,7 @@ class TestDelayCommand:
         ctx.channel = mock_channel
         ctx.reply = AsyncMock()
 
-        await cog.set_buffer_delay(ctx, value=100.0)  # Above maximum (60)
+        await cog.set_buffer_delay.callback(cog, ctx, value=100.0)  # Above maximum (60)
 
         ctx.reply.assert_called_once()
         assert "0에서 60초 사이여야 합니다" in ctx.reply.call_args[0][0]
@@ -1025,7 +1051,8 @@ class TestPrepareBatchContext:
             prompt_service=mock_prompt_service,
         )
 
-        mock_message.channel.history = AsyncMock(return_value=[])
+        # Mock history as an async function that returns an async iterator
+        mock_message.channel.history = lambda **kwargs: async_iterable([])
 
         result = await cog._prepare_batch_context([mock_message])
 
@@ -1056,14 +1083,17 @@ class TestPrepareBatchContext:
         msg1.author = mock_user
         msg1.channel = mock_channel
         msg1.content = "First message"
+        msg1.mentions = []
 
         msg2 = Mock()
         msg2.id = "2"
         msg2.author = mock_user
         msg2.channel = mock_channel
         msg2.content = "Second message"
+        msg2.mentions = []
 
-        mock_channel.history = AsyncMock(return_value=[])
+        # Mock history as an async function that returns an async iterator
+        mock_channel.history = lambda **kwargs: async_iterable([])
 
         result = await cog._prepare_batch_context([msg1, msg2])
 
@@ -1097,9 +1127,10 @@ class TestCancelChannelTasks:
         mock_task.done = Mock(return_value=False)
         cog.processing_tasks[mock_channel.id] = mock_task
 
-        result = cog._cancel_channel_tasks(mock_channel.id, "test-channel", "Test cancel")
+        result = cog._cancel_active_tasks(mock_channel.id, "test-channel", "Test cancel")
 
-        assert result is True
+        # _cancel_active_tasks returns a list of messages, not a boolean
+        assert isinstance(result, list)
         mock_task.cancel.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1113,6 +1144,8 @@ class TestCancelChannelTasks:
         mock_channel,
     ):
         """Test cancelling sending tasks."""
+        mock_app_config.break_cut_mode = True  # Enable break_cut_mode for sending task cancellation
+
         cog = AssistantCog(
             bot=mock_bot,
             config=mock_app_config,
@@ -1125,9 +1158,10 @@ class TestCancelChannelTasks:
         mock_task.done = Mock(return_value=False)
         cog.sending_tasks[mock_channel.id] = mock_task
 
-        result = cog._cancel_channel_tasks(mock_channel.id, "test-channel", "Test cancel")
+        result = cog._cancel_active_tasks(mock_channel.id, "test-channel", "Test cancel")
 
-        assert result is True
+        # _cancel_active_tasks returns a list of messages, not a boolean
+        assert isinstance(result, list)
         mock_task.cancel.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1149,37 +1183,26 @@ class TestCancelChannelTasks:
             prompt_service=mock_prompt_service,
         )
 
-        result = cog._cancel_channel_tasks(mock_channel.id, "test-channel", "Test cancel")
+        result = cog._cancel_active_tasks(mock_channel.id, "test-channel", "Test cancel")
 
-        assert result is False
+        # _cancel_active_tasks returns an empty list when no tasks are active
+        assert result == []
 
 
 class TestCancelAutoChannelTasks:
     """Test AutoChannelCog task cancellation."""
 
     @pytest.mark.asyncio
-    async def test_cancel_auto_channel_tasks_no_cog(
-        self, mock_bot, mock_app_config, mock_llm_service, mock_session_manager, mock_prompt_service
-    ):
+    async def test_cancel_auto_channel_tasks_no_cog(self, mock_bot):
         """Test cancelling auto channel tasks when AutoChannelCog doesn't exist."""
         mock_bot.get_cog = Mock(return_value=None)
 
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
-        result = cog._cancel_auto_channel_tasks(111222333)
+        result = cancel_auto_channel_tasks(111222333, mock_bot)
 
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_cancel_auto_channel_tasks_with_cog(
-        self, mock_bot, mock_app_config, mock_llm_service, mock_session_manager, mock_prompt_service
-    ):
+    async def test_cancel_auto_channel_tasks_with_cog(self, mock_bot):
         """Test cancelling auto channel tasks when AutoChannelCog exists."""
         mock_auto_cog = Mock()
         mock_auto_cog.sending_tasks = {}
@@ -1187,15 +1210,7 @@ class TestCancelAutoChannelTasks:
 
         mock_bot.get_cog = Mock(return_value=mock_auto_cog)
 
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
-        result = cog._cancel_auto_channel_tasks(111222333)
+        result = cancel_auto_channel_tasks(111222333, mock_bot)
 
         assert result is False  # No tasks to cancel
 
@@ -1259,27 +1274,14 @@ class TestErrorHandler:
 
 
 class TestDeleteAssistantMessages:
-    """Test _delete_assistant_messages method."""
+    """Test delete_assistant_messages utility function."""
 
     @pytest.mark.asyncio
     async def test_delete_assistant_messages_with_ids(
         self,
-        mock_bot,
-        mock_app_config,
-        mock_llm_service,
-        mock_session_manager,
-        mock_prompt_service,
         mock_channel,
     ):
         """Test deleting assistant messages with valid IDs."""
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
         msg = ChatMessage(role="model", content="Test", author_id=None)
         msg.message_ids = ["999"]
 
@@ -1288,27 +1290,14 @@ class TestDeleteAssistantMessages:
         mock_channel.fetch_message = AsyncMock(return_value=mock_old_msg)
 
         # Should not raise error
-        await cog._delete_assistant_messages(mock_channel, msg)
+        await delete_assistant_messages(mock_channel, msg)
 
     @pytest.mark.asyncio
     async def test_delete_assistant_messages_not_found(
         self,
-        mock_bot,
-        mock_app_config,
-        mock_llm_service,
-        mock_session_manager,
-        mock_prompt_service,
         mock_channel,
     ):
         """Test deleting assistant messages when message not found."""
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
         msg = ChatMessage(role="model", content="Test", author_id=None)
         msg.message_ids = ["999"]
 
@@ -1319,80 +1308,80 @@ class TestDeleteAssistantMessages:
         )
 
         # Should not raise error
-        await cog._delete_assistant_messages(mock_channel, msg)
+        await delete_assistant_messages(mock_channel, msg)
 
 
 class TestProcessRemovedMessages:
-    """Test _process_removed_messages method."""
+    """Test process_removed_messages utility function."""
 
     @pytest.mark.asyncio
     async def test_process_removed_messages(
         self,
-        mock_bot,
-        mock_app_config,
         mock_llm_service,
-        mock_session_manager,
-        mock_prompt_service,
         mock_channel,
     ):
         """Test processing removed messages."""
         mock_llm_service.get_user_role_name = Mock(return_value="user")
         mock_llm_service.get_assistant_role_name = Mock(return_value="model")
 
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
-
         user_msg = ChatMessage(role="user", content="Hello world", author_id=123456789)
         assistant_msg = ChatMessage(role="model", content="Hi there!", author_id=None)
 
-        result = await cog._process_removed_messages(
-            Mock(channel=mock_channel), [assistant_msg, user_msg]
+        ctx = Mock(channel=mock_channel)
+
+        result = await process_removed_messages(
+            ctx, [assistant_msg, user_msg], mock_llm_service
         )
 
         assert result == "Hello world"
 
 
 class TestRegenerateResponse:
-    """Test _regenerate_response method."""
+    """Test regenerate_response utility function."""
 
     @pytest.mark.asyncio
     async def test_regenerate_response_success(
         self,
-        mock_bot,
-        mock_app_config,
         mock_llm_service,
         mock_session_manager,
-        mock_prompt_service,
         mock_message,
+        mock_bot,
+        mock_app_config,
     ):
         """Test successful response regeneration."""
-        cog = AssistantCog(
-            bot=mock_bot,
-            config=mock_app_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-            prompt_service=mock_prompt_service,
-        )
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def mock_typing():
+            yield
+
+        mock_channel = Mock()
+        mock_channel.typing = mock_typing
 
         ctx = Mock()
-        ctx.channel = mock_message.channel
+        ctx.channel = mock_channel
         ctx.message = mock_message
         ctx.interaction = None
 
-        with patch("persbot.bot.cogs.assistant.create_chat_reply") as mock_create_reply:
+        with patch("persbot.bot.chat_handler.create_chat_reply") as mock_create_reply:
             mock_create_reply.return_value = ChatReply(
                 text="Regenerated response",
                 session_key="channel:123",
                 response=None,
             )
 
-            with patch.object(cog, "_send_response", new_callable=AsyncMock):
-                await cog._regenerate_response(ctx, "channel:123", "Test content")
+            with patch("persbot.bot.cogs.assistant.utils.send_response") as mock_send_response:
+                await regenerate_response(
+                    ctx,
+                    "channel:123",
+                    "Test content",
+                    mock_bot,
+                    mock_llm_service,
+                    mock_session_manager,
+                    None,  # tool_manager
+                    mock_send_response,
+                    mock_app_config,
+                )
 
                 mock_create_reply.assert_called_once()
 
@@ -1487,9 +1476,10 @@ class TestCogCommandError:
         ctx = Mock()
         ctx.reply = AsyncMock()
 
-        from discord.ext.commands import CommandOnCooldown
+        from discord.ext.commands import CommandOnCooldown, Cooldown
 
-        error = CommandOnCooldown(retry_after=5.0, type=commands.BucketType.default)
+        cooldown = Cooldown(rate=1, per=10.0)
+        error = CommandOnCooldown(cooldown=cooldown, retry_after=5.0, type=commands.BucketType.default)
 
         await cog.cog_command_error(ctx, error)
 
