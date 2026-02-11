@@ -138,10 +138,13 @@ class ProviderRegistry:
         Returns:
             Default model name.
         """
+        # Use hardcoded default model names matching config.py defaults
+        # AppConfig only stores assistant_model_name and summarizer_model_name
+        # which are already resolved based on the provider during load_config()
         defaults = {
-            Provider.OPENAI: self.config.openai_assistant_model_name or "gpt-5-mini",
-            Provider.ZAI: self.config.zai_assistant_model_name or "glm-4.7",
-            Provider.GEMINI: self.config.assistant_model_name or "gemini-2.5-flash",
+            Provider.OPENAI: "gpt-5-mini",  # DEFAULT_OPENAI_ASSISTANT_MODEL
+            Provider.ZAI: "glm-4.7",        # DEFAULT_ZAI_ASSISTANT_MODEL
+            Provider.GEMINI: "gemini-2.5-flash",  # DEFAULT_GEMINI_ASSISTANT_MODEL
         }
         return defaults.get(provider, self.config.assistant_model_name)
 
