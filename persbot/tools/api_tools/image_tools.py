@@ -33,11 +33,110 @@ def _get_image_service() -> ImageService:
     return _image_service
 
 
+async def _download_and_convert_image(url: str) -> Optional[str]:
+    """Download image from URL and convert to base64 data URL.
+
+    Args:
+        url: Image URL (Discord CDN URL or external URL).
+
+    Returns:
+        Base64 data URL string on success, None on failure.
+    """
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0)) as session:
+            async with session.get(url, headers={'User-Agent': 'Mozilla/5.0'}) as response:
+                if response.status != 200:
+                    logger.error(
+                        "Failed to download image from URL (status=%d): %s",
+                        response.status,
+                        url[:100],
+                    )
+                    return None
+
+                # Validate content type is an image
+                content_type = response.headers.get("Content-Type", "")
+                if not content_type.startswith("image/"):
+                    logger.warning(
+                        "URL does not point to an image (content_type=%s): %s",
+                        content_type,
+                        url[:100],
+                    )
+                    return None
+
+                image_bytes = await response.read()
+
+                # Detect MIME type from content type or URL extension
+                mime_type = _detect_mime_type(url, content_type, image_bytes)
+
+                # Downscale image to ~1MP to reduce API payload
+                img_bytes_processed = await asyncio.to_thread(
+                    process_image_sync, image_bytes, url
+                )
+
+                b64_str = base64.b64encode(img_bytes_processed).decode("utf-8")
+                return f"data:{mime_type};base64,{b64_str}"
+
+    except asyncio.TimeoutError:
+        logger.error("Timeout downloading image from URL: %s", url[:100])
+        return None
+    except aiohttp.ClientError as e:
+        logger.error("Failed to download image from URL: %s", e)
+        return None
+    except Exception as e:
+        logger.error("Unexpected error downloading image: %s", e)
+        return None
+
+
+def _detect_mime_type(url: str, content_type: str, data: bytes) -> str:
+    """Detect MIME type from URL extension, content type header, or content.
+
+    Args:
+        url: Image URL.
+        content_type: Content-Type header from response.
+        data: Image bytes.
+
+    Returns:
+        MIME type string (e.g., 'image/png').
+    """
+    # Priority 1: Use content type from response header
+    if content_type and content_type.startswith("image/"):
+        # Get the main MIME type without charset or other parameters
+        return content_type.split(";")[0].strip()
+
+    # Priority 2: Try from URL extension (handle query parameters)
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    path = parsed.path.lower()  # Get path without query string
+    if path.endswith((".png", ".png/")):
+        return "image/png"
+    elif path.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    elif path.endswith((".webp", ".webp/")):
+        return "image/webp"
+    elif path.endswith((".gif", ".gif/")):
+        return "image/gif"
+
+    # Priority 3: Fallback to detection from content using file signatures
+    if len(data) >= 8:
+        # Check for common image file signatures (magic bytes)
+        if data[:8] == b'\x89PNG\r\n\x1a\n':
+            return "image/png"
+        elif data[:2] == b'\xff\xd8':
+            return "image/jpeg"
+        elif data[:4] == b'RIFF' and len(data) >= 12 and data[8:12] == b'WEBP':
+            return "image/webp"
+        elif data[:6] in (b'GIF87a', b'GIF89a'):
+            return "image/gif"
+
+    # Priority 4: Ultimate fallback
+    return "image/png"
+
+
 async def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
     model: Optional[str] = None,
-    image_input: Optional[str] = None,
+    image_url: Optional[str] = None,
     discord_context: Optional[discord.Message] = None,
     cancel_event: Optional[asyncio.Event] = None,
     **kwargs,
@@ -50,8 +149,9 @@ async def generate_image(
             "1:1" (1024x1024), "16:9" (1344x768), "9:16" (768x1344),
             "4:3" (1184x864), "3:2" (1248x832), "2:3" (832x1248),
             "21:9" (1536x672). Defaults to "1:1".
-        image_input: Optional base64-encoded image data (data URL format) to use
-            as reference/input for image generation. Enables image-to-image generation.
+        image_url: Optional image URL (Discord CDN URL or external URL) to use
+            as reference/input for image generation. The system will automatically
+            download and convert to base64. Takes priority over attached image.
         discord_context: Discord message context (automatically injected) to extract
             attached images for use as input.
         cancel_event: AsyncIO event to check for cancellation before API calls.
@@ -85,7 +185,27 @@ async def generate_image(
         logger.info("Image generation aborted due to cancellation signal before API call")
         return ToolResult(success=False, error="Image generation aborted by user")
 
-    # Extract images from discord_context if no image_input provided
+    # Process image reference with priority:
+    # 1. Explicit image_url (URL to download and convert) - highest priority
+    # 2. Attached image from Discord message - fallback
+    image_input = None
+
+    # Priority 1: URL to download
+    if image_url:
+        try:
+            image_input = await _download_and_convert_image(image_url)
+            if image_input:
+                logger.info(
+                    "Successfully downloaded and converted image from URL for image generation"
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to download/convert image from URL %s: %s",
+                image_url[:100] if image_url else "unknown",
+                e,
+            )
+
+    # Priority 2: Attached image (only if URL download failed or not provided)
     if not image_input and discord_context and discord_context.attachments:
         # Process first image attachment as input
         for attachment in discord_context.attachments:
@@ -261,7 +381,7 @@ def register_image_tools(registry):
     registry.register(
         ToolDefinition(
             name="generate_image",
-            description="Generate an image using AI based on a text description. Optionally use an attached image as input/reference for image-to-image generation. Use this when the user asks for an image, drawing, or visual content.",
+            description="Generate an image using AI based on a text description. Optionally use an image URL or an attached image as input/reference for image-to-image generation. Use this when the user asks for an image, drawing, or visual content.",
             category=ToolCategory.API_SEARCH,
             parameters=[
                 ToolParameter(
@@ -283,9 +403,9 @@ def register_image_tools(registry):
                     required=False,
                 ),
                 ToolParameter(
-                    name="image_input",
+                    name="image_url",
                     type="string",
-                    description='Optional base64-encoded image (data URL format like "data:image/png;base64,...") to use as input/reference for image-to-image generation. If not provided but the user attached an image, it will be used automatically.',
+                    description="Optional image URL (Discord CDN URL or external URL) to use as input/reference for image-to-image generation. The system will automatically download and convert to base64. Takes priority over attached image.",
                     required=False,
                 ),
             ],
