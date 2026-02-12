@@ -337,7 +337,7 @@ class TestMainFunction:
             mock_bot.add_cog = AsyncMock()
 
             # Mock bot start to raise general exception
-mock_bot.start = AsyncMock(side_effect=Exception("General error"))
+            mock_bot.start = AsyncMock(side_effect=Exception("General error"))
 
             with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)

@@ -224,6 +224,17 @@ def mock_image_message(mock_user, mock_channel, mock_attachment):
 @pytest.fixture
 def mock_interaction(mock_user, mock_channel):
     """Create a mock Discord interaction (slash command)."""
+    # Create a mock message that can be edited
+    mock_message = Mock()
+    mock_message.edit = AsyncMock()
+
+    # Create mock followup object with proper send method
+    class MockFollowup:
+        def __init__(self):
+            self.send = AsyncMock(return_value=mock_message)
+
+    mock_followup = MockFollowup()
+
     interaction = Mock()
     interaction.id = "111222333444555"
     interaction.user = mock_user
@@ -233,8 +244,7 @@ def mock_interaction(mock_user, mock_channel):
     interaction.response.defer = AsyncMock()
     interaction.response.edit_message = AsyncMock()
     interaction.response.send_message = AsyncMock(return_value=Mock())
-    interaction.response.followup = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.followup = mock_followup
     interaction.message = Mock()
     return interaction
 
@@ -357,6 +367,47 @@ def mock_discord_client():
     client.get_channel = AsyncMock()
     client.get_user = AsyncMock()
     return client
+
+
+@pytest.fixture
+def mock_ctx(mock_user, mock_channel, mock_bot):
+    """Create a mock Discord command context."""
+    ctx = Mock()
+    ctx.author = mock_user
+    ctx.channel = mock_channel
+    ctx.guild = mock_channel.guild
+    ctx.message = Mock()
+    ctx.message.author = mock_user
+    ctx.message.channel = mock_channel
+    ctx.message.content = "!test"
+    ctx.message.clean_content = "!test"
+    ctx.message.mentions = []
+    ctx.message.reference = None
+    ctx.message.attachments = []
+    ctx.message.embeds = []
+    ctx.message.created_at = datetime.now(timezone.utc)
+    ctx.message.reply = AsyncMock()
+    ctx.message.delete = AsyncMock()
+    ctx.prefix = "!"
+    ctx.send = AsyncMock()
+    ctx.reply = AsyncMock()
+    ctx.defer = AsyncMock()
+
+    # Create proper async context manager for typing()
+    class AsyncTypingContext:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    ctx.channel.typing = Mock(return_value=AsyncTypingContext())
+    ctx.invoke = AsyncMock()
+    ctx.command = Mock()
+    ctx.command.name = "test"
+    ctx.bot = mock_bot
+    ctx.invoked_with = "test"
+    return ctx
 
 
 @pytest.fixture

@@ -261,7 +261,7 @@ class TestAutoChannelCogSaveDynamicChannels:
 class TestAutoChannelCogCommands:
     """Test AutoChannelCog command handlers."""
 
-@pytest.mark.asyncio
+    @pytest.mark.asyncio
     async def test_auto_channel_group_permission_denied(
         self,
         mock_bot,
