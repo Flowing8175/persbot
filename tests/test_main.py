@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch, call
 from discord.ext import commands
@@ -17,7 +18,7 @@ from persbot.tools.manager import ToolManager
 class TestSetupLogging:
     """Test logging setup functionality."""
 
-def test_setup_logging_basic(self):
+    def test_setup_logging_basic(self):
         """Test basic logging setup."""
         log_level = logging.INFO
 
@@ -90,15 +91,8 @@ class TestMainFunction:
             # Mock tree sync
             mock_bot.tree.sync = AsyncMock(return_value=[])
 
-            # Mock AutoChannelCog import (not available)
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+# Mock AutoChannelCog import (not available)
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Verify bot initialization
@@ -160,17 +154,10 @@ class TestMainFunction:
             # Mock tree sync
             mock_bot.tree.sync = AsyncMock(return_value=[])
 
-            # Mock AutoChannelCog import (available)
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    mock_module = Mock()
-                    mock_module.AutoChannelCog = Mock()
-                    return mock_module
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+# Mock AutoChannelCog import (available)
+            mock_auto_channel_module = Mock()
+            mock_auto_channel_module.AutoChannelCog = Mock()
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": mock_auto_channel_module}):
                 await main(mock_app_config)
 
             # Verify all 5 cogs are added including AutoChannelCog
@@ -238,15 +225,8 @@ class TestMainFunction:
 
             mock_bot.event = Mock(side_effect=mock_event_handler)
 
-            # Run main
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+# Run main
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Call on_ready event
@@ -290,17 +270,10 @@ class TestMainFunction:
                     return on_close
                 return func
 
-            mock_bot.event = Mock(side_effect=mock_event_handler)
+                mock_bot.event = Mock(side_effect=mock_event_handler)
 
             # Run main
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Call on_close event
@@ -335,14 +308,7 @@ class TestMainFunction:
 
             mock_bot.start = AsyncMock(side_effect=discord.LoginFailure("Invalid token"))
 
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Verify error was logged
@@ -371,16 +337,9 @@ class TestMainFunction:
             mock_bot.add_cog = AsyncMock()
 
             # Mock bot start to raise general exception
-            mock_bot.start = AsyncMock(side_effect=Exception("General error"))
+mock_bot.start = AsyncMock(side_effect=Exception("General error"))
 
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Verify error was logged
@@ -409,16 +368,9 @@ class TestMainFunction:
 
             # Mock bot events
             mock_tree_sync = AsyncMock(return_value=[])
-            mock_bot.tree.sync = mock_tree_sync
+mock_bot.tree.sync = mock_tree_sync
 
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Verify bot.start was called with correct token
@@ -446,16 +398,9 @@ class TestMainModuleIntegration:
             mock_bot = AsyncMock()
             mock_bot_class.return_value = mock_bot
             mock_bot.user = Mock(name="TestBot", id=123456789)
-            mock_bot.add_cog = AsyncMock()
+mock_bot.add_cog = AsyncMock()
 
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Verify cogs are called with correct arguments
@@ -491,16 +436,9 @@ class TestMainModuleIntegration:
             mock_bot = AsyncMock()
             mock_bot_class.return_value = mock_bot
             mock_bot.user = Mock(name="TestBot", id=123456789)
-            mock_bot.add_cog = AsyncMock()
+mock_bot.add_cog = AsyncMock()
 
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Verify bot initialization calls
@@ -573,16 +511,9 @@ class TestMainModuleIntegration:
             # Make tree sync raise an exception
             import discord
 
-            mock_bot.tree.sync = AsyncMock(side_effect=Exception("Sync failed"))
+mock_bot.tree.sync = AsyncMock(side_effect=Exception("Sync failed"))
 
-            original_import = __builtins__.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "persbot.bot.cogs.auto_channel":
-                    raise ModuleNotFoundError("AutoChannelCog not found")
-                return original_import(name, *args, **kwargs)
-
-            with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
             # Call on_ready to trigger sync

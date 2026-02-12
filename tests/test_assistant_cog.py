@@ -12,7 +12,7 @@ from discord.ext import commands
 from persbot.bot.chat_handler import ChatReply, create_chat_reply
 from persbot.bot.cogs.assistant import AssistantCog
 from persbot.bot.cogs.assistant.utils import (
-    cancel_auto_channel_tasks,
+    cancel_channel_tasks,
     delete_assistant_messages,
     process_removed_messages,
     regenerate_response,
@@ -24,9 +24,11 @@ from persbot.services.base import ChatMessage
 
 def async_iterable(items):
     """Helper to create an async iterator for mocking."""
+
     async def _aiter():
         for item in items:
             yield item
+
     return _aiter()
 
 
@@ -1193,16 +1195,16 @@ class TestCancelAutoChannelTasks:
     """Test AutoChannelCog task cancellation."""
 
     @pytest.mark.asyncio
-    async def test_cancel_auto_channel_tasks_no_cog(self, mock_bot):
+    async def test_cancel_channel_tasks_no_cog(self, mock_bot):
         """Test cancelling auto channel tasks when AutoChannelCog doesn't exist."""
         mock_bot.get_cog = Mock(return_value=None)
 
-        result = cancel_auto_channel_tasks(111222333, mock_bot)
+        result = cancel_channel_tasks(111222333, mock_bot)
 
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_cancel_auto_channel_tasks_with_cog(self, mock_bot):
+    async def test_cancel_channel_tasks_with_cog(self, mock_bot):
         """Test cancelling auto channel tasks when AutoChannelCog exists."""
         mock_auto_cog = Mock()
         mock_auto_cog.sending_tasks = {}
@@ -1210,7 +1212,7 @@ class TestCancelAutoChannelTasks:
 
         mock_bot.get_cog = Mock(return_value=mock_auto_cog)
 
-        result = cancel_auto_channel_tasks(111222333, mock_bot)
+        result = cancel_channel_tasks(111222333, mock_bot)
 
         assert result is False  # No tasks to cancel
 
@@ -1329,9 +1331,7 @@ class TestProcessRemovedMessages:
 
         ctx = Mock(channel=mock_channel)
 
-        result = await process_removed_messages(
-            ctx, [assistant_msg, user_msg], mock_llm_service
-        )
+        result = await process_removed_messages(ctx, [assistant_msg, user_msg], mock_llm_service)
 
         assert result == "Hello world"
 
@@ -1479,7 +1479,9 @@ class TestCogCommandError:
         from discord.ext.commands import CommandOnCooldown, Cooldown
 
         cooldown = Cooldown(rate=1, per=10.0)
-        error = CommandOnCooldown(cooldown=cooldown, retry_after=5.0, type=commands.BucketType.default)
+        error = CommandOnCooldown(
+            cooldown=cooldown, retry_after=5.0, type=commands.BucketType.default
+        )
 
         await cog.cog_command_error(ctx, error)
 
