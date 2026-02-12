@@ -1,10 +1,12 @@
-# SoyeBot - Multi-Provider Discord AI Bot
+# Persbot - Multi-Provider Discord AI Bot
 
 A feature-rich Discord bot powered by multiple LLM providers (Google Gemini, OpenAI, Z.AI) with chat assistance, summarization, persona management, and image generation capabilities.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Discord.py](https://img.shields.io/badge/discord.py-2.3.0+-blue.svg)](https://github.com/Rapptz/discord.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+100% written by AI agents. Be aware for bugs. I don't care of anything goes wrong :>
 
 ## Features
 
