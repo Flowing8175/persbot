@@ -481,11 +481,11 @@ class TestSummarizeByTime:
         mock_app_config.max_messages_per_fetch = 100
 
         # No messages in history
-        async def async_iterator_empty():
+        async def mock_history(*args, **kwargs):
+            # No messages to yield
             return
-            yield  # This will never be reached
 
-        mock_channel.history.return_value = async_iterator_empty()
+        mock_channel.history = mock_history
 
         cog = SummarizerCog(
             bot=mock_bot,
