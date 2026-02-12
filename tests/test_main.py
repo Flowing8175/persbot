@@ -77,21 +77,6 @@ class TestMainFunction:
             mock_bot.user = Mock(name="TestBot", id=123456789)
             mock_bot.add_cog = AsyncMock()
 
-            # Mock bot events
-            mock_on_ready = AsyncMock()
-            mock_on_close = AsyncMock()
-            mock_bot.event = Mock(
-                side_effect=lambda func: (
-                    setattr(mock_bot, "on_ready", func)
-                    if func.__name__ == "on_ready"
-                    else setattr(mock_bot, "on_close", func)
-                )
-            )
-
-            # Mock tree sync
-            mock_bot.tree.sync = AsyncMock(return_value=[])
-
-# Mock AutoChannelCog import (not available)
             with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
 
@@ -368,7 +353,7 @@ class TestMainFunction:
 
             # Mock bot events
             mock_tree_sync = AsyncMock(return_value=[])
-mock_bot.tree.sync = mock_tree_sync
+            mock_bot.tree.sync = mock_tree_sync
 
             with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
