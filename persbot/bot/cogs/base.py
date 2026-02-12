@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from abc import abstractmethod
-from typing import List, Optional
+from typing import Optional
 
 import discord
 from persbot.tools.manager import ToolManager

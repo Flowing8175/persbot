@@ -3,12 +3,8 @@
 import asyncio
 import datetime
 import hashlib
-import json
 import logging
 import re
-import time
-from collections import deque
-from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
@@ -18,22 +14,18 @@ from google.genai.errors import ClientError
 
 from persbot.config import AppConfig
 from persbot.constants import (
-    APITimeout,
     CacheConfig,
     DisplayConfig,
     LLMDefaults,
-    RetryConfig,
 )
-from persbot.services.base import BaseLLMServiceCore, ChatMessage
-from persbot.services.cache_service import CacheService, GeminiCacheStrategy
+from persbot.services.base import BaseLLMServiceCore
 from persbot.services.model_wrappers.gemini_model import GeminiCachedModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
     GeminiRetryHandler,
-    RetryConfig as HandlerRetryConfig,
     RetryHandler,
 )
-from persbot.services.session_wrappers.gemini_session import GeminiChatSession, extract_clean_text
+from persbot.services.session_wrappers.gemini_session import extract_clean_text
 from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
 from persbot.utils import GENERIC_ERROR_MESSAGE
 

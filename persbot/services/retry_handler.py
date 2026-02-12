@@ -3,17 +3,16 @@
 import asyncio
 import logging
 import re
-import time
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 import discord
 
-from persbot.exceptions import APIException, FatalError, RateLimitException
-from persbot.utils import ERROR_API_TIMEOUT, ERROR_RATE_LIMIT, GENERIC_ERROR_MESSAGE
+from persbot.exceptions import FatalError
+from persbot.utils import ERROR_API_TIMEOUT, GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 

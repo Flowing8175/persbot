@@ -3,7 +3,6 @@
 import logging
 from typing import Any, Dict, List
 
-import google.genai as genai
 from google.genai import types as genai_types
 
 from persbot.tools.adapters.base_adapter import BaseToolAdapter

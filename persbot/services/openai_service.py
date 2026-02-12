@@ -8,23 +8,18 @@ import discord
 from openai import OpenAI, RateLimitError
 
 if TYPE_CHECKING:
-    from openai import Stream
-    from openai.types.chat import ChatCompletionChunk
+    pass
 
 from persbot.config import AppConfig
-from persbot.constants import APITimeout, LLMDefaults, RetryConfig
-from persbot.exceptions import RateLimitException
+from persbot.constants import LLMDefaults
 from persbot.services.base import BaseLLMServiceCore, ChatMessage
 from persbot.services.model_wrappers.openai_model import OpenAIChatCompletionModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
-    BackoffStrategy,
     OpenAIRetryHandler,
-    RetryConfig as HandlerRetryConfig,
 )
 from persbot.services.session_wrappers.openai_session import (
     ChatCompletionSession,
-    encode_image_to_url,
     ResponseSession,
 )
 from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter

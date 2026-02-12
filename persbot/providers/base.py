@@ -10,7 +10,6 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Un
 import discord
 
 from persbot.config import AppConfig
-from persbot.services.base import BaseLLMService
 from persbot.services.prompt_service import PromptService
 
 

@@ -3,13 +3,13 @@
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 import discord
 
 from persbot.config import AppConfig
-from persbot.tools.base import ToolCategory, ToolDefinition, ToolResult
+from persbot.tools.base import ToolDefinition, ToolResult
 from persbot.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)

@@ -1,9 +1,9 @@
 """Tool registry for managing available tools."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-from persbot.tools.base import ToolCategory, ToolDefinition, ToolResult
+from persbot.tools.base import ToolCategory, ToolDefinition
 
 logger = logging.getLogger(__name__)
 

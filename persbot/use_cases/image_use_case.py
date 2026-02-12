@@ -7,13 +7,11 @@ and image usage tracking.
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional
 
 import discord
 
 from persbot.config import AppConfig
-from persbot.domain import GuildId, UserId
-from persbot.exceptions import ImageRateLimitException, ImageException
 from persbot.services.image_service import ImageService
 from persbot.services.image_model_service import get_channel_image_model
 from persbot.services.llm_service import LLMService

@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -11,15 +10,13 @@ import aiofiles
 import discord
 from discord.ext import commands
 
-from persbot.bot.chat_handler import ChatReply, create_chat_reply, send_split_response
+from persbot.bot.chat_handler import ChatReply
 from persbot.bot.cogs.base import BaseChatCog
 from persbot.bot.session import SessionManager
 from persbot.config import AppConfig
 from persbot.services.llm_service import LLMService
 from persbot.utils import (
     GENERIC_ERROR_MESSAGE,
-    extract_message_content,
-    send_discord_message,
 )
 
 logger = logging.getLogger(__name__)

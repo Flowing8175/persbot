@@ -7,14 +7,12 @@ and cancellation support.
 import asyncio
 import base64
 import hashlib
-import io
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
-from openai import APIStatusError, AuthenticationError, OpenAI, RateLimitError
-from PIL import Image
+from openai import OpenAI, RateLimitError
 
 from persbot.config import AppConfig
 from persbot.services.base import BaseLLMService
@@ -23,7 +21,6 @@ from persbot.services.retry_handler import (
     RetryConfig,
     RetryHandler,
 )
-from persbot.utils import get_mime_type, process_image_sync
 
 logger = logging.getLogger(__name__)
 

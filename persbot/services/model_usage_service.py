@@ -2,7 +2,7 @@ import datetime
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 import aiofiles

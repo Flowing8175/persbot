@@ -3,7 +3,6 @@
 import discord
 from discord.ext import commands
 
-from persbot.config import AppConfig
 
 from . import utils
 

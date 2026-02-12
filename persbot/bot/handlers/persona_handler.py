@@ -5,12 +5,12 @@ editing, and switching personas.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 import discord
 from discord.ext import commands
 
-from persbot.bot.handlers.base_handler import BaseHandler, HandlerResponse
+from persbot.bot.handlers.base_handler import BaseHandler
 from persbot.config import AppConfig
 from persbot.services.llm_service import LLMService
 from persbot.services.prompt_service import PromptService

@@ -7,7 +7,7 @@ formatting, splitting, and session tracking.
 import asyncio
 import io
 import logging
-from typing import AsyncIterator, List, Union
+from typing import AsyncIterator, List
 
 import discord
 

@@ -15,17 +15,14 @@ import discord
 from openai import OpenAI
 
 if TYPE_CHECKING:
-    from openai import Stream
-    from openai.types.chat import ChatCompletionChunk
+    pass
 
 from persbot.config import AppConfig
-from persbot.constants import LLMDefaults, RetryConfig, ModelNames
+from persbot.constants import LLMDefaults
 from persbot.services.base import BaseLLMServiceCore, ChatMessage
 from persbot.services.model_wrappers.zai_model import ZAIChatModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
-    BackoffStrategy,
-    RetryConfig as HandlerRetryConfig,
     ZAIRetryHandler,
 )
 from persbot.services.session_wrappers.zai_session import ZAIChatSession

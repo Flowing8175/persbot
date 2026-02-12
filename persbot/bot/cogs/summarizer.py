@@ -1,7 +1,6 @@
 """Summarizer Cog for SoyeBot."""
 
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
@@ -11,7 +10,7 @@ from discord.ext import commands
 
 from persbot.config import AppConfig
 from persbot.services.llm_service import LLMService
-from persbot.utils import GENERIC_ERROR_MESSAGE, DiscordUI, parse_korean_time, send_discord_message
+from persbot.utils import GENERIC_ERROR_MESSAGE, parse_korean_time, send_discord_message
 
 logger = logging.getLogger(__name__)
 

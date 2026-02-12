@@ -8,15 +8,13 @@ CachedContent API.
 import asyncio
 import hashlib
 import logging
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, AsyncIterator, Callable, Optional, Union
+from typing import Any, Optional
 
 from persbot.constants import CacheConfig, CacheLimit
-from persbot.exceptions import CacheException, ContextCacheException
 
 logger = logging.getLogger(__name__)
 

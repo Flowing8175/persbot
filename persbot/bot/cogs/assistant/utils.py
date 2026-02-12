@@ -1,7 +1,6 @@
 """Helper functions and utilities for Assistant Cog."""
 
 import asyncio
-import io
 import logging
 from typing import Optional
 
@@ -12,7 +11,7 @@ from persbot.bot.chat_handler import ChatReply
 from persbot.bot.session import SessionManager
 from persbot.config import AppConfig
 from persbot.services.llm_service import LLMService
-from persbot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
+from persbot.utils import GENERIC_ERROR_MESSAGE, extract_message_content
 
 logger = logging.getLogger(__name__)
 

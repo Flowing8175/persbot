@@ -12,7 +12,6 @@ from typing import Any, Optional
 
 from persbot.config import AppConfig
 from persbot.constants import META_PROMPT, QUESTION_GENERATION_PROMPT
-from persbot.exceptions import PersonaCreationException, PromptGenerationException
 from persbot.services.llm_service import LLMService
 from persbot.services.openai_service import OpenAIService
 from persbot.services.zai_service import ZAIService

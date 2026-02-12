@@ -7,21 +7,17 @@ including session management, tool execution, and response handling.
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, Optional, Tuple, Union
+from typing import Any, AsyncIterator, Optional, Tuple, Union
 
 import discord
 
 from persbot.bot.session import ResolvedSession, SessionManager
 from persbot.config import AppConfig
-from persbot.domain import ModelAlias, Provider
 from persbot.exceptions import (
-    AbortSignalException,
     CancellationException,
-    SessionException,
 )
 from persbot.services.cache_service import CacheService
 from persbot.services.llm_service import LLMService
-from persbot.services.model_usage_service import ModelUsageService
 from persbot.services.prompt_service import PromptService
 from persbot.tools import ToolManager
 

@@ -6,7 +6,7 @@ It generates detailed image generation prompts based on the persona's current si
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 

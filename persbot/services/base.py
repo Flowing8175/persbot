@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import time
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -17,9 +16,6 @@ from persbot.services.retry_handler import (
     RetryHandler,
 )
 from persbot.utils import (
-    ERROR_API_TIMEOUT,
-    ERROR_RATE_LIMIT,
-    GENERIC_ERROR_MESSAGE,
     process_image_sync,
 )
 

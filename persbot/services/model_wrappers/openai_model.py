@@ -1,7 +1,7 @@
 """OpenAI model wrapper for managing model instances."""
 
 import logging
-from typing import Any, List, Optional
+from typing import Optional
 
 from openai import OpenAI
 

@@ -1,7 +1,7 @@
 """Z.AI model wrapper for managing model instances."""
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from openai import OpenAI
 

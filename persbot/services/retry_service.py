@@ -12,7 +12,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Awaitable, Callable, Optional, TypeVar, Union
+from typing import Any, Awaitable, Callable, Optional, TypeVar
 
 from persbot.constants import RetryConfig
 from persbot.exceptions import RateLimitException, RetryableError

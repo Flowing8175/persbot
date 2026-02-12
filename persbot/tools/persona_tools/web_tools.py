@@ -8,7 +8,7 @@ and YouTube videos.
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 import aiohttp
 from bs4 import BeautifulSoup

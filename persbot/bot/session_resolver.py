@@ -12,7 +12,6 @@ import discord
 
 from persbot.bot.chat_models import SessionContext
 from persbot.bot.session import ResolvedSession, SessionManager
-from persbot.constants import MessageConfig
 
 logger = logging.getLogger(__name__)
 

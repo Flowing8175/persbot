@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from persbot.services.search_service import SearchService, SearchError, SearchRateLimitError
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult

@@ -6,9 +6,8 @@ It acts as a factory and registry for provider backends.
 
 import asyncio
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
-import discord
 
 from persbot.config import AppConfig
 from persbot.constants import META_PROMPT, Provider, QUESTION_GENERATION_PROMPT
@@ -360,7 +359,6 @@ class LLMService:
 
         Returns a JSON string containing questions and sample answers.
         """
-        import json
 
         from persbot.services.zai_service import ZAIService
         from persbot.services.openai_service import OpenAIService

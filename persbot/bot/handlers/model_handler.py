@@ -5,7 +5,7 @@ viewing model info, and parameter adjustments.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 import discord
 from discord.ext import commands

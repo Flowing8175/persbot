@@ -8,17 +8,11 @@ import asyncio
 import logging
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from persbot.config import AppConfig
 from persbot.constants import SessionConfig
-from persbot.domain import SessionKey, UserId
-from persbot.exceptions import (
-    SessionConflictException,
-    SessionExpiredException,
-    SessionNotFoundException,
-)
 from persbot.services.llm_service import LLMService
 from persbot.services.model_usage_service import ModelUsageService
 

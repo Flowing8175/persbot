@@ -2,18 +2,15 @@
 
 import asyncio
 import base64
-import hashlib
 import io
 import logging
-import time
-from typing import List, Optional
+from typing import Optional
 
 import aiohttp
 import discord
-from PIL import Image
 
 from persbot.config import load_config
-from persbot.rate_limiter import get_image_rate_limiter, RateLimitResult
+from persbot.rate_limiter import get_image_rate_limiter
 from persbot.services.image_service import ImageService, ImageGenerationError
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 from persbot.utils import get_mime_type, process_image_sync
