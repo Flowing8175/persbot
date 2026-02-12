@@ -128,7 +128,9 @@ def mock_channel(mock_guild):
     channel.name = "test-channel"
     channel.guild = mock_guild
     channel.typing = Mock()
-    channel.history = AsyncMock()
+    # Don't set history here - let tests override it directly
+    # Tests that use history should set mock_channel.history.return_value
+    # to an async iterator using make_async_iterator([...])
     channel.send = AsyncMock(return_value=Mock())
     channel.fetch_message = AsyncMock()
     channel.mention_everyone = False
@@ -265,6 +267,14 @@ def mock_llm_service():
     service.get_assistant_role_name = Mock(return_value="model")
     service.get_backend_for_model = Mock(return_value=Mock())
     service.process_image_sync = service.process_image
+
+    # Set up model_usage_service mock with MODEL_DEFINITIONS
+    service.model_usage_service = Mock()
+    service.model_usage_service.MODEL_DEFINITIONS = {
+        "gemini-2.5-flash": Mock(daily_limit=100, provider="gemini"),
+        "gemini-2.5-pro": Mock(daily_limit=50, provider="gemini"),
+    }
+
     return service
 
 
@@ -453,25 +463,13 @@ def mock_gemini_cache_methods():
                 return
         return original_setattr(self, name, value)
 
-
-def _run_task_now(*args, **kwargs):
-    """Helper to run a task immediately for mocking asyncio.create_task."""
-    task = Mock()
-    # Create the coroutine that would be passed to create_task
-    coro = args[0] if args else None
-
-    async def wrapper():
-        await coro
-        if task._done_callback:
-            task._done_callback(task)
-
-    # Schedule the coroutine to run immediately
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        pass  # No running loop, skip actual scheduling
-    # Return the mock task as if it were returned by create_task
-    return task
+    def _run_task_now(*args, **kwargs):
+        """Helper to run a task immediately for mocking asyncio.create_task."""
+        task = Mock()
+        task.cancel = Mock()
+        task.add_done_callback = Mock()
+        # Return mock task as if it were returned by create_task
+        return task
 
     with patch.object(Mock, "__getattr__", safe_getattr):
         with patch.object(Mock, "__setattr__", safe_setattr):
@@ -483,6 +481,8 @@ def _run_task_now(*args, **kwargs):
                 patch("asyncio.create_task", side_effect=_run_task_now),
             ):
                 yield
+
+
 
 
 @pytest.fixture
@@ -612,3 +612,12 @@ def create_mock_message_with_context(user_id, channel_id, content, mentions=None
     msg.reply = AsyncMock()
     msg.delete = AsyncMock()
     return msg
+
+
+# Helper function to create async iterator from list
+def make_async_iterator(items):
+    """Create an async iterator from a list of items."""
+    async def async_iter():
+        for item in items:
+            yield item
+    return async_iter()  # Async generator is already an async iterator

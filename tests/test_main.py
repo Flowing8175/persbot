@@ -383,7 +383,7 @@ class TestMainModuleIntegration:
             mock_bot = AsyncMock()
             mock_bot_class.return_value = mock_bot
             mock_bot.user = Mock(name="TestBot", id=123456789)
-mock_bot.add_cog = AsyncMock()
+            mock_bot.add_cog = AsyncMock()
 
             with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
@@ -421,7 +421,7 @@ mock_bot.add_cog = AsyncMock()
             mock_bot = AsyncMock()
             mock_bot_class.return_value = mock_bot
             mock_bot.user = Mock(name="TestBot", id=123456789)
-mock_bot.add_cog = AsyncMock()
+            mock_bot.add_cog = AsyncMock()
 
             with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)
@@ -496,7 +496,7 @@ mock_bot.add_cog = AsyncMock()
             # Make tree sync raise an exception
             import discord
 
-mock_bot.tree.sync = AsyncMock(side_effect=Exception("Sync failed"))
+            mock_bot.tree.sync = AsyncMock(side_effect=Exception("Sync failed"))
 
             with patch.dict("sys.modules", {"persbot.bot.cogs.auto_channel": None}):
                 await main(mock_app_config)

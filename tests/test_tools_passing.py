@@ -64,6 +64,20 @@ def _create_mock_config(
         openai_api_key=openai_key,
         zai_api_key=zai_key,
         no_check_permission=True,
+        gemini_cache_ttl_minutes=60,
+        gemini_cache_min_tokens=32768,
+        temperature=1.0,
+        top_p=1.0,
+        thinking_budget=None,
+        service_tier="flex",
+        api_request_timeout=30.0,
+        api_max_retries=3,
+        api_rate_limit_retry_after=10.0,
+        api_retry_backoff_base=2.0,
+        api_retry_backoff_max=60.0,
+        session_cache_limit=10,
+        session_ttl_minutes=30,
+        max_messages_per_fetch=100,
     )
 
 
