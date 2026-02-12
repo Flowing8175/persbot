@@ -44,9 +44,7 @@ class BaseLLMProvider(ABC):
         self.prompt_service = prompt_service
 
     @abstractmethod
-    def create_assistant_model(
-        self, system_instruction: str, use_cache: bool = True
-    ) -> Any:
+    def create_assistant_model(self, system_instruction: str, use_cache: bool = True) -> Any:
         """Create a model for chat interactions.
 
         Args:
@@ -197,15 +195,11 @@ class BaseLLMProvider(ABC):
         if not text.strip():
             return "요약할 메시지가 없습니다."
 
-        summary_model = self.create_summary_model(
-            self.prompt_service.get_summary_prompt()
-        )
+        summary_model = self.create_summary_model(self.prompt_service.get_summary_prompt())
         # This is a simplified version - providers may override
         return await self._generate_summary(summary_model, text)
 
-    async def _generate_summary(
-        self, summary_model: Any, text: str
-    ) -> Optional[str]:
+    async def _generate_summary(self, summary_model: Any, text: str) -> Optional[str]:
         """Generate summary using the summary model.
 
         Args:
@@ -216,9 +210,7 @@ class BaseLLMProvider(ABC):
             The summarized text, or None if failed.
         """
         # Default implementation - providers should override
-        raise NotImplementedError(
-            "Provider must implement _generate_summary or summarize_text"
-        )
+        raise NotImplementedError("Provider must implement _generate_summary or summarize_text")
 
     # Stream support (optional)
 

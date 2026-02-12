@@ -182,7 +182,10 @@ class RetryHandler(ABC):
             # Check for cancellation at the start of each retry iteration
             # This ensures immediate cancellation when new message arrives
             if cancel_event and cancel_event.is_set():
-                logger.info("API call aborted due to cancellation signal at start of retry iteration %d", attempt)
+                logger.info(
+                    "API call aborted due to cancellation signal at start of retry iteration %d",
+                    attempt,
+                )
                 raise asyncio.CancelledError("LLM API call aborted by user")
 
             try:
@@ -204,7 +207,9 @@ class RetryHandler(ABC):
 
             except asyncio.CancelledError:
                 # Re-raise cancellation immediately - don't retry
-                logger.info("API call cancelled via asyncio task cancellation (attempt %d)", attempt)
+                logger.info(
+                    "API call cancelled via asyncio task cancellation (attempt %d)", attempt
+                )
                 raise
 
             except asyncio.TimeoutError:
@@ -308,9 +313,7 @@ class GeminiRetryHandler(RetryHandler):
         if "400" in error_str and "quota" not in error_str.lower():
             return False
         return (
-            "429" in error_str
-            or "quota" in error_str.lower()
-            or "rate limit" in error_str.lower()
+            "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower()
         )
 
     def _is_fatal_error(self, error: Exception) -> bool:

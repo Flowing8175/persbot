@@ -12,8 +12,10 @@ from enum import Enum
 # API Configuration
 # =============================================================================
 
+
 class APITimeout:
     """API timeout constants (in seconds)."""
+
     REQUEST = 120.0
     TOOL_EXECUTION = 10.0
     CACHE_REFRESH = 5.0
@@ -25,8 +27,10 @@ class APITimeout:
 # Cache Configuration
 # =============================================================================
 
+
 class CacheConfig:
     """Gemini context cache configuration."""
+
     MIN_TOKENS = 32768
     TTL_MINUTES = 60
     REFRESH_BUFFER_MIN = 1
@@ -36,6 +40,7 @@ class CacheConfig:
 
 class CacheLimit:
     """Cache size limits."""
+
     MAX_CACHED_ITEMS = 100
     MAX_MODEL_CACHE_SIZE = 200
 
@@ -44,8 +49,10 @@ class CacheLimit:
 # Session Management
 # =============================================================================
 
+
 class SessionConfig:
     """Session management configuration."""
+
     CACHE_LIMIT = 200
     INACTIVE_MINUTES = 30
     CLEANUP_INTERVAL_MULTIPLIER = 30  # INACTIVE_MINUTES * 30 = seconds
@@ -53,6 +60,7 @@ class SessionConfig:
 
 class SessionKey:
     """Session key format templates."""
+
     CHANNEL = "channel:{channel_id}"
     USER = "user:{user_id}"
     THREAD = "thread:{thread_id}"
@@ -62,8 +70,10 @@ class SessionKey:
 # Message Processing
 # =============================================================================
 
+
 class MessageConfig:
     """Message processing configuration."""
+
     BUFFER_DELAY = 0.1
     MAX_HISTORY_LENGTH = 50
     MAX_MESSAGES_PER_FETCH = 300
@@ -75,6 +85,7 @@ class MessageConfig:
 
 class MessageLimits:
     """Discord message limits."""
+
     MAX_CONTENT_LENGTH = 2000
     MAX_EMBED_DESCRIPTION = 4096
     MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
@@ -84,8 +95,10 @@ class MessageLimits:
 # LLM Configuration
 # =============================================================================
 
+
 class LLMDefaults:
     """Default LLM parameters."""
+
     TEMPERATURE = 1.0
     TOP_P = 1.0
     THINKING_BUDGET_MIN = 512
@@ -95,6 +108,7 @@ class LLMDefaults:
 
 class ModelNames:
     """Default model names for providers."""
+
     GEMINI_ASSISTANT = "gemini-2.5-flash"
     GEMINI_SUMMARY = "gemini-2.5-pro"
     OPENAI_ASSISTANT = "gpt-5-mini"
@@ -106,6 +120,7 @@ class ModelNames:
 
 class RetryConfig:
     """API retry configuration."""
+
     MAX_RETRIES = 2
     RATE_LIMIT_RETRY_AFTER = 5
     BACKOFF_BASE = 2.0
@@ -116,8 +131,10 @@ class RetryConfig:
 # Tool Configuration
 # =============================================================================
 
+
 class ToolTimeouts:
     """Tool execution timeouts (in seconds)."""
+
     DEFAULT = 10.0
     SEARCH = 15.0
     IMAGE_GENERATION = 30.0
@@ -126,12 +143,14 @@ class ToolTimeouts:
 
 class ToolLimits:
     """Tool execution limits."""
+
     MAX_TOOL_ROUNDS = 10
     MAX_PARALLEL_TOOLS = 5
 
 
 class ImageRateLimit:
     """Image generation rate limits."""
+
     PER_MINUTE = 3
     PER_HOUR = 15
     DAILY_LIMIT = 3
@@ -141,8 +160,10 @@ class ImageRateLimit:
 # Display Configuration
 # =============================================================================
 
+
 class DisplayConfig:
     """UI/Display configuration."""
+
     REQUEST_PREVIEW_LENGTH = 200
     RESPONSE_PREVIEW_LENGTH = 200
     HISTORY_DISPLAY_LIMIT = 5
@@ -153,8 +174,10 @@ class DisplayConfig:
 # Progress Updates
 # =============================================================================
 
+
 class ProgressUpdate:
     """Progress update intervals (in seconds)."""
+
     INTERVAL = 0.5
     COUNTDOWN = 5
 
@@ -163,8 +186,10 @@ class ProgressUpdate:
 # Discord Intents
 # =============================================================================
 
+
 class DiscordLimits:
     """Discord API limits."""
+
     MAX_EMBED_FIELDS = 25
     MAX_EMBED_FIELD_VALUE = 1024
     MAX_EMBED_TITLE = 256
@@ -176,8 +201,10 @@ class DiscordLimits:
 # File I/O
 # =============================================================================
 
+
 class FileConfig:
     """File I/O configuration."""
+
     IMAGE_TARGET_PIXELS = 1_000_000  # 1 Megapixel
     IMAGE_QUALITY = 85
     IMAGE_TIMEOUT = 5.0
@@ -187,8 +214,10 @@ class FileConfig:
 # Provider Names
 # =============================================================================
 
+
 class Provider(str, Enum):
     """LLM provider identifiers."""
+
     GEMINI = "gemini"
     OPENAI = "openai"
     ZAI = "zai"
@@ -198,8 +227,10 @@ class Provider(str, Enum):
 # Model Aliases
 # =============================================================================
 
+
 class ModelAlias(str, Enum):
     """Standard model aliases."""
+
     # Gemini models
     GEMINI_FLASH = "Gemini 2.5 Flash"
     GEMINI_PRO = "Gemini 2.5 Pro"
@@ -221,8 +252,10 @@ class ModelAlias(str, Enum):
 # Error Messages
 # =============================================================================
 
+
 class ErrorMessage:
     """Standard error messages."""
+
     GENERIC = "❌ 봇 내부에서 예상치 못한 오류가 발생했어요. 개발자에게 문의해주세요."
     API_TIMEOUT = "❌ API 요청 시간이 초과되었습니다."
     API_QUOTA_EXCEEDED = "❌ API 사용량이 초과되었습니다."
@@ -239,8 +272,10 @@ class ErrorMessage:
 # Tool Names (Korean)
 # =============================================================================
 
+
 class ToolLabels:
     """Korean labels for tools (for UI display)."""
+
     GENERATE_IMAGE = "이미지 생성 도구"
     SEND_IMAGE = "이미지 전송 도구"
     GET_TIME = "시간 확인 도구"
@@ -395,9 +430,11 @@ If concept is "Tsundere female friend", generate questions like:
 # Data Classes
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class RetryPolicy:
     """Retry policy configuration."""
+
     max_retries: int = RetryConfig.MAX_RETRIES
     base_delay: float = RetryConfig.BACKOFF_BASE
     max_delay: float = RetryConfig.BACKOFF_MAX
@@ -407,6 +444,7 @@ class RetryPolicy:
 @dataclass(frozen=True)
 class CachePolicy:
     """Cache policy configuration."""
+
     min_tokens: int = CacheConfig.MIN_TOKENS
     ttl_minutes: int = CacheConfig.TTL_MINUTES
     refresh_buffer_min: int = CacheConfig.REFRESH_BUFFER_MIN
@@ -416,6 +454,7 @@ class CachePolicy:
 @dataclass(frozen=True)
 class SessionPolicy:
     """Session policy configuration."""
+
     cache_limit: int = SessionConfig.CACHE_LIMIT
     inactive_minutes: int = SessionConfig.INACTIVE_MINUTES
 

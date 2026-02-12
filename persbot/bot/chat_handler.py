@@ -205,7 +205,9 @@ async def create_chat_reply(
 
                 try:
                     # Execute tools in parallel
-                    results = await tool_manager.execute_tools(function_calls, primary_msg, cancel_event)
+                    results = await tool_manager.execute_tools(
+                        function_calls, primary_msg, cancel_event
+                    )
                     logger.info(
                         "Executed %d tools: %s",
                         len(results),
@@ -467,4 +469,3 @@ async def send_streaming_response(
         raise
 
     return sent_messages
-

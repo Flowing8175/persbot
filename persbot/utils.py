@@ -201,7 +201,9 @@ class DiscordUI:
     """Discord UI 상호작용을 위한 헬퍼 클래스"""
 
     @staticmethod
-    async def safe_send(channel: discord.abc.Messageable, content: str) -> Optional[discord.Message]:
+    async def safe_send(
+        channel: discord.abc.Messageable, content: str
+    ) -> Optional[discord.Message]:
         """Send a message to a channel with error handling.
 
         Args:

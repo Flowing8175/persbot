@@ -52,9 +52,7 @@ class ZAIChatModel:
         """Get the model name."""
         return self._model_name
 
-    def start_chat(
-        self, system_instruction: Optional[str] = None
-    ) -> ZAIChatSession:
+    def start_chat(self, system_instruction: Optional[str] = None) -> ZAIChatSession:
         """Start a new chat session.
 
         Args:

@@ -122,4 +122,3 @@ class GeminiToolAdapter(BaseToolAdapter):
                 name=tool_name, response={"result": result_str}
             )
         )
-

@@ -65,7 +65,9 @@ class SessionManager:
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
         self.channel_prompts: Dict[int, str] = {}  # channel_id -> prompt_content override
         self.channel_model_preferences: Dict[int, str] = {}  # channel_id -> model_alias override
-        self._cleanup_task: Optional[asyncio.Task] = None  # Track cleanup task for graceful shutdown
+        self._cleanup_task: Optional[asyncio.Task] = (
+            None  # Track cleanup task for graceful shutdown
+        )
 
         # Start periodic session cleanup task
         if config.session_inactive_minutes > 0:

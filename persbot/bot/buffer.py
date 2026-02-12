@@ -66,9 +66,7 @@ class MessageBuffer:
             self.tasks[channel_id].cancel()
 
         # Start a new timer task with the default delay
-        task = asyncio.create_task(
-            self._process_buffer(channel_id, self.default_delay, callback)
-        )
+        task = asyncio.create_task(self._process_buffer(channel_id, self.default_delay, callback))
         task.add_done_callback(lambda t: self._cleanup_task(channel_id, t))
         self.tasks[channel_id] = task
 
@@ -90,9 +88,7 @@ class MessageBuffer:
             )
 
         # Restart the timer with the extended timeout
-        task = asyncio.create_task(
-            self._process_buffer(channel_id, self.typing_timeout, callback)
-        )
+        task = asyncio.create_task(self._process_buffer(channel_id, self.typing_timeout, callback))
         task.add_done_callback(lambda t: self._cleanup_task(channel_id, t))
         self.tasks[channel_id] = task
 

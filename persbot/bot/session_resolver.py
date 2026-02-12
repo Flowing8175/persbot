@@ -79,7 +79,7 @@ async def resolve_session_for_message(
 
 
 def extract_session_context(
-    message: Union[discord.Message, list[discord.Message]]
+    message: Union[discord.Message, list[discord.Message]],
 ) -> SessionContext:
     """Extract session context from a Discord message or list.
 

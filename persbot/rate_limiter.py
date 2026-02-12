@@ -475,6 +475,7 @@ def get_image_rate_limiter() -> ImageGenerationRateLimiter:
     global _global_image_limiter
     if _global_image_limiter is None:
         from persbot.config import load_config
+
         config = load_config()
         _global_image_limiter = ImageGenerationRateLimiter(
             max_requests_per_minute=getattr(config, "image_rate_limit_per_minute", 3),

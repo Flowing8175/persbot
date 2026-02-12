@@ -576,6 +576,37 @@ class PromptManagerView(discord.ui.View):
         await interaction.message.delete()
         self.stop()
 
+    async def _generate_direct(
+        self, interaction: discord.Interaction, concept_str: str, msg
+    ) -> None:
+        """Direct prompt generation without questions."""
+        try:
+            generated_prompt = await self.cog.llm_service.generate_prompt_from_concept(concept_str)
+
+            if not generated_prompt:
+                await msg.edit(content="❌ 프롬프트 생성에 실패했습니다.")
+                return
+
+            name_match = re.search(
+                r"Project\s+['\"]?(.+?)['\"]?\]", generated_prompt, re.IGNORECASE
+            )
+            name = name_match.group(1) if name_match else f"Generated ({concept_str[:10]}...)"
+            prompt_content = generated_prompt.strip()
+
+            idx = await self.cog.prompt_service.add_prompt(name, prompt_content)
+
+            # Record usage after successful creation
+            await self.cog.prompt_service.increment_today_usage(interaction.user.id)
+
+            await msg.edit(
+                content=f"✅ 새 페르소나 **'{name}'**이(가) 설계되었습니다! (인덱스: {idx})"
+            )
+            await self.refresh_view(interaction)
+
+        except Exception as e:
+            logger.error(f"Error in _generate_direct: {e}", exc_info=True)
+            await msg.edit(content=f"❌ 오류 발생: {str(e)}")
+
 
 class PersonaCog(commands.Cog):
     """Cog for managing Personas (Prompts) via UI."""

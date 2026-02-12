@@ -43,9 +43,7 @@ class OpenAIToolAdapter(BaseToolAdapter):
         return converted
 
     @staticmethod
-    def extract_function_calls(
-        response: Any
-    ) -> List[Dict[str, Any]]:
+    def extract_function_calls(response: Any) -> List[Dict[str, Any]]:
         """Extract function calls from an OpenAI-style response.
 
         Args:
@@ -97,15 +95,18 @@ class OpenAIToolAdapter(BaseToolAdapter):
             elif isinstance(result_data, bytes):
                 # Handle binary data (Z.AI specific)
                 import base64
+
                 content = base64.b64encode(result_data).decode("utf-8")
             else:
                 content = str(result_data) if result_data is not None else ""
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call_id,
-                "name": tool_name,
-                "content": content,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": tool_name,
+                    "content": content,
+                }
+            )
 
         return messages

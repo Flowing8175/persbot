@@ -61,10 +61,7 @@ class ToolProgress:
     @property
     def korean_names(self) -> List[str]:
         """Get Korean names for the tools."""
-        return [
-            ToolLabels.__dict__.get(name.upper(), name)
-            for name in self.tool_names
-        ]
+        return [ToolLabels.__dict__.get(name.upper(), name) for name in self.tool_names]
 
     @property
     def notification_text(self) -> str:

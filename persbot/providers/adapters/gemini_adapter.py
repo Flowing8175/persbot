@@ -43,9 +43,7 @@ class GeminiToolAdapter(BaseToolAdapter):
         return converted
 
     @staticmethod
-    def _create_function_declaration(
-        tool: ToolDefinition
-    ) -> genai_types.FunctionDeclaration:
+    def _create_function_declaration(tool: ToolDefinition) -> genai_types.FunctionDeclaration:
         """Create a FunctionDeclaration from a ToolDefinition.
 
         Args:
@@ -58,9 +56,7 @@ class GeminiToolAdapter(BaseToolAdapter):
         return tool.to_gemini_format()
 
     @staticmethod
-    def extract_function_calls(
-        response: Any
-    ) -> List[Dict[str, Any]]:
+    def extract_function_calls(response: Any) -> List[Dict[str, Any]]:
         """Extract function calls from a Gemini response.
 
         Args:
@@ -119,8 +115,7 @@ class GeminiToolAdapter(BaseToolAdapter):
             parts.append(
                 genai_types.Part(
                     function_response=genai_types.FunctionResponse(
-                        name=tool_name,
-                        response={"result": response_content}
+                        name=tool_name, response={"result": response_content}
                     )
                 )
             )

@@ -100,6 +100,7 @@ class RetryableError(SoyeBotException):
 # Provider-Specific Exceptions
 # =============================================================================
 
+
 class ProviderException(SoyeBotException):
     """Base exception for LLM provider errors."""
 
@@ -122,7 +123,7 @@ class ModelNotFoundException(ProviderException):
         super().__init__(
             f"Model '{model_name}' not found in provider '{provider}'",
             provider,
-            {"model_name": model_name}
+            {"model_name": model_name},
         )
         self.model_name = model_name
 
@@ -137,6 +138,7 @@ class ContextCacheException(ProviderException):
 # =============================================================================
 # Session-Specific Exceptions
 # =============================================================================
+
 
 class SessionNotFoundException(SessionException):
     """Exception raised when a requested session is not found."""
@@ -162,6 +164,7 @@ class SessionConflictException(SessionException):
 # Image-Specific Exceptions
 # =============================================================================
 
+
 class ImageException(SoyeBotException):
     """Base exception for image-related errors."""
 
@@ -186,7 +189,7 @@ class ImageRateLimitException(ImageException):
     def __init__(self, limit_type: str, current: int, limit: int):
         super().__init__(
             f"Image {limit_type} limit exceeded: {current}/{limit}",
-            {"limit_type": limit_type, "current": current, "limit": limit}
+            {"limit_type": limit_type, "current": current, "limit": limit},
         )
         self.limit_type = limit_type
         self.current = current
@@ -196,6 +199,7 @@ class ImageRateLimitException(ImageException):
 # =============================================================================
 # Message Processing Exceptions
 # =============================================================================
+
 
 class MessageProcessingException(SoyeBotException):
     """Base exception for message processing errors."""
@@ -219,6 +223,7 @@ class MessageContentNotFoundException(MessageProcessingException):
 # Cancellation Exceptions
 # =============================================================================
 
+
 class CancellationException(SoyeBotException):
     """Exception raised when an operation is cancelled by user request."""
 
@@ -234,6 +239,7 @@ class AbortSignalException(CancellationException):
 # =============================================================================
 # Validation Exceptions
 # =============================================================================
+
 
 class DomainValidationException(SoyeBotException):
     """Exception raised when domain object validation fails."""
@@ -251,10 +257,16 @@ class InvalidValueObjectException(DomainValidationException):
 # HTTP/API Client Exceptions
 # =============================================================================
 
+
 class HTTPClientException(APIException):
     """Base exception for HTTP client errors."""
 
-    def __init__(self, message: str, status_code: Optional[int] = None, details: Optional[dict[str, Any]] = None):
+    def __init__(
+        self,
+        message: str,
+        status_code: Optional[int] = None,
+        details: Optional[dict[str, Any]] = None,
+    ):
         self.status_code = status_code
         full_details = {**(details or {}), "status_code": status_code} if status_code else details
         super().__init__(message, full_details)
@@ -275,6 +287,7 @@ class ClientException(HTTPClientException):
 # =============================================================================
 # Prompt Generation Exceptions
 # =============================================================================
+
 
 class PromptGenerationException(SoyeBotException):
     """Exception raised when prompt generation fails."""

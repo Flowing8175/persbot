@@ -130,9 +130,7 @@ class CacheStrategy(ABC):
         pass
 
     @abstractmethod
-    async def list_all(
-        self, limit: int = CacheLimit.MAX_CACHED_ITEMS
-    ) -> list[CacheEntry]:
+    async def list_all(self, limit: int = CacheLimit.MAX_CACHED_ITEMS) -> list[CacheEntry]:
         """List all cache entries.
 
         Args:
@@ -165,6 +163,7 @@ class InMemoryCacheStrategy(CacheStrategy):
         content = f"{model}:{system_instruction}"
         if tools:
             import json
+
             content += ":" + json.dumps([str(t) for t in tools], sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
@@ -255,9 +254,12 @@ class GeminiCacheStrategy(CacheStrategy):
         self.client = client
         self._local_cache: dict[str, CacheEntry] = {}
 
-    def _generate_display_name(self, model: str, system_instruction: str, tools: Optional[list]) -> str:
+    def _generate_display_name(
+        self, model: str, system_instruction: str, tools: Optional[list]
+    ) -> str:
         """Generate a consistent display name for the cache."""
         import re
+
         safe_model = re.sub(r"[^a-zA-Z0-9-]", "-", model)
         content_hash = hashlib.sha256(system_instruction.encode("utf-8")).hexdigest()
         tool_suffix = "-tools" if tools else ""
@@ -283,9 +285,7 @@ class GeminiCacheStrategy(CacheStrategy):
             token_count = count_result.total_tokens
 
             if token_count < min_tokens:
-                logger.info(
-                    f"Cache skipped: tokens ({token_count}) < min_tokens ({min_tokens})"
-                )
+                logger.info(f"Cache skipped: tokens ({token_count}) < min_tokens ({min_tokens})")
                 return CacheResult(success=False, error="Token count below minimum")
 
             # Search for existing cache
@@ -461,9 +461,7 @@ class CacheService:
         """
         return await self.strategy.delete(cache_name)
 
-    async def list_all(
-        self, limit: int = CacheLimit.MAX_CACHED_ITEMS
-    ) -> list[CacheEntry]:
+    async def list_all(self, limit: int = CacheLimit.MAX_CACHED_ITEMS) -> list[CacheEntry]:
         """List all cache entries.
 
         Args:

@@ -76,8 +76,7 @@ class ModelCommandHandler(BaseHandler):
 
         for provider, model_list in by_provider.items():
             models_text = "\n".join(
-                f"• **{alias}**: {display_name}"
-                for alias, display_name in model_list
+                f"• **{alias}**: {display_name}" for alias, display_name in model_list
             )
             embed.add_field(
                 name=provider.upper(),

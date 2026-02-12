@@ -63,7 +63,10 @@ async def send_split_response(
             # Calculate delay: proportional to length, clamped 0.1s - 1.7s
             delay = max(
                 MessageConfig.TYPING_DELAY_MIN,
-                min(MessageConfig.TYPING_DELAY_MAX, len(line) * MessageConfig.TYPING_DELAY_MULTIPLIER),
+                min(
+                    MessageConfig.TYPING_DELAY_MAX,
+                    len(line) * MessageConfig.TYPING_DELAY_MULTIPLIER,
+                ),
             )
 
             # Send typing status while waiting
@@ -78,9 +81,7 @@ async def send_split_response(
         if reply.images:
             for img_bytes in reply.images:
                 async with channel.typing():
-                    img_file = discord.File(
-                        io.BytesIO(img_bytes), filename="generated_image.png"
-                    )
+                    img_file = discord.File(io.BytesIO(img_bytes), filename="generated_image.png")
                     img_msg = await channel.send(file=img_file)
 
                     # Link image message to session
@@ -143,9 +144,7 @@ async def send_with_images(
     # Send images
     for i, img_bytes in enumerate(images):
         async with channel.typing():
-            img_file = discord.File(
-                io.BytesIO(img_bytes), filename=f"generated_image_{i}.png"
-            )
+            img_file = discord.File(io.BytesIO(img_bytes), filename=f"generated_image_{i}.png")
             img_msg = await channel.send(file=img_file)
             session_manager.link_message_to_session(str(img_msg.id), session_key)
             sent_messages.append(img_msg)
@@ -222,4 +221,3 @@ async def send_streaming_response(
         raise
 
     return sent_messages
-

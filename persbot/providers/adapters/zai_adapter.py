@@ -44,15 +44,18 @@ class ZAIToolAdapter(OpenAIToolAdapter):
                 content = result_data
             elif isinstance(result_data, dict):
                 import json
+
                 content = json.dumps(result_data, ensure_ascii=False)
             else:
                 content = str(result_data) if result_data is not None else ""
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call_id,
-                "name": tool_name,
-                "content": content,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": tool_name,
+                    "content": content,
+                }
+            )
 
         return messages

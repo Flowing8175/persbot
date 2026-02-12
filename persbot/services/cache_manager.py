@@ -48,7 +48,7 @@ class HashBasedCacheStrategy(CacheStrategy):
 
         # Generate hash
         hash_value = hashlib.sha256(combined.encode("utf-8")).hexdigest()
-        return f"{self.prefix}-{hash_value[:self.hash_length]}"
+        return f"{self.prefix}-{hash_value[: self.hash_length]}"
 
 
 class CacheManager:
@@ -92,7 +92,9 @@ class CacheManager:
         """Generate a cache key using the configured strategy."""
         return self.strategy.generate_key(*args, **kwargs)
 
-    def _calculate_expiration(self, ttl_minutes: Optional[int] = None) -> Optional[datetime.datetime]:
+    def _calculate_expiration(
+        self, ttl_minutes: Optional[int] = None
+    ) -> Optional[datetime.datetime]:
         """Calculate the expiration time for a cache entry."""
         if ttl_minutes is None or ttl_minutes <= 0:
             return None
@@ -246,10 +248,7 @@ class CacheManager:
         removed = 0
 
         async with self._lock:
-            expired_keys = [
-                key for key, item in self._cache.items()
-                if self._is_expired(item)
-            ]
+            expired_keys = [key for key, item in self._cache.items() if self._is_expired(item)]
 
             for key in expired_keys:
                 del self._cache[key]

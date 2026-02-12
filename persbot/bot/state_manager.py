@@ -56,17 +56,11 @@ class ChannelStateManager:
 
     def has_active_processing(self) -> bool:
         """Check if there's an active processing task."""
-        return (
-            self.processing_task is not None
-            and not self.processing_task.done()
-        )
+        return self.processing_task is not None and not self.processing_task.done()
 
     def has_active_sending(self) -> bool:
         """Check if there's an active sending task."""
-        return (
-            self.sending_task is not None
-            and not self.sending_task.done()
-        )
+        return self.sending_task is not None and not self.sending_task.done()
 
     def cancel_all(self) -> List[discord.Message]:
         """Cancel all active tasks and return pending messages.
@@ -78,9 +72,7 @@ class ChannelStateManager:
 
         # Cancel active API call FIRST
         if self.active_api_call:
-            logger.info(
-                f"Cancelling active API call for channel {self.channel_id}"
-            )
+            logger.info(f"Cancelling active API call for channel {self.channel_id}")
             messages_to_prepend = self.active_api_call.messages
             self.active_api_call.cancel()
             self.active_api_call = None
