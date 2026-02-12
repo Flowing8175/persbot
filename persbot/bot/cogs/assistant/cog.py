@@ -201,7 +201,24 @@ class AssistantCog(BaseChatCog):
             "Abort command",
             self.cancellation_signals,
         )
-        aborted = utils.cancel_auto_channel_tasks(channel_id, self.bot) or aborted
+        # Also cancel tasks in AutoChannelCog if it exists
+        auto_cog = self.bot.get_cog("AutoChannelCog")
+        if (
+            auto_cog
+            and hasattr(auto_cog, "processing_tasks")
+            and hasattr(auto_cog, "sending_tasks")
+        ):
+            aborted = (
+                utils.cancel_channel_tasks(
+                    channel_id,
+                    auto_cog.processing_tasks,
+                    auto_cog.sending_tasks,
+                    ctx.channel.name,
+                    "Abort command",
+                    auto_cog.cancellation_signals,
+                )
+                or aborted
+            )
 
         # Send appropriate response
         if aborted:
