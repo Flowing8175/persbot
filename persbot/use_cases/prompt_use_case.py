@@ -185,6 +185,8 @@ class PromptUseCase:
             Optimized prompt.
         """
         # TODO: Future enhancement - Implement prompt optimization for context caching
+        # See issue #XXX for implementation roadmap
+        # Consider: Prompt compression, key extraction, context window optimization
         # Currently returns prompt as-is without optimization
         return prompt
 

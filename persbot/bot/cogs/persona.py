@@ -316,6 +316,8 @@ class PromptManagerView(discord.ui.View):
 
         # Limit to 25 items due to Discord Select Menu limits
         # TODO: Implement pagination if prompt list grows beyond 25
+        # See issue #XXX for pagination implementation roadmap
+        # Requires: Discord Select Menu with pages, navigation controls, state management
         for i, p in enumerate(prompts[:25]):
             is_active = p["content"] == active_content
             label = p["name"][:100]

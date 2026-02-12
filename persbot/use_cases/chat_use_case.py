@@ -186,6 +186,8 @@ class ChatUseCase:
             AbortSignalException: If operation is cancelled by user.
         """
         # TODO: Implement streaming response
+        # See issue #XXX for streaming support roadmap
+        # Requires: async generators, Discord message edit capabilities, proper error handling
         # For now, fall back to non-streaming
         response = await self.generate_chat_response(request)
         if response:
@@ -515,4 +517,6 @@ class ChatUseCase:
             Extracted user content, or None if not found.
         """
         # TODO: Implement content extraction from removed history
+        # Requires: message history retention feature (tracked in issue #XXX)
+        # Consider: Extract user messages before system prompts to preserve conversation context
         return None
