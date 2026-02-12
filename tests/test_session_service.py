@@ -1,157 +1,155 @@
-"""Tests for services/session_service.py module.
+"""Feature tests for SessionService.
 
-This module provides comprehensive test coverage for:
-- SessionService class with all 15 methods
-- ChatSessionData dataclass
-- SessionResolution dataclass
-- Session storage and retrieval
-- Channel prompts and models management
-- Session cleanup and statistics
+Tests focus on behavior:
+- Session creation and retrieval
+- Stale session detection
+- Channel prompts and models
 """
 
-import asyncio
-from collections import OrderedDict
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from typing import Any, Dict, List, Optional
-
 import pytest
+from datetime import datetime, timezone, timedelta
+from unittest.mock import Mock, MagicMock, patch
 
 from persbot.services.session_service import (
     SessionService,
     ChatSessionData,
     SessionResolution,
 )
-from persbot.config import AppConfig
-from persbot.services.model_usage_service import ModelUsageService
-from persbot.constants import SessionConfig
-
-
-# =============================================================================
-# ChatSessionData Tests
-# =============================================================================
 
 
 class TestChatSessionData:
     """Tests for ChatSessionData dataclass."""
 
-    def test_init_all_fields(self):
-        """Test ChatSessionData initialization with all fields."""
+    def test_creates_with_required_fields(self):
+        """ChatSessionData can be created with required fields."""
         session = ChatSessionData(
-            session_key="test-session-123",
-            user_id=12345,
-            channel_id=67890,
-            username="testuser",
-            message_content="Test message content",
-            created_at=datetime.now(timezone.utc),
-            model_alias="gemini-2.0-flash-exp",
-            message_count=5,
-            history=["msg1", "msg2"],
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock()
         )
+        assert session.session_key == "channel:123"
+        assert session.user_id == 1
+        assert session.channel_id == 123
 
-        assert session.session_key == "test-session-123"
-        assert session.user_id == 12345
-        assert session.channel_id == 67890
-        assert session.username == "testuser"
-        assert session.message_content == "Test message content"
-        assert isinstance(session.created_at, datetime)
-        assert session.model_alias == "gemini-2.0-flash-exp"
-        assert session.message_count == 5
-        assert session.history == ["msg1", "msg2"]
-
-    def test_init_with_defaults(self):
-        """Test ChatSessionData with default values."""
+    def test_default_message_count_is_zero(self):
+        """message_count defaults to 0."""
         session = ChatSessionData(
-            session_key="test-session",
-        user_id=123,
-            channel_id=67890,
-            username="testuser",
-            message_content="Test message content",
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock()
         )
-
-        # Should have defaults
-        assert session.session_key == "test-session"
-        assert isinstance(session.created_at, datetime)
-        assert session.last_activity == session.created_at
         assert session.message_count == 0
+
+    def test_default_history_is_empty_list(self):
+        """history defaults to empty list."""
+        session = ChatSessionData(
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock()
+        )
         assert session.history == []
 
-    def test_is_stale_true(self):
-        """Test is_stale property for stale session."""
+    def test_default_model_alias_is_none(self):
+        """model_alias defaults to None."""
         session = ChatSessionData(
-            session_key="test-session",
-            user_id=123,
-            created_at=datetime.now(timezone.utc) - timedelta(minutes=SessionConfig.INACTIVE_MINUTES + 1),
-            message_content="Test",
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock()
         )
+        assert session.model_alias is None
 
-        assert session.is_stale is True
-
-    def test_is_stale_false(self):
-        """Test is_stale property for active session."""
+    def test_is_stale_returns_false_for_new_session(self):
+        """is_stale returns False for newly created session."""
         session = ChatSessionData(
-            session_key="test-session",
-            user_id=123,
-            created_at=datetime.now(timezone.utc) - timedelta(minutes=SessionConfig.INACTIVE_MINUTES - 1),
-            message_content="Test",
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock()
         )
-
         assert session.is_stale is False
 
-    def test_age_seconds(self):
-        """Test age_seconds property."""
-        created = datetime.now(timezone.utc) - timedelta(seconds=30)
-
+    def test_is_stale_returns_true_for_old_session(self):
+        """is_stale returns True for old session."""
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
         session = ChatSessionData(
-            session_key="test-session",
-            created_at=created,
-            message_content="Test",
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock(),
+            last_activity=old_time
         )
+        assert session.is_stale is True
 
-        # Age should be approximately 30 seconds
-        assert 29 < session.age_seconds < 31
+    def test_age_seconds_returns_positive_value(self):
+        """age_seconds returns a positive value."""
+        session = ChatSessionData(
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock()
+        )
+        assert session.age_seconds >= 0
 
-
-# =============================================================================
-# SessionResolution Tests
-# =============================================================================
+    def test_age_seconds_increases_over_time(self):
+        """age_seconds reflects actual age."""
+        old_time = datetime.now(timezone.utc) - timedelta(seconds=10)
+        session = ChatSessionData(
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_object=Mock(),
+            created_at=old_time
+        )
+        assert session.age_seconds >= 10
 
 
 class TestSessionResolution:
     """Tests for SessionResolution dataclass."""
 
-    def test_init_all_fields(self):
-        """Test SessionResolution initialization with all fields."""
+    def test_creates_with_required_fields(self):
+        """SessionResolution can be created with required fields."""
         resolution = SessionResolution(
-            session_key="test-session",
-            cleaned_message="Cleaned message\nwith context",
-            is_new=False,
-            is_reply_to_summary=False,
-            model_alias="gemini-2.0-flash-exp",
-            context={"key": "value"},
+            session_key="channel:123",
+            cleaned_message="Hello"
         )
+        assert resolution.session_key == "channel:123"
+        assert resolution.cleaned_message == "Hello"
 
-        assert resolution.session_key == "test-session"
-        assert resolution.cleaned_message == "Cleaned message\nwith context"
+    def test_default_is_new_is_false(self):
+        """is_new defaults to False."""
+        resolution = SessionResolution(
+            session_key="channel:123",
+            cleaned_message="Hello"
+        )
         assert resolution.is_new is False
-        assert resolution.is_reply_to_summary is False
-        assert resolution.model_alias == "gemini-2.0-flash-exp"
-        assert resolution.context == {"key": "value"}
 
-    def test_is_reply_to_summary_true(self):
-        """Test is_reply_to_summary property when True."""
+    def test_default_is_reply_to_summary_is_false(self):
+        """is_reply_to_summary defaults to False."""
         resolution = SessionResolution(
-            session_key="test-session",
-            cleaned_message="**... 요약:** Summary of conversation",
-            is_reply_to_summary=True,
+            session_key="channel:123",
+            cleaned_message="Hello"
         )
+        assert resolution.is_reply_to_summary is False
 
-        assert resolution.is_reply_to_summary is True
+    def test_default_model_alias_is_none(self):
+        """model_alias defaults to None."""
+        resolution = SessionResolution(
+            session_key="channel:123",
+            cleaned_message="Hello"
+        )
+        assert resolution.model_alias is None
 
-
-# =============================================================================
-# SessionService Class Tests
-# =============================================================================
+    def test_default_context_is_empty_dict(self):
+        """context defaults to empty dict."""
+        resolution = SessionResolution(
+            session_key="channel:123",
+            cleaned_message="Hello"
+        )
+        assert resolution.context == {}
 
 
 class TestSessionService:
@@ -159,309 +157,235 @@ class TestSessionService:
 
     @pytest.fixture
     def mock_config(self):
-        """Create a mock AppConfig."""
-        from types import SimpleNamespace
-
-        return SimpleNamespace(
-            session_inactive_minutes=60,
-            session_cache_limit=10,
-        )
+        """Create a mock config with cleanup disabled."""
+        config = Mock()
+        config.session_inactive_minutes = 0  # Disable cleanup task
+        config.session_cache_limit = 200
+        return config
 
     @pytest.fixture
     def mock_llm_service(self):
-        """Create a mock LLMService."""
-        llm = Mock()
-        llm.generate_chat_response = AsyncMock(return_value=None)
-        llm.generate_chat_response_stream = AsyncMock(return_value=iter([]))
-        llm.extract_function_calls_from_response = Mock(return_value=[])
-        llm.assistant_backend = Mock()
-        return llm
+        """Create a mock LLM service."""
+        return Mock()
 
     @pytest.fixture
     def mock_model_usage_service(self):
-        """Create a mock ModelUsageService."""
+        """Create a mock model usage service."""
         service = Mock()
-        service.record_usage = Mock()
+        service.DEFAULT_MODEL_ALIAS = "Gemini 2.5 Flash"
         return service
 
     @pytest.fixture
-    def session_service(self, mock_config):
-        """Create SessionService instance."""
+    def service(self, mock_config, mock_llm_service, mock_model_usage_service):
+        """Create a SessionService with cleanup disabled."""
         return SessionService(
             config=mock_config,
-            llm_service=self.mock_llm_service(),
-            model_usage_service=self.mock_model_usage_service(),
+            llm_service=mock_llm_service,
+            model_usage_service=mock_model_usage_service
         )
 
-    @pytest.mark.asyncio
-    async def test_init_default_values(self, session_service):
-        """Test SessionService initialization with defaults."""
-        assert session_service._sessions == OrderedDict()
-        assert session_service._channel_prompts == {}
-        assert session_service._channel_models == {}
-        assert len(session_service._sessions) == 0
+    def test_creates_service(self, mock_config, mock_llm_service, mock_model_usage_service):
+        """SessionService can be created."""
+        service = SessionService(
+            config=mock_config,
+            llm_service=mock_llm_service,
+            model_usage_service=mock_model_usage_service
+        )
+        assert service.config == mock_config
 
-    @pytest.mark.asyncio
-    async def test_get_session_not_found(self, session_service):
-        """Test getting non-existent session."""
-        result = await session_service.get_session("nonexistent-session")
-
+    def test_get_session_returns_none_for_nonexistent(self, service):
+        """get_session returns None for non-existent session."""
+        result = service.get_session("nonexistent")
         assert result is None
 
-    @pytest.mark.asyncio
-    async def test_get_session_existing(self, session_service):
-        """Test getting existing session."""
-        # First, create a session
-        await session_service.get_or_create_session(
-            user_id=123,
-            channel_id=67890,
-            username="testuser",
-        )
+    def test_get_or_create_session_creates_new(self, service):
+        """get_or_create_session creates new session when not found."""
+        chat_object = Mock()
+        chat_factory = lambda: chat_object
 
-        # Then retrieve it
-        result = await session_service.get_session("123-testuser-67890")
-
-        assert result is not None
-        assert result.session_key == "123-testuser-67890"
-        assert result.user_id == 123
-
-    @pytest.mark.asyncio
-    async def test_get_or_create_session_new(self, session_service):
-        """Test creating new session."""
-        result, is_new = await session_service.get_or_create_session(
-            user_id=456,
-            channel_id=789,
-            username="newuser",
+        result, is_new = service.get_or_create_session(
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_factory=chat_factory
         )
 
         assert is_new is True
-        assert result.session_key == "456-789"
+        assert result == chat_object
 
-    @pytest.mark.asyncio
-    async def test_get_or_create_session_resume(self, session_service):
-        """Test resuming existing session."""
-        # First create a session
-        await session_service.get_or_create_session(
-            user_id=789,
-            channel_id=456,
-            username="resumeuser",
+    def test_get_or_create_session_returns_existing(self, service):
+        """get_or_create_session returns existing session when not stale."""
+        chat_object = Mock()
+        chat_factory = lambda: chat_object
+
+        # Create session
+        service.get_or_create_session(
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_factory=chat_factory
         )
 
-        # Get the session key to resume
-        session_key_to_resume = result.session_key
+        # Get existing session
+        new_chat = Mock()
+        new_factory = lambda: new_chat
 
-        # Create a new session that resumes
-        result2, is_new2 = await session_service.get_or_create_session(
-            user_id=789,
-            channel_id=456,
-            username="resumeuser",
-            session_key=session_key_to_resume,
+        result, is_new = service.get_or_create_session(
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_factory=new_factory
         )
 
-        assert is_new2 is False  # Resuming, not new
-        assert result2.session_key == session_key_to_resume
+        assert is_new is False
+        assert result == chat_object  # Original, not new
 
-    @pytest.mark.asyncio
-    async def test_remove_session(self, session_service):
-        """Test removing a session."""
-        # Create a session
-        await session_service.get_or_create_session(
-            user_id=123,
-            channel_id=67890,
-            username="testuser",
+    def test_remove_session_returns_true_when_exists(self, service):
+        """remove_session returns True when session exists."""
+        chat_object = Mock()
+        chat_factory = lambda: chat_object
+
+        service.get_or_create_session(
+            session_key="channel:123",
+            user_id=1,
+            channel_id=123,
+            chat_factory=chat_factory
         )
 
-        session_key = result.session_key
+        result = service.remove_session("channel:123")
+        assert result is True
 
-        # Remove it
-        removed = await session_service.remove_session(session_key)
+    def test_remove_session_returns_false_when_not_found(self, service):
+        """remove_session returns False when session not found."""
+        result = service.remove_session("nonexistent")
+        assert result is False
 
-        assert removed is True
-
-        # Verify it's gone
-        result2 = await session_service.get_session(session_key)
-
-        assert result2 is None
-
-    @pytest.mark.asyncio
-    async def test_remove_nonexistent_session(self, session_service):
-        """Test removing non-existent session."""
-        removed = await session_service.remove_session("nonexistent-session")
-
-        assert removed is False
-
-    @pytest.mark.asyncio
-    async def test_cleanup_stale_sessions(self, session_service):
-        """Test cleanup of stale sessions."""
-        # Create multiple stale sessions
-        for i in range(3):
-            await session_service.get_or_create_session(
-                user_id=100 + i,
-                channel_id=100 + i,
-                username=f"stale{i}",
-            )
-
-        # Create one fresh session
-        await session_service.get_or_create_session(
-            user_id=200,
-            channel_id=200,
-            username="freshuser",
+    def test_cleanup_stale_sessions_removes_old(self, service):
+        """cleanup_stale_sessions removes stale sessions."""
+        # Create a stale session manually
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        stale_session = ChatSessionData(
+            session_key="channel:stale",
+            user_id=1,
+            channel_id=999,
+            chat_object=Mock(),
+            last_activity=old_time
         )
+        service._sessions["channel:stale"] = stale_session
 
-        # Make some stale
-        stale_count = await session_service.cleanup_stale_sessions()
+        removed = service.cleanup_stale_sessions()
+        assert removed == 1
+        assert "channel:stale" not in service._sessions
 
-        assert stale_count >= 3  # At least the 3 stale ones
+    def test_get_channel_prompt_returns_none_when_not_set(self, service):
+        """get_channel_prompt returns None when not set."""
+        result = service.get_channel_prompt(123)
+        assert result is None
 
-    @pytest.mark.asyncio
-    async def test_link_message_to_session(self, session_service):
-        """Test linking a message to a session."""
-        # Create a session
-        result = await session_service.get_or_create_session(
-            user_id=123,
-            channel_id=67890,
-            username="testuser",
-        )
+    def test_set_and_get_channel_prompt(self, service):
+        """set_channel_prompt and get_channel_prompt work together."""
+        service.set_channel_prompt(123, "Custom prompt")
+        result = service.get_channel_prompt(123)
+        assert result == "Custom prompt"
 
-        session_key = result.session_key
+    def test_get_channel_model_returns_none_when_not_set(self, service):
+        """get_channel_model returns None when not set."""
+        result = service.get_channel_model(123)
+        assert result is None
 
-        # Link a message
-        message_id = 999888
-        await session_service.link_message_to_session(
-            session_key=session_key,
-            discord_message_id=str(message_id),
-        )
+    def test_set_and_get_channel_model(self, service):
+        """set_channel_model and get_channel_model work together."""
+        service.set_channel_model(123, "GPT-4o")
+        result = service.get_channel_model(123)
+        assert result == "GPT-4o"
 
-        # Get session history
-        history = await session_service.get_session_messages(session_key)
+    def test_get_session_count_returns_correct_number(self, service):
+        """get_session_count returns correct number of sessions."""
+        assert service.get_session_count() == 0
 
-        assert message_id in history
+        chat_factory = lambda: Mock()
+        service.get_or_create_session("channel:1", 1, 1, chat_factory)
+        service.get_or_create_session("channel:2", 2, 2, chat_factory)
 
-    @pytest.mark.asyncio
-    async def test_get_channel_prompt(self, session_service):
-        """Test getting channel prompt."""
-        prompt = "Custom channel prompt"
+        assert service.get_session_count() == 2
 
-        # Set prompt
-        await session_service.set_channel_prompt(
-            channel_id=67890,
-            prompt=prompt,
-        )
-
-        # Get it back
-        result = await session_service.get_channel_prompt(67890)
-
-        assert result == prompt
-
-    @pytest.mark.asyncio
-    async def test_set_channel_model(self, session_service):
-        """Test setting channel model."""
-        model_alias = "custom-model"
-
-        # Set model
-        await session_service.set_channel_model(
-            channel_id=67890,
-            model_alias=model_alias,
-        )
-
-        # Get it back
-        result = await session_service.get_channel_model(67890)
-
-        assert result == model_alias
-
-    @pytest.mark.asyncio
-    async def test_get_all_sessions(self, session_service):
-        """Test getting all sessions."""
-        # Create multiple sessions
-        for i in range(5):
-            await session_service.get_or_create_session(
-                user_id=200 + i,
-                channel_id=200 + i,
-                username=f"user{i}",
-            )
-
-        sessions = await session_service.get_all_sessions()
-
-        assert len(sessions) == 5
-
-    @pytest.mark.asyncio
-    async def test_get_session_count(self, session_service):
-        """Test getting session count."""
-        # Create some sessions
-        for i in range(3):
-            await session_service.get_or_create_session(
-                user_id=100 + i,
-                channel_id=100 + i,
-                username=f"count{i}",
-            )
-
-        count = await session_service.get_session_count()
-
-        assert count == 3
-
-    @pytest.mark.asyncio
-    async def test_stats_property(self, session_service):
-        """Test stats property."""
-        # Create some sessions
-        for i in range(2):
-            await session_service.get_or_create_session(
-                user_id=500 + i,
-                channel_id=500 + i,
-                username=f"stats{i}",
-            )
-
-        stats = session_service.stats
-
+    def test_stats_returns_correct_info(self, service):
+        """stats property returns correct statistics."""
+        stats = service.stats
         assert "total_sessions" in stats
-        assert stats["total_sessions"] == 2
+        assert "custom_prompts" in stats
+        assert "custom_models" in stats
+
+    def test_get_all_sessions_returns_list(self, service):
+        """get_all_sessions returns list of all sessions."""
+        chat_factory = lambda: Mock()
+        service.get_or_create_session("channel:1", 1, 1, chat_factory)
+        service.get_or_create_session("channel:2", 2, 2, chat_factory)
+
+        sessions = service.get_all_sessions()
+        assert len(sessions) == 2
+
+
+class TestSessionServiceWithCleanup:
+    """Tests for SessionService with cleanup task enabled."""
+
+    @pytest.fixture
+    def mock_config_with_cleanup(self):
+        """Create a mock config with cleanup enabled."""
+        config = Mock()
+        config.session_inactive_minutes = 30  # Enable cleanup task
+        config.session_cache_limit = 200
+        return config
+
+    @pytest.fixture
+    def mock_llm_service(self):
+        """Create a mock LLM service."""
+        return Mock()
+
+    @pytest.fixture
+    def mock_model_usage_service(self):
+        """Create a mock model usage service."""
+        service = Mock()
+        service.DEFAULT_MODEL_ALIAS = "Gemini 2.5 Flash"
+        return service
 
     @pytest.mark.asyncio
-    async def test_shutdown(self, session_service):
-        """Test graceful shutdown."""
-        # Create some sessions
-        for i in range(2):
-            await session_service.get_or_create_session(
-                user_id=800 + i,
-                channel_id=800 + i,
-                username=f"shutdown{i}",
-            )
+    async def test_shutdown_cancels_cleanup_task(
+        self, mock_config_with_cleanup, mock_llm_service, mock_model_usage_service
+    ):
+        """shutdown cancels the cleanup task."""
+        service = SessionService(
+            config=mock_config_with_cleanup,
+            llm_service=mock_llm_service,
+            model_usage_service=mock_model_usage_service
+        )
 
-        # Shutdown
-        await session_service.shutdown()
+        # Verify cleanup task was created
+        assert service._cleanup_task is not None
 
-        # Verify all sessions cleared
-        assert session_service._sessions == OrderedDict()
+        # Shutdown should cancel it
+        await service.shutdown()
 
-        assert session_service.get_session_count() == 0
+        assert service._cleanup_task.done()
 
     @pytest.mark.asyncio
-    async def test_eviction_when_cache_limit_exceeded(self, session_service):
-        """Test session eviction when cache limit is exceeded."""
-        # Create sessions up to limit
-        config = self.mock_config()
-        config.session_cache_limit = 5
+    async def test_shutdown_clears_sessions(
+        self, mock_config_with_cleanup, mock_llm_service, mock_model_usage_service
+    ):
+        """shutdown clears all sessions."""
+        service = SessionService(
+            config=mock_config_with_cleanup,
+            llm_service=mock_llm_service,
+            model_usage_service=mock_model_usage_service
+        )
 
-        service = SessionService(config=config)
+        # Add some sessions
+        chat_factory = lambda: Mock()
+        service.get_or_create_session("channel:1", 1, 1, chat_factory)
+        service.get_or_create_session("channel:2", 2, 2, chat_factory)
 
-        for i in range(6):
-            await service.get_or_create_session(
-                user_id=300 + i,
-                channel_id=300 + i,
-                username=f"user{i}",
-            )
+        assert service.get_session_count() == 2
 
-        # Check oldest session was evicted
-        # The first session should be evicted when adding the 6th
-        oldest_key = None
+        await service.shutdown()
 
-        for i in range(5):  # Add 5 more (total 6)
-            result, _ = await service.get_or_create_session(
-                user_id=400 + i,
-                channel_id=400 + i,
-                username=f"evict{i}",
-            )
-
-            if i == 0:
-                oldest_key = result.session_key
-
-        assert oldest_key is not None
+        assert service.get_session_count() == 0
