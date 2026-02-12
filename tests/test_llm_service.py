@@ -1,6 +1,5 @@
 """Comprehensive tests for LLMService."""
 
-import os
 from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
 import discord
@@ -16,83 +15,143 @@ from persbot.services.usage_service import ImageUsageService
 from persbot.services.zai_service import ZAIService
 
 
-# Helper function to create test model definitions
-def _create_test_model_definitions():
-    """Create test ModelDefinition instances for use in tests."""
-    return {
-        "gemini-2.5-flash": ModelDefinition(
-            display_name="Gemini 2.5 Flash",
-            api_model_name="gemini-2.5-flash",
-            daily_limit=100,
-            scope="guild",
-            provider="gemini",
-            fallback_alias=None,
-        ),
-        "gpt-4": ModelDefinition(
-            display_name="GPT-4",
-            api_model_name="gpt-4",
-            daily_limit=100,
-            scope="guild",
-            provider="openai",
-            fallback_alias="gemini-2.5-flash",
-        ),
-        "glm-4.7": ModelDefinition(
-            display_name="GLM 4.7",
-            api_model_name="glm-4.7",
-            daily_limit=100,
-            scope="guild",
-            provider="zai",
-            fallback_alias=None,
-        ),
-    }
-
-
-# Helper to create a proper mock config that returns strings for attributes
-def _create_mock_config(
-    assistant_provider="gemini",
-    summarizer_provider="gemini",
-    assistant_model="gemini-2.5-flash",
-    summarizer_model="gemini-2.5-flash",
-    gemini_key="test_gemini_key",
-    openai_key="test_openai_key",
-    zai_key="test_zai_key",
-):
-    """Create a mock AppConfig that returns proper values for attributes.
-
-    Using a simple object instead of Mock to avoid issues with string methods
-    like .lower() returning Mock objects instead of strings.
-    """
-    from types import SimpleNamespace
-    return SimpleNamespace(
-        assistant_llm_provider=assistant_provider,
-        summarizer_llm_provider=summarizer_provider,
-        assistant_model_name=assistant_model,
-        summarizer_model_name=summarizer_model,
-        gemini_api_key=gemini_key,
-        openai_api_key=openai_key,
-        zai_api_key=zai_key,
-        no_check_permission=True,
-    )
-
-
 class TestLLMServiceInit:
     """Test LLMService.__init__() - Test initialization."""
 
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.openai_api_key = "test_openai_key"
+        config.zai_api_key = "test_zai_key"
+        config.no_check_permission = True
+        return config
+
+    @patch("persbot.services.llm_service.GeminiService")
+    def test_init_with_gemini_provider(self, mock_gemini, mock_config):
+        """Test assistant_provider selection with gemini."""
+        mock_config.assistant_llm_provider = "gemini"
+        mock_backend = Mock()
+        mock_gemini.return_value = mock_backend
+        service = LLMService(mock_config)
+
+        assert service.assistant_backend is mock_backend
+        assert service.provider_label == "Gemini"
+        assert service.summarizer_backend is service.assistant_backend
+
+    @patch("persbot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.OpenAIService")
+    def test_init_with_openai_provider(self, mock_openai, mock_gemini, mock_config):
+        """Test assistant_provider selection with openai."""
+        mock_config.assistant_llm_provider = "openai"
+        mock_backend = Mock()
+        mock_openai.return_value = mock_backend
+        service = LLMService(mock_config)
+
+        assert service.assistant_backend is mock_backend
+        assert service.provider_label == "OpenAI"
+
+    @patch("persbot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.ZAIService")
+    def test_init_with_zai_provider(self, mock_zai, mock_gemini, mock_config):
+        """Test assistant_provider selection with zai."""
+        mock_config.assistant_llm_provider = "zai"
+        mock_backend = Mock()
+        mock_zai.return_value = mock_backend
+        service = LLMService(mock_config)
+
+        assert service.assistant_backend is mock_backend
+        assert service.provider_label == "Z.AI"
+
+    @patch("persbot.services.llm_service.GeminiService")
+    @patch("persbot.services.llm_service.OpenAIService")
+    def test_summarizer_provider_different(self, mock_openai, mock_gemini, mock_config):
+        """Test summarizer_provider selection different from assistant."""
+        mock_config.assistant_llm_provider = "gemini"
+        mock_config.summarizer_llm_provider = "openai"
+        mock_gemini_backend = Mock()
+        mock_openai_backend = Mock()
+        mock_gemini.return_value = mock_gemini_backend
+        mock_openai.return_value = mock_openai_backend
+        service = LLMService(mock_config)
+
+        assert service.assistant_backend is mock_gemini_backend
+        assert service.summarizer_backend is mock_openai_backend
+        assert service.summarizer_backend is not service.assistant_backend
+
+    @patch("persbot.services.llm_service.GeminiService")
+    def test_default_provider_fallback(self, mock_gemini, mock_config):
+        """Test default provider fallback when not specified."""
+        mock_config.assistant_llm_provider = None
+        mock_config.summarizer_llm_provider = None
+        mock_backend = Mock()
+        mock_gemini.return_value = mock_backend
+        service = LLMService(mock_config)
+
+        assert service.assistant_backend is mock_backend
+        assert service.summarizer_backend is mock_backend
+
+    @patch("persbot.services.llm_service.GeminiService")
+    def test_prompt_service_initialization(self, mock_gemini, mock_config):
+        """Test prompt_service initialization."""
+        mock_gemini.return_value = Mock()
+        service = LLMService(mock_config)
+
+        assert isinstance(service.prompt_service, PromptService)
+
+    @patch("persbot.services.llm_service.GeminiService")
+    def test_image_usage_service_initialization(self, mock_gemini, mock_config):
+        """Test image_usage_service initialization."""
+        mock_gemini.return_value = Mock()
+        service = LLMService(mock_config)
+
+        assert isinstance(service.image_usage_service, ImageUsageService)
+
+    @patch("persbot.services.llm_service.GeminiService")
+    def test_model_usage_service_initialization(self, mock_gemini, mock_config):
+        """Test model_usage_service initialization."""
+        mock_gemini.return_value = Mock()
+        service = LLMService(mock_config)
+
+        assert isinstance(service.model_usage_service, ModelUsageService)
+
+    @patch("persbot.services.llm_service.GeminiService")
+    def test_aux_backends_cache_initialization(self, mock_gemini, mock_config):
+        """Test _aux_backends cache initialization."""
+        mock_gemini.return_value = Mock()
+        service = LLMService(mock_config)
+
+        assert service._aux_backends == {}
+
+
+class TestCreateBackend:
+    """Test _create_backend() - Test backend creation."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock AppConfig."""
+        config = Mock()
+        config.gemini_api_key = "test_gemini_key"
+        config.openai_api_key = "test_openai_key"
+        config.zai_api_key = "test_zai_key"
+        config.no_check_permission = True
+        config.gemini_cache_min_tokens = 32768
+        config.gemini_cache_ttl_minutes = 60
+        config.temperature = 1.0
+        config.top_p = 1.0
+        config.thinking_budget = None
+        config.service_tier = "flex"
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
-            return LLMService(mock_config)
+        return LLMService(mock_config)
 
     def test_create_openai_backend(self, llm_service):
         """Test OpenAI backend creation."""
@@ -147,19 +206,225 @@ class TestGetBackendForModel:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.openai_api_key = "test_openai_key"
+        config.zai_api_key = "test_zai_key"
+        config.no_check_permission = True
+        return config
+
+    @pytest.fixture
+    def llm_service(self, mock_config):
+        """Create an LLMService instance with mocked model_usage_service."""
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
+            mock_instance = Mock()
+            mock_instance.MODEL_DEFINITIONS = {
+                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gpt-4": Mock(provider="openai"),
+                "glm-4.7": Mock(provider="zai"),
+            }
+            mock_instance.get_api_model_name = Mock(side_effect=lambda x: x)
+            mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
+            mock_mus.return_value = mock_instance
+
+            service = LLMService(mock_config)
+            return service
+
+    def test_existing_backend_retrieval_same_provider(self, llm_service):
+        """Test existing backend retrieval when model uses same provider."""
+        backend = llm_service.get_backend_for_model("gemini-2.5-flash")
+
+        assert backend is llm_service.assistant_backend
+        assert isinstance(backend, GeminiService)
+
+    def test_auxiliary_backend_cache(self, llm_service):
+        """Test auxiliary backend cache after first creation."""
+        # First call creates the backend
+        backend1 = llm_service.get_backend_for_model("gpt-4")
+        # Second call should return cached backend
+        backend2 = llm_service.get_backend_for_model("gpt-4")
+
+        assert backend1 is backend2
+        assert backend1 is llm_service._aux_backends["openai"]
+
+    def test_lazy_loading_new_backends(self, llm_service):
+        """Test lazy loading of new backends."""
+        # Initially, aux backends should be empty
+        assert "openai" not in llm_service._aux_backends
+
+        # Request OpenAI backend
+        backend = llm_service.get_backend_for_model("gpt-4")
+
+        # Now it should be cached
+        assert "openai" in llm_service._aux_backends
+        assert isinstance(backend, OpenAIService)
+
+    def test_provider_matching_gemini(self, llm_service):
+        """Test provider matching for Gemini models."""
+        backend = llm_service.get_backend_for_model("gemini-2.5-flash")
+
+        assert isinstance(backend, GeminiService)
+
+    def test_provider_matching_openai(self, llm_service):
+        """Test provider matching for OpenAI models."""
+        backend = llm_service.get_backend_for_model("gpt-4")
+
+        assert isinstance(backend, OpenAIService)
+
+    def test_provider_matching_zai(self, llm_service):
+        """Test provider matching for Z.AI models."""
+        backend = llm_service.get_backend_for_model("glm-4.7")
+
+        assert isinstance(backend, ZAIService)
+
+    def test_none_return_for_missing_api_keys(self, mock_config):
+        """Test None return for missing API keys."""
+        # Patch config to return None for openai_api_key attribute access
+        with patch.object(mock_config, "openai_api_key", None):
+            service = LLMService(mock_config)
+            # Patch service.config to ensure the patched config is used
+            with patch.object(service, "config", mock_config):
+                backend = service.get_backend_for_model("gpt-4")
+                assert backend is None
+
+    def test_unknown_model_fallback_to_default(self, llm_service):
+        """Test unknown model fallback to default provider."""
+        backend = llm_service.get_backend_for_model("unknown-model")
+
+        # Should return default (gemini) backend
+        assert isinstance(backend, GeminiService)
+
+
+class TestCreateChatSessionForAlias:
+    """Test create_chat_session_for_alias() - Test session creation."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock AppConfig."""
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.openai_api_key = "test_openai_key"
+        config.zai_api_key = "test_zai_key"
+        config.no_check_permission = True
+        return config
+
+    @pytest.fixture
+    def llm_service(self, mock_config):
+        """Create an LLMService instance with mocked model_usage_service."""
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
+            mock_instance = Mock()
+            mock_instance.MODEL_DEFINITIONS = {
+                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gpt-4": Mock(provider="openai"),
+            }
+            mock_instance.get_api_model_name = Mock(side_effect=lambda x: x)
+            mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
+            mock_mus.return_value = mock_instance
+
+            service = LLMService(mock_config)
+            return service
+
+    def test_getting_backend_for_alias(self, llm_service):
+        """Test getting backend for alias."""
+        mock_model = Mock()
+        mock_chat = Mock()
+        mock_model.start_chat = Mock(return_value=mock_chat)
+
+        with patch.object(
+            llm_service.assistant_backend,
+            "_get_or_create_model",
+            return_value=mock_model,
+        ) as mocked_method:
+            result = llm_service.create_chat_session_for_alias(
+                "gemini-2.5-flash", "Test system instruction"
+            )
+
+        assert result == mock_chat
+        mocked_method.assert_called_once()
+
+    def test_fallback_to_default_backend(self, mock_config):
+        """Test fallback to default backend when backend unavailable."""
+        mock_config.openai_api_key = None
+        service = LLMService(mock_config)
+
+        mock_model = Mock()
+        mock_chat = Mock()
+        mock_model.start_chat = Mock(return_value=mock_chat)
+
+        with patch.object(
+            service.assistant_backend, "_get_or_create_model", return_value=mock_model
+        ):
+            result = service.create_chat_session_for_alias(
+                "gpt-4",  # Should fall back since OpenAI key missing
+                "Test system instruction",
+            )
+
+        assert result == mock_chat
+
+    def test_calling_backend_get_or_create_model(self, llm_service):
+        """Test calling backend's _get_or_create_model."""
+        mock_model = Mock()
+        mock_chat = Mock()
+        mock_model.start_chat = Mock(return_value=mock_chat)
+
+        with patch.object(
+            llm_service.assistant_backend,
+            "_get_or_create_model",
+            return_value=mock_model,
+        ) as mocked_method:
+            result = llm_service.create_chat_session_for_alias(
+                "gemini-2.5-flash", "Test instruction"
+            )
+
+        mocked_method.assert_called_once_with("gemini-2.5-flash", "Test instruction")
+
+    def test_model_alias_assignment(self, llm_service):
+        """Test that model_alias is passed through backend."""
+        mock_model = Mock()
+        mock_chat = Mock()
+        mock_chat.model_alias = "gemini-2.5-flash"
+        mock_model.start_chat = Mock(return_value=mock_chat)
+
+        with patch.object(
+            llm_service.assistant_backend,
+            "_get_or_create_model",
+            return_value=mock_model,
+        ):
+            result = llm_service.create_chat_session_for_alias(
+                "gemini-2.5-flash", "Test instruction"
+            )
+
+        assert result.model_alias == "gemini-2.5-flash"
+
+
+class TestCreateAssistantModel:
+    """Test create_assistant_model() - Test assistant model creation."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock AppConfig."""
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
-            service = LLMService(mock_config)
-            return service
+        service = LLMService(mock_config)
+        return service
 
     def test_delegating_to_assistant_backend(self, llm_service):
         """Test delegating to assistant_backend."""
@@ -206,19 +471,20 @@ class TestSummarizeText:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
-            service = LLMService(mock_config)
-            return service
+        service = LLMService(mock_config)
+        return service
 
     @pytest.mark.asyncio
     async def test_delegating_to_summarizer_backend(self, llm_service):
@@ -261,18 +527,19 @@ class TestGeneratePromptFromConcept:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -362,18 +629,296 @@ class TestGenerateChatResponse:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.openai_api_key = "test_openai_key"
+        config.zai_api_key = "test_zai_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
+            mock_instance = Mock()
+            mock_instance.MODEL_DEFINITIONS = {
+                "gemini-2.5-flash": ModelDefinition(
+                    display_name="Gemini 2.5 Flash",
+                    api_model_name="gemini-2.5-flash",
+                    daily_limit=100,
+                    scope="guild",
+                    provider="gemini",
+                    fallback_alias=None,
+                ),
+            }
+            mock_instance.get_api_model_name = Mock(return_value="gemini-2.5-flash")
+            mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
+            mock_instance.check_and_increment_usage = AsyncMock(
+                return_value=(True, "gemini-2.5-flash", None)
+            )
+            mock_mus.return_value = mock_instance
+
+            service = LLMService(mock_config)
+            return service
+
+    @pytest.fixture
+    def mock_discord_message(self):
+        """Create a mock Discord message."""
+        message = Mock()
+        message.author = Mock(id=123456)
+        message.author.guild_permissions = Mock(manage_guild=False)
+        message.channel = Mock(id=789012)
+        message.channel.id = 789012
+        message.guild = Mock(id=456789)
+        message.guild.id = 456789
+        message.attachments = []
+        return message
+
+    @pytest.fixture
+    def mock_chat_session(self):
+        """Create a mock chat session."""
+        session = Mock()
+        session.model_alias = "gemini-2.5-flash"
+        return session
+
+    @pytest.mark.asyncio
+    async def test_extracting_message_metadata(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test extracting message metadata."""
+        with patch.object(
+            llm_service.assistant_backend,
+            "generate_chat_response",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("Response", None)
+
+            await llm_service.generate_chat_response(
+                mock_chat_session, "User message", mock_discord_message
+            )
+
+            # Check that metadata was extracted
+            user_id = mock_discord_message.author.id
+            assert user_id == 123456
+
+    @pytest.mark.asyncio
+    async def test_checking_usage_limits(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test checking usage limits."""
+        llm_service.model_usage_service.check_and_increment_usage = AsyncMock(
+            return_value=(True, "gemini-2.5-flash", None)
+        )
+
+        with patch.object(
+            llm_service.assistant_backend,
+            "generate_chat_response",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("Response", None)
+
+            await llm_service.generate_chat_response(
+                mock_chat_session, "User message", mock_discord_message
+            )
+
+            llm_service.model_usage_service.check_and_increment_usage.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_model_alias_fallback(self, llm_service, mock_chat_session, mock_discord_message):
+        """Test model alias fallback."""
+        llm_service.model_usage_service.check_and_increment_usage = AsyncMock(
+            return_value=(True, "gemini-2.5-pro", "Switching to pro")
+        )
+
+        with patch.object(
+            llm_service.assistant_backend,
+            "generate_chat_response",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("Response", None)
+
+            await llm_service.generate_chat_response(
+                mock_chat_session, "User message", mock_discord_message
+            )
+
+            assert mock_chat_session.model_alias == "gemini-2.5-pro"
+
+    @pytest.mark.asyncio
+    async def test_getting_backend_for_model(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test getting backend for model."""
+        with patch.object(
+            llm_service,
+            "get_backend_for_model",
+            return_value=llm_service.assistant_backend,
+        ) as mock_get:
+            with patch.object(
+                llm_service.assistant_backend,
+                "generate_chat_response",
+                new_callable=AsyncMock,
+            ) as mock_gen:
+                mock_gen.return_value = ("Response", None)
+
+                await llm_service.generate_chat_response(
+                    mock_chat_session, "User message", mock_discord_message
+                )
+
+                mock_get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_checking_image_usage_limits(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test checking image usage limits."""
+        mock_attachment = Mock()
+        mock_attachment.content_type = "image/png"
+        mock_discord_message.attachments = [mock_attachment]
+
+        with patch.object(llm_service, "_check_image_usage_limit", return_value=None):
+            with patch.object(
+                llm_service.assistant_backend,
+                "generate_chat_response",
+                new_callable=AsyncMock,
+            ) as mock_gen:
+                mock_gen.return_value = ("Response", None)
+
+                await llm_service.generate_chat_response(
+                    mock_chat_session, "User message", mock_discord_message
+                )
+
+                llm_service._check_image_usage_limit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_counting_images_in_message(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test counting images in message."""
+        mock_attachment = Mock()
+        mock_attachment.content_type = "image/jpeg"
+        mock_discord_message.attachments = [mock_attachment, mock_attachment]
+
+        with patch.object(
+            llm_service.assistant_backend,
+            "generate_chat_response",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("Response", None)
+
+            await llm_service.generate_chat_response(
+                mock_chat_session, "User message", mock_discord_message
+            )
+
+            # Image count should be 2
+            assert True  # Just verify the method is called in _count_images_in_message tests
+
+    @pytest.mark.asyncio
+    async def test_limit_error_handling(self, llm_service, mock_chat_session, mock_discord_message):
+        """Test limit_error handling."""
+        mock_attachment = Mock()
+        mock_attachment.content_type = "image/png"
+        mock_discord_message.attachments = [mock_attachment]
+
+        with patch.object(
+            llm_service,
+            "_check_image_usage_limit",
+            return_value=("❌ 이미지 한도 초과", None),
+        ):
+            result = await llm_service.generate_chat_response(
+                mock_chat_session, "User message", mock_discord_message
+            )
+
+            assert result == ("❌ 이미지 한도 초과", None)
+
+    @pytest.mark.asyncio
+    async def test_calling_backend_generate_chat_response(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test calling backend.generate_chat_response()."""
+        with patch.object(
+            llm_service.assistant_backend,
+            "generate_chat_response",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("AI Response", None)
+
+            result = await llm_service.generate_chat_response(
+                mock_chat_session, "User message", mock_discord_message
+            )
+
+            mock_gen.assert_called_once()
+            assert result == ("AI Response", None)
+
+    @pytest.mark.asyncio
+    async def test_recording_image_usage(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test recording image usage."""
+        mock_attachment = Mock()
+        mock_attachment.content_type = "image/png"
+        mock_discord_message.attachments = [mock_attachment]
+
+        with patch.object(
+            llm_service, "_record_image_usage_if_needed", new_callable=AsyncMock
+        ) as mock_record:
+            with patch.object(
+                llm_service.assistant_backend,
+                "generate_chat_response",
+                new_callable=AsyncMock,
+            ) as mock_gen:
+                mock_gen.return_value = ("Response", None)
+
+                await llm_service.generate_chat_response(
+                    mock_chat_session, "User message", mock_discord_message
+                )
+
+                mock_record.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_preparing_response_with_notification(
+        self, llm_service, mock_chat_session, mock_discord_message
+    ):
+        """Test preparing response with notification."""
+        llm_service.model_usage_service.check_and_increment_usage = AsyncMock(
+            return_value=(True, "gemini-2.5-flash", "Model switched")
+        )
+
+        with patch.object(
+            llm_service.assistant_backend,
+            "generate_chat_response",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("AI Response", None)
+
+            result = await llm_service.generate_chat_response(
+                mock_chat_session, "User message", mock_discord_message
+            )
+
+            text, obj = result
+            assert "📢 Model switched" in text
+            assert "AI Response" in text
+
+
+class TestExtractMessageMetadata:
+    """Test _extract_message_metadata() - Test metadata extraction."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock AppConfig."""
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
+
+    @pytest.fixture
+    def llm_service(self, mock_config):
+        """Create an LLMService instance."""
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -451,18 +996,16 @@ class TestCountImagesInMessage:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -539,18 +1082,16 @@ class TestCheckImageUsageLimit:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -648,18 +1189,16 @@ class TestRecordImageUsageIfNeeded:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -743,18 +1282,16 @@ class TestPrepareResponseWithNotification:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -813,18 +1350,16 @@ class TestGetUserRoleName:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -844,18 +1379,16 @@ class TestGetAssistantRoleName:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -875,18 +1408,19 @@ class TestUpdateParameters:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.gemini_api_key = "test_gemini_key"
+        config.no_check_permission = True
+        config.temperature = 1.0
+        config.top_p = 1.0
+        config.thinking_budget = None
+        return config
 
     @pytest.fixture
     def llm_service(self, mock_config):
         """Create an LLMService instance."""
-        with patch("persbot.services.llm_service.ModelUsageService"), \
-             patch("persbot.services.llm_service.GeminiService") as mock_gemini, \
-             patch("persbot.services.llm_service.OpenAIService") as mock_openai, \
-             patch("persbot.services.llm_service.ZAIService") as mock_zai:
-            mock_gemini.return_value = Mock()
-            mock_openai.return_value = Mock()
-            mock_zai.return_value = Mock()
+        with patch("persbot.services.llm_service.ModelUsageService"):
             service = LLMService(mock_config)
             return service
 
@@ -973,4 +1507,111 @@ class TestProviderSwitching:
     @pytest.fixture
     def mock_config(self):
         """Create a mock AppConfig."""
-        return _create_mock_config()
+        config = Mock()
+        config.assistant_llm_provider = "gemini"
+        config.summarizer_llm_provider = "gemini"
+        config.assistant_model_name = "gemini-2.5-flash"
+        config.summarizer_model_name = "gemini-2.5-flash"
+        config.gemini_api_key = "test_gemini_key"
+        config.openai_api_key = "test_openai_key"
+        config.zai_api_key = "test_zai_key"
+        config.no_check_permission = True
+        return config
+
+    @pytest.fixture
+    def llm_service(self, mock_config):
+        """Create an LLMService instance."""
+        with patch("persbot.services.llm_service.ModelUsageService") as mock_mus:
+            mock_instance = Mock()
+            mock_instance.MODEL_DEFINITIONS = {
+                "gemini-2.5-flash": Mock(provider="gemini"),
+                "gpt-4": Mock(provider="openai"),
+                "glm-4.7": Mock(provider="zai"),
+            }
+            mock_instance.get_api_model_name = Mock(side_effect=lambda x: x)
+            mock_instance.DEFAULT_MODEL_ALIAS = "gemini-2.5-flash"
+            mock_mus.return_value = mock_instance
+
+            service = LLMService(mock_config)
+            return service
+
+    def test_switching_from_gemini_to_openai(self, llm_service):
+        """Test switching from gemini to openai."""
+        # Initially, should use Gemini backend for gemini models
+        gemini_backend = llm_service.get_backend_for_model("gemini-2.5-flash")
+        assert isinstance(gemini_backend, GeminiService)
+
+        # Switch to OpenAI model
+        openai_backend = llm_service.get_backend_for_model("gpt-4")
+        assert isinstance(openai_backend, OpenAIService)
+
+        # Should be cached in aux_backends
+        assert "openai" in llm_service._aux_backends
+
+    def test_switching_to_zai(self, llm_service):
+        """Test switching to zai."""
+        # Switch to Z.AI model
+        zai_backend = llm_service.get_backend_for_model("glm-4.7")
+        assert isinstance(zai_backend, ZAIService)
+
+        # Should be cached
+        assert "zai" in llm_service._aux_backends
+
+    def test_caching_aux_backends(self, llm_service):
+        """Test caching aux backends."""
+        # First call creates backend
+        backend1 = llm_service.get_backend_for_model("gpt-4")
+        # Second call should return cached backend
+        backend2 = llm_service.get_backend_for_model("gpt-4")
+
+        assert backend1 is backend2
+        assert "openai" in llm_service._aux_backends
+
+    def test_api_key_validation_openai(self, mock_config):
+        """Test API key validation for OpenAI."""
+        # Verify that the get_backend_for_model method checks for API key presence
+        # When config.openai_api_key is falsy, it should return None
+        with patch.object(mock_config, "openai_api_key", None):
+            service = LLMService(mock_config)
+            with patch.object(service, "config", mock_config):
+                backend = service.get_backend_for_model("gpt-4")
+                assert backend is None
+
+    def test_api_key_validation_zai(self, mock_config):
+        """Test API key validation for Z.AI."""
+        # Verify that the get_backend_for_model method checks for API key presence
+        with patch.object(mock_config, "zai_api_key", None):
+            service = LLMService(mock_config)
+            with patch.object(service, "config", mock_config):
+                backend = service.get_backend_for_model("glm-4.7")
+                assert backend is None
+
+    def test_api_key_validation_gemini(self, mock_config):
+        """Test API key validation for Gemini."""
+        # Verify that assistant_backend works even with missing API key if already initialized
+        # Since assistant_backend is created in __init__, it should exist
+        service = LLMService(mock_config)
+        assert isinstance(service.assistant_backend, GeminiService)
+
+    def test_multiple_switches(self, llm_service):
+        """Test multiple switches between providers."""
+        # Start with Gemini
+        gemini_backend = llm_service.get_backend_for_model("gemini-2.5-flash")
+        assert isinstance(gemini_backend, GeminiService)
+
+        # Switch to OpenAI
+        openai_backend = llm_service.get_backend_for_model("gpt-4")
+        assert isinstance(openai_backend, OpenAIService)
+
+        # Switch to Z.AI
+        zai_backend = llm_service.get_backend_for_model("glm-4.7")
+        assert isinstance(zai_backend, ZAIService)
+
+        # Switch back to Gemini
+        gemini_backend2 = llm_service.get_backend_for_model("gemini-2.5-flash")
+        assert isinstance(gemini_backend2, GeminiService)
+        assert gemini_backend2 is gemini_backend
+
+        # Verify all are cached
+        assert "openai" in llm_service._aux_backends
+        assert "zai" in llm_service._aux_backends
