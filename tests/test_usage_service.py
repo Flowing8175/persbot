@@ -244,7 +244,7 @@ class TestCheckCanUpload:
 async def usage_service_with_temp_storage(temp_dir):
     """Create an ImageUsageService instance with temp storage."""
     storage_path = temp_dir / "test_usage.json"
-    service = ImageUsageService(storage_path=str(storage_path))
+    service = ImageUsageService(storage_path=str(storage_path), debounce_interval=0)
     yield service
 
 
@@ -1055,19 +1055,23 @@ class TestEdgeCases:
         """Test data persists across different service instances."""
         storage_path = temp_dir / "persist.json"
 
-        # First instance - record upload
-        service1 = ImageUsageService(storage_path=str(storage_path))
+        # First instance - record upload (use debounce_interval=0 for immediate write)
+        service1 = ImageUsageService(storage_path=str(storage_path), debounce_interval=0)
         await service1.record_upload(user_id=123456789, count=2)
+        # Wait for the async write to complete
+        await asyncio.sleep(0.01)
 
         # Second instance - should load data
-        service2 = ImageUsageService(storage_path=str(storage_path))
+        service2 = ImageUsageService(storage_path=str(storage_path), debounce_interval=0)
         assert service2.get_usage(user_id=123456789) == 2
 
         # Add more with second instance
         await service2.record_upload(user_id=123456789, count=1)
+        # Wait for the async write to complete
+        await asyncio.sleep(0.01)
 
         # Third instance - should see all data
-        service3 = ImageUsageService(storage_path=str(storage_path))
+        service3 = ImageUsageService(storage_path=str(storage_path), debounce_interval=0)
         assert service3.get_usage(user_id=123456789) == 3
 
 

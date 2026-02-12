@@ -24,6 +24,69 @@ USER_AGENT = "Mozilla/5.0 (compatible; SoyeBot/1.0; +https://github.com/persbot)
 MAX_CONTENT_LENGTH = 1000
 
 
+def _parse_html_sync(html: str) -> dict:
+    """Parse HTML content synchronously using BeautifulSoup.
+
+    This CPU-intensive operation is run in a thread pool to avoid
+    blocking the event loop.
+
+    Args:
+        html: The HTML content to parse.
+
+    Returns:
+        dict with parsed title, content, and meta_description.
+    """
+    # Parse HTML
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Extract title
+    title = None
+    if soup.title:
+        title = soup.title.string.strip()
+
+    # Remove script and style elements
+    for script in soup(["script", "style", "nav", "footer", "header"]):
+        script.decompose()
+
+    # Get main content
+    # Try to find main content areas
+    main_content = (
+        soup.find("main")
+        or soup.find("article")
+        or soup.find("div", {"class": re.compile(r"content|article|post", re.I)})
+        or soup.body
+    )
+
+    if main_content:
+        # Extract text paragraphs
+        paragraphs = main_content.find_all("p")
+        text_content = " ".join(
+            [p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)]
+        )
+    else:
+        text_content = soup.get_text(separator=" ", strip=True)
+
+    # Clean up whitespace
+    text_content = re.sub(r"\s+", " ", text_content).strip()
+
+    # Truncate if too long
+    if len(text_content) > MAX_CONTENT_LENGTH:
+        text_content = text_content[:MAX_CONTENT_LENGTH] + "..."
+
+    # Also extract meta description if available
+    meta_description = ""
+    meta_tag = soup.find("meta", attrs={"name": "description"})
+    if meta_tag and meta_tag.get("content"):
+        meta_description = meta_tag.get("content")
+
+    return {
+        "title": title or "No title found",
+        "content": text_content or "No content could be extracted",
+        "meta_description": meta_description,
+        "content_length": len(text_content),
+    }
+
+
 async def inspect_external_content(
     url: str,
     cancel_event: Optional[asyncio.Event] = None,
@@ -92,57 +155,17 @@ async def _inspect_web_page(url: str) -> ToolResult:
 
                 html = await response.text()
 
-        # Parse HTML
-        soup = BeautifulSoup(html, "html.parser")
-
-        # Extract title
-        title = None
-        if soup.title:
-            title = soup.title.string.strip()
-
-        # Remove script and style elements
-        for script in soup(["script", "style", "nav", "footer", "header"]):
-            script.decompose()
-
-        # Get main content
-        # Try to find main content areas
-        main_content = (
-            soup.find("main")
-            or soup.find("article")
-            or soup.find("div", {"class": re.compile(r"content|article|post", re.I)})
-            or soup.body
-        )
-
-        if main_content:
-            # Extract text paragraphs
-            paragraphs = main_content.find_all("p")
-            text_content = " ".join(
-                [p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)]
-            )
-        else:
-            text_content = soup.get_text(separator=" ", strip=True)
-
-        # Clean up whitespace
-        text_content = re.sub(r"\s+", " ", text_content).strip()
-
-        # Truncate if too long
-        if len(text_content) > MAX_CONTENT_LENGTH:
-            text_content = text_content[:MAX_CONTENT_LENGTH] + "..."
-
-        # Also extract meta description if available
-        meta_description = ""
-        meta_tag = soup.find("meta", attrs={"name": "description"})
-        if meta_tag and meta_tag.get("content"):
-            meta_description = meta_tag.get("content")
+        # Offload CPU-intensive HTML parsing to thread pool
+        parsed_data = await asyncio.to_thread(_parse_html_sync, html)
 
         return ToolResult(
             success=True,
             data={
                 "url": url,
-                "title": title or "No title found",
-                "content": text_content or "No content could be extracted",
-                "meta_description": meta_description,
-                "content_length": len(text_content),
+                "title": parsed_data["title"],
+                "content": parsed_data["content"],
+                "meta_description": parsed_data["meta_description"],
+                "content_length": parsed_data["content_length"],
                 "type": "web_page",
             },
         )

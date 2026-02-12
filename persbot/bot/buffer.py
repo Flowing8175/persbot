@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import deque
 from typing import Any, Callable, Dict, List
 
 import discord
@@ -27,7 +28,7 @@ class MessageBuffer:
     ):
         self.default_delay = delay
         self.typing_timeout = typing_timeout
-        self.buffers: Dict[int, List[discord.Message]] = {}
+        self.buffers: Dict[int, deque] = {}
         self.tasks: Dict[int, asyncio.Task] = {}
         self.max_buffer_size = max_buffer_size  # Prevent unbounded growth
 
@@ -47,14 +48,14 @@ class MessageBuffer:
         Resets the processing timer to the default delay (e.g., 2.0s).
         """
         if channel_id not in self.buffers:
-            self.buffers[channel_id] = []
+            self.buffers[channel_id] = deque()
 
         # Limit buffer size to prevent unbounded growth
         if len(self.buffers[channel_id]) >= self.max_buffer_size:
             logger.warning(
                 f"Buffer limit reached for channel {channel_id}. Removing oldest message."
             )
-            self.buffers[channel_id].pop(0)
+            self.buffers[channel_id].popleft()
 
         self.buffers[channel_id].append(message)
         logger.debug(
@@ -114,7 +115,7 @@ class MessageBuffer:
             await asyncio.sleep(delay)
 
             # Pop the buffer and task *before* calling the callback
-            messages = self.buffers.pop(channel_id, [])
+            messages = list(self.buffers.pop(channel_id, deque()))
             self.tasks.pop(channel_id, None)
 
             if messages:

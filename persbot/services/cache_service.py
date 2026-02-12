@@ -154,6 +154,7 @@ class InMemoryCacheStrategy(CacheStrategy):
 
     def __init__(self):
         self._caches: dict[str, CacheEntry] = {}
+        self._name_to_key: dict[str, str] = {}  # name -> key mapping for O(1) lookups
         self._lock = asyncio.Lock()
 
     def _make_key(self, model: str, system_instruction: str, tools: Optional[list]) -> str:
@@ -186,8 +187,9 @@ class InMemoryCacheStrategy(CacheStrategy):
                         entry=entry,
                         created=False,
                     )
-                # Remove expired
+                # Remove expired and clean up name index
                 del self._caches[key]
+                self._name_to_key.pop(entry.name, None)
 
             # Create new entry
             entry = CacheEntry(
@@ -201,6 +203,7 @@ class InMemoryCacheStrategy(CacheStrategy):
                 tools=tools or [],
             )
             self._caches[key] = entry
+            self._name_to_key[entry.name] = key
             return CacheResult(
                 success=True,
                 cache_name=entry.name,
@@ -211,19 +214,20 @@ class InMemoryCacheStrategy(CacheStrategy):
     async def refresh(self, cache_name: str, ttl_seconds: int) -> bool:
         """Refresh cache TTL."""
         async with self._lock:
-            for key, entry in self._caches.items():
-                if entry.name == cache_name:
-                    entry.expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
-                    return True
+            key = self._name_to_key.get(cache_name)
+            if key is not None:
+                self._caches[key].expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+                return True
             return False
 
     async def delete(self, cache_name: str) -> bool:
         """Delete cache entry."""
         async with self._lock:
-            for key, entry in list(self._caches.items()):
-                if entry.name == cache_name:
-                    del self._caches[key]
-                    return True
+            key = self._name_to_key.get(cache_name)
+            if key is not None:
+                del self._caches[key]
+                del self._name_to_key[cache_name]
+                return True
             return False
 
     async def list_all(self, limit: int = CacheLimit.MAX_CACHED_ITEMS) -> list[CacheEntry]:
@@ -236,7 +240,9 @@ class InMemoryCacheStrategy(CacheStrategy):
         async with self._lock:
             to_remove = [k for k, v in self._caches.items() if v.is_expired]
             for key in to_remove:
+                entry = self._caches[key]
                 del self._caches[key]
+                self._name_to_key.pop(entry.name, None)
             return len(to_remove)
 
 

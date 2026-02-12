@@ -5,22 +5,28 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+import aiofiles
+
 logger = logging.getLogger(__name__)
 
 
 class ImageUsageService:
     """Tracks daily image upload usage per user."""
 
-    def __init__(self, storage_path: str = "data/image_usage.json") -> None:
+    def __init__(self, storage_path: str = "data/image_usage.json", debounce_interval: int = 30) -> None:
         self.storage_path = storage_path
         self._ensure_data_dir()
         self.usage_data: Dict[str, Dict[str, int]] = {}
-        self._load()
+        self._loaded: bool = False  # Track if data has been loaded
 
         # In-memory buffer for debounced writes
         self._buffered_writes: Dict[str, Any] = {}  # (data_snapshot, timestamp)
-        self._debounce_interval = 30  # seconds
+        self._debounce_interval = debounce_interval  # seconds (configurable for tests)
         self._write_task: Optional[asyncio.Task] = None
+
+        # Load data immediately for backward compatibility
+        # (can be replaced by async initialize() for non-blocking startup)
+        self._load_sync()
 
     def _ensure_data_dir(self) -> None:
         directory = os.path.dirname(self.storage_path)
@@ -31,11 +37,41 @@ class ImageUsageService:
                 logger.error(f"Failed to create directory {directory}: {e}")
 
     def _get_today_key(self) -> str:
-        """Returns the current date string (YYYY-MM-DD) in KST (UTC+9)."""
+        """Returns current date string (YYYY-MM-DD) in KST (UTC+9)."""
         kst = datetime.timezone(datetime.timedelta(hours=9))
         return datetime.datetime.now(kst).strftime("%Y-%m-%d")
 
-    def _load(self) -> None:
+    async def initialize(self) -> None:
+        """Reinitialize the service by loading data asynchronously.
+
+        This method can be called to reload data without blocking.
+        Useful for eager loading during async startup.
+
+        Note: Data is already loaded synchronously in __init__ for
+        backward compatibility. This method is optional for non-blocking reload.
+        """
+        await self._load_async()
+
+    async def _load_async(self) -> None:
+        """Load usage data from disk asynchronously using aiofiles."""
+        if os.path.exists(self.storage_path):
+            try:
+                async with aiofiles.open(self.storage_path, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                    self.usage_data = json.loads(content)
+            except Exception as e:
+                logger.error(f"Failed to load image usage data: {e}")
+                self.usage_data = {}
+
+        self._loaded = True
+        # Cleanup old data (optional, to prevent file growing indefinitely)
+        self._cleanup_old_entries()
+
+    def _load_sync(self) -> None:
+        """Load usage data from disk synchronously (backward compatible)."""
+        if self._loaded:
+            return
+
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
@@ -44,12 +80,12 @@ class ImageUsageService:
                 logger.error(f"Failed to load image usage data: {e}")
                 self.usage_data = {}
 
+        self._loaded = True
         # Cleanup old data (optional, to prevent file growing indefinitely)
-        # We can keep only today's data or last few days.
-        # For simplicity, let's keep it simple for now, maybe cleanup on save.
         self._cleanup_old_entries()
 
     def _save(self, data: Dict[str, Dict[str, int]]) -> None:
+        """Save usage data to disk synchronously (backward compatibility)."""
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
@@ -57,9 +93,18 @@ class ImageUsageService:
             logger.error(f"Failed to save image usage data: {e}")
 
     async def _save_async(self) -> None:
-        # Create a copy of the data in the main thread to avoid race conditions
+        """Save usage data to disk asynchronously (backward compatible signature)."""
+        # Create a copy of the data to avoid race conditions
         data_snapshot = self.usage_data.copy()
-        await asyncio.to_thread(self._save, data_snapshot)
+        await self._save_async_with_data(data_snapshot)
+
+    async def _save_async_with_data(self, data: Dict[str, Dict[str, int]]) -> None:
+        """Save usage data to disk asynchronously using aiofiles."""
+        try:
+            async with aiofiles.open(self.storage_path, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(data, ensure_ascii=False, indent=4))
+        except Exception as e:
+            logger.error(f"Failed to save image usage data: {e}")
 
     def _schedule_write(self) -> None:
         """Schedule a debounced write operation."""
@@ -76,15 +121,29 @@ class ImageUsageService:
             # Wait for debounce interval
             await asyncio.sleep(self._debounce_interval)
 
-            # Write only if no new changes occurred
-            if self._buffered_writes:
-                data_snapshot = self._buffered_writes.pop("data_snapshot")
-                await asyncio.to_thread(self._save, data_snapshot)
+            # Write current data using async I/O
+            await self._save_async_with_data(self.usage_data)
         except asyncio.CancelledError:
             # Task cancelled, ignore
             pass
         except Exception as e:
             logger.error(f"Error during flush buffer: {e}", exc_info=True)
+
+    async def flush(self) -> None:
+        """Immediately flush data to disk, bypassing debounce.
+
+        This is useful for tests or when explicit persistence is needed.
+        """
+        # Cancel any pending debounced write
+        if self._write_task and not self._write_task.done():
+            self._write_task.cancel()
+            try:
+                await self._write_task
+            except asyncio.CancelledError:
+                pass
+
+        # Write immediately
+        await self._save_async_with_data(self.usage_data)
 
     def _cleanup_old_entries(self) -> None:
         today = self._get_today_key()

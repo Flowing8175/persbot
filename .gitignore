@@ -50,3 +50,4 @@ env/
 .env
 prompt_usage.json
 persbot/assets/
+boulder.json
