@@ -172,7 +172,9 @@ class TestSummarizeCommand:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._handle_summarize_args(mock_ctx, ("invalid_time",))
 
             # Should show error message
@@ -206,7 +208,9 @@ class TestSummarizeCommand:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._handle_summarize_args(mock_ctx, ("12345678901234567", "이전"))
 
             # Should show error message that time is required
@@ -267,7 +271,9 @@ class TestSummarizeCommand:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._handle_summarize_args(mock_ctx, ("invalid_arg",))
 
             # Should show help message
@@ -320,7 +326,9 @@ class TestHandleSummarizeArgs:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._handle_summarize_args(mock_ctx, ("invalid",))
 
             mock_send.assert_called_once_with(
@@ -354,7 +362,9 @@ class TestHandleSummarizeArgs:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._handle_summarize_args(mock_ctx, ("12345678901234567", "invalid"))
 
             mock_send.assert_called_once_with(
@@ -372,7 +382,9 @@ class TestHandleSummarizeArgs:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._handle_summarize_args(mock_ctx, ("invalid_id", "이후"))
 
             mock_send.assert_called_once_with(mock_ctx, "❌ 첫 번째 인자는 메시지 ID여야 해요.")
@@ -433,7 +445,13 @@ class TestSummarizeByTime:
         message2.content = "Test message"
         message2.author.bot = False
 
-        mock_channel.history.return_value = make_async_iterator([message1, message2])
+        # Set up async iterator for channel.history
+        async def async_messages():
+            yield message1
+            yield message2
+
+        mock_channel.history = MagicMock()
+        mock_channel.history.return_value = async_messages()
 
         cog = SummarizerCog(
             bot=mock_bot,
@@ -444,12 +462,14 @@ class TestSummarizeByTime:
         # Mock LLM service
         mock_llm_service.summarize_text.return_value = "This is a test summary."
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._summarize_by_time(mock_ctx, 30)
 
             # Check that summary was sent
             mock_send.assert_called_once()
-            call_args = mock_send.call_args[0][0]
+            call_args = mock_send.call_args[0][1]
             assert "최근 30분 2개 메시지 요약:" in call_args
             assert "This is a test summary." in call_args
 
@@ -473,7 +493,9 @@ class TestSummarizeByTime:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._summarize_by_time(mock_ctx, 30)
 
             # Should show no messages message
@@ -492,7 +514,10 @@ class TestSummarizeByTime:
         message1.content = "Hello world"
         message1.author.bot = False
 
-        mock_channel.history.return_value = aiter([message1])
+        async def async_messages():
+            yield message1
+
+        mock_channel.history.return_value = async_messages()
 
         cog = SummarizerCog(
             bot=mock_bot,
@@ -503,7 +528,9 @@ class TestSummarizeByTime:
         # Mock LLM service to return None (error)
         mock_llm_service.summarize_text.return_value = None
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog._summarize_by_time(mock_ctx, 30)
 
             # Should show generic error message
@@ -539,7 +566,12 @@ class TestSummarizeById:
         message2.author.bot = False
 
         mock_channel.fetch_message.return_value = start_message
-        mock_channel.history.return_value = make_async_iterator([message1, message2])
+
+        async def async_messages():
+            yield message1
+            yield message2
+
+        mock_channel.history.return_value = async_messages()
 
         cog = SummarizerCog(
             bot=mock_bot,
@@ -552,12 +584,14 @@ class TestSummarizeById:
             "This is a test summary including start message."
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog.summarize_by_id(mock_ctx, 12345678901234567)
 
             # Check that summary was sent
             mock_send.assert_called_once()
-            call_args = mock_send.call_args[0][0]
+            call_args = mock_send.call_args.args[1]
             assert "메시지 ID `12345678901234567` 이후 3개 메시지 요약:" in call_args
             assert "This is a test summary including start message." in call_args
 
@@ -577,9 +611,11 @@ class TestSummarizeById:
         # Mock fetch_message to raise NotFound
         from discord.errors import NotFound
 
-        mock_ctx.channel.fetch_message.side_effect = NotFound("Message not found")
+        mock_ctx.channel.fetch_message.side_effect = NotFound(Mock(status=404), "Message not found")
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog.summarize_by_id(mock_ctx, 12345678901234567)
 
             # Should show error message
@@ -600,7 +636,12 @@ class TestSummarizeById:
         start_message.author.bot = False
 
         mock_channel.fetch_message.return_value = start_message
-        mock_channel.history.return_value = make_async_iterator([])  # No messages after
+
+        async def async_messages():
+            # No messages to yield
+            pass
+
+        mock_channel.history.return_value = async_messages()
 
         cog = SummarizerCog(
             bot=mock_bot,
@@ -608,7 +649,9 @@ class TestSummarizeById:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog.summarize_by_id(mock_ctx, 12345678901234567)
 
             # Should show no messages message
@@ -648,7 +691,12 @@ class TestSummarizeByRange:
         message2.created_at = start_message.created_at + timedelta(minutes=25)
 
         mock_channel.fetch_message.return_value = start_message
-        mock_channel.history.return_value = make_async_iterator([message1, message2])
+
+        async def async_messages():
+            yield message1
+            yield message2
+
+        mock_channel.history.return_value = async_messages()
 
         cog = SummarizerCog(
             bot=mock_bot,
@@ -659,12 +707,14 @@ class TestSummarizeByRange:
         # Mock LLM service
         mock_llm_service.summarize_text.return_value = "This is a range summary."
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog.summarize_by_range(mock_ctx, 12345678901234567, "이후", "30분")
 
             # Check that summary was sent
             mock_send.assert_called_once()
-            call_args = mock_send.call_args[0][0]
+            call_args = mock_send.call_args.args[1]
             assert "메시지 ID `12345678901234567` 이후 30분 2개 메시지 요약:" in call_args
             assert "This is a range summary." in call_args
 
@@ -696,7 +746,12 @@ class TestSummarizeByRange:
         message2.created_at = start_message.created_at - timedelta(minutes=10)
 
         mock_channel.fetch_message.return_value = start_message
-        mock_channel.history.return_value = make_async_iterator([message1, message2])
+
+        async def async_messages():
+            yield message1
+            yield message2
+
+        mock_channel.history.return_value = async_messages()
 
         cog = SummarizerCog(
             bot=mock_bot,
@@ -707,12 +762,14 @@ class TestSummarizeByRange:
         # Mock LLM service
         mock_llm_service.summarize_text.return_value = "This is a before range summary."
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog.summarize_by_range(mock_ctx, 12345678901234567, "이전", "30분")
 
             # Check that summary was sent
             mock_send.assert_called_once()
-            call_args = mock_send.call_args[0][0]
+            call_args = mock_send.call_args.args[1]
             assert "메시지 ID `12345678901234567` 이전 30분 2개 메시지 요약:" in call_args
             assert "This is a before range summary." in call_args
 
@@ -731,7 +788,12 @@ class TestSummarizeByRange:
         start_message.created_at = datetime.now(timezone.utc)
 
         mock_channel.fetch_message.return_value = start_message
-        mock_channel.history.return_value = make_async_iterator([])  # No messages in range
+
+        async def async_messages():
+            # No messages to yield
+            pass
+
+        mock_channel.history.return_value = async_messages()
 
         cog = SummarizerCog(
             bot=mock_bot,
@@ -739,7 +801,9 @@ class TestSummarizeByRange:
             llm_service=mock_llm_service,
         )
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             await cog.summarize_by_range(mock_ctx, 12345678901234567, "이후", "30분")
 
             # Should show no messages message
@@ -762,7 +826,9 @@ class TestErrorHandling:
 
         from discord.ext.commands import BadArgument
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             error = BadArgument("Invalid argument")
             await cog.summarize_error(mock_ctx, error)
 
@@ -783,7 +849,9 @@ class TestErrorHandling:
 
         from discord.ext.commands import MissingRequiredArgument
 
-        with patch("persbot.utils.send_discord_message", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "persbot.bot.cogs.summarizer.send_discord_message", new_callable=AsyncMock
+        ) as mock_send:
             # Create a proper Parameter object for MissingRequiredArgument
             from unittest.mock import Mock
 
@@ -794,5 +862,5 @@ class TestErrorHandling:
             await cog.summarize_error(mock_ctx, error)
 
             mock_send.assert_called_once()
-            call_args = mock_send.call_args[0][0]
+            call_args = mock_send.call_args.args[1]
             assert "명령어를 완성해주세요" in call_args
