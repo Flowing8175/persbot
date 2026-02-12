@@ -17,7 +17,7 @@ from persbot.tools.executor import (
     ToolExecutor,
     ExecutionMetrics,
 )
-from persbot.tools.base import ToolDefinition, ToolCategory, ToolParameter
+from persbot.tools.base import ToolDefinition, ToolCategory, ToolParameter, ToolResult
 
 
 # =============================================================================
@@ -94,11 +94,12 @@ class TestToolExecutor:
     def mock_tool(self):
         """Create a mock tool definition."""
         return ToolDefinition(
-            name="test_tool",
-            description="Test tool",
-            category=ToolCategory.API_SEARCH,
+            "test_tool",
+            "Test tool",
+            ToolCategory.API_SEARCH,
+            [],
+            AsyncMock(return_value=ToolResult(success=True, data="Result")),
             enabled=True,
-            handler=AsyncMock(return_value=Mock(success=True, output="Result")),
         )
 
     @pytest.fixture
@@ -111,7 +112,7 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_execute_tool_success(self, mock_config, mock_registry):
         """Test successful tool execution."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
         tool = mock_registry.get()
 
         result = await executor.execute_tool(
@@ -120,12 +121,12 @@ class TestToolExecutor:
         )
 
         assert result.success is True
-        assert result.output == "Result"
+        assert result.data == "Result"
 
     @pytest.mark.asyncio
     async def test_execute_tool_not_found(self, mock_config, mock_registry):
         """Test executing tool that is not registered."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
         mock_registry.get = Mock(return_value=None)
 
         result = await executor.execute_tool(
@@ -139,7 +140,7 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_execute_tool_disabled(self, mock_config, mock_registry):
         """Test executing disabled tool."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
         tool = mock_registry.get()
         tool.enabled = False
 
@@ -154,7 +155,7 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_execute_tool_timeout(self, mock_config, mock_registry):
         """Test tool execution timeout."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
         tool = mock_registry.get()
         tool.handler = AsyncMock()
 
@@ -173,7 +174,7 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_execute_tool_cancellation_before_execution(self, mock_config, mock_registry):
         """Test cancellation before tool execution."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
         cancel_event = asyncio.Event()
         cancel_event.set()
 
@@ -189,21 +190,23 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_execute_tools_parallel(self, mock_config, mock_registry):
         """Test parallel execution of multiple tools."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
 
         tool1 = ToolDefinition(
-            name="tool1",
-            description="Tool 1",
-            category=ToolCategory.API_SEARCH,
+            "tool1",
+            "Tool 1",
+            ToolCategory.API_SEARCH,
+            [],
+            AsyncMock(return_value=ToolResult(success=True, data="Result1")),
             enabled=True,
-            handler=AsyncMock(return_value=Mock(success=True, output="Result1")),
         )
         tool2 = ToolDefinition(
-            name="tool2",
-            description="Tool 2",
-            category=ToolCategory.API_SEARCH,
+            "tool2",
+            "Tool 2",
+            ToolCategory.API_SEARCH,
+            [],
+            AsyncMock(return_value=ToolResult(success=True, data="Result2")),
             enabled=True,
-            handler=AsyncMock(return_value=Mock(success=True, output="Result2")),
         )
 
         mock_registry.get = Mock(side_effect=lambda n: [tool1, tool2][["tool1", "tool2"].index(n)])
@@ -218,13 +221,13 @@ class TestToolExecutor:
         assert len(results) == 2
         assert results[0].success is True
         assert results[1].success is True
-        assert results[0].output == "Result1"
-        assert results[1].output == "Result2"
+        assert results[0].data == "Result1"
+        assert results[1].data == "Result2"
 
     @pytest.mark.asyncio
     async def test_get_metrics_single_tool(self, mock_config, mock_registry):
         """Test getting metrics for a single tool."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
         tool = mock_registry.get()
 
         # Execute tool once
@@ -238,12 +241,13 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_get_metrics_all_tools(self, mock_config, mock_registry):
         """Test getting metrics for all tools."""
-        executor = ToolExecutor(mock_config(), mock_registry)
+        executor = ToolExecutor(mock_config, mock_registry)
 
         await executor.execute_tool(tool_name="tool1", parameters={})
         await executor.execute_tool(tool_name="tool2", parameters={})
 
         metrics = executor.get_metrics()
 
-        assert "tool1" in metrics
-        assert "tool2" in metrics
+        # test_tool is executed twice (once as tool1, once as tool2)
+        assert "test_tool" in metrics
+        assert metrics["test_tool"].total_executions == 2
