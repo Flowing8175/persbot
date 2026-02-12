@@ -235,6 +235,7 @@ class BaseLLMService(ABC):
         timeout: Optional[float] = None,
         fallback_call: Optional[Callable[[], Any | Awaitable[Any]]] = None,
         cancel_event: Optional[asyncio.Event] = None,
+        extract_text: Optional[Callable[[Any], str]] = None,
     ) -> Optional[Any]:
         """
         Execute API call with retries, logging, countdown notifications, and fallback logic.
@@ -242,6 +243,12 @@ class BaseLLMService(ABC):
         Uses the RetryHandler for retry logic with exponential backoff.
         """
         retry_handler = self.get_retry_handler()
+        # Use provided extract_text if given, otherwise use default (None if return_full_response)
+        effective_extract_text = (
+            extract_text
+            if extract_text is not None
+            else (None if return_full_response else self._extract_text_from_response)
+        )
         return await retry_handler.execute_with_retry(
             api_call=model_call,
             error_prefix=error_prefix,
@@ -251,7 +258,7 @@ class BaseLLMService(ABC):
             timeout=timeout,
             fallback_call=fallback_call,
             log_response=self._log_raw_response,
-            extract_text=None if return_full_response else self._extract_text_from_response,
+            extract_text=effective_extract_text,
         )
 
 
