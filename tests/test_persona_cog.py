@@ -32,6 +32,8 @@ from persbot.bot.cogs.persona import (
     PromptManagerView,
     PromptRenameModal,
     ShowModalButton,
+    PromptCreateModal,
+    PromptModeSelectView,
 )
 
 
@@ -330,12 +332,35 @@ class TestPersonaCogIntegration:
         prompts = []
         cog.prompt_service.list_prompts = Mock(return_value=prompts)
         cog.prompt_service.add_prompt = AsyncMock(return_value=1)
+        cog.prompt_service.increment_today_usage = AsyncMock()
 
         view = PromptManagerView(cog, ctx)
 
         # Test direct prompt generation (without questions)
+        # Import PromptCreateModal for testing
+        from persbot.bot.cogs.persona import PromptCreateModal
+
+        # Create a modal and test it
+        modal = PromptCreateModal(view, use_questions=False)
+        modal.concept = Mock()
+        modal.concept.value = "test concept"
+
+        interaction = Mock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
         with patch("persbot.bot.cogs.persona.send_discord_message") as mock_send:
             mock_send.return_value = []
+
+            # Test modal submission
+            await modal.on_submit(interaction)
+
+            # Verify LLM service was called
+            cog.llm_service.generate_prompt_from_concept.assert_called_once_with("test concept")
+
+            # Verify prompt service was called
+            cog.prompt_service.add_prompt.assert_called_once()
+            cog.prompt_service.increment_today_usage.assert_called_once()
 
 
 class TestPersonaCRUDOperations:
@@ -380,6 +405,22 @@ class TestPersonaCRUDOperations:
         # Mock send_discord_message
         with patch("persbot.bot.cogs.persona.send_discord_message") as mock_send:
             mock_send.return_value = []
+
+            # Mock bot wait_for to return our message with attachment
+            mock_cog.bot.wait_for = AsyncMock(return_value=mock_message)
+
+            # Execute file upload
+            await view.on_file_add(interaction)
+
+            # Verify prompt service was called with correct data
+            mock_prompt_service.add_prompt.assert_called_once_with("test", "Test persona content")
+
+            # Verify success message was sent
+            mock_send.assert_called()
+            success_calls = [
+                call for call in mock_send.call_args_list if "추가되었습니다" in str(call)
+            ]
+            assert len(success_calls) > 0
 
     @pytest.mark.asyncio
     async def test_create_persona_invalid_file(
