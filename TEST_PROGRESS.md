@@ -1,20 +1,26 @@
 # Test Implementation Progress
 
-**Last Updated:** 2026-02-13 13:06 UTC
-**Commit:** aecbead
-**Total Tests:** 780 passing
+**Last Updated:** 2026-02-13
+**Total Tests:** 1504 passing
 
-## Completed Test Files (23 files, 780 tests)
+## Completed Test Files (37 files, 1504 tests)
 
 ### Critical Services
 - `tests/test_cache_service.py` - CacheService, CacheEntry, CacheResult, InMemoryCacheStrategy
+- `tests/test_cache_manager.py` - CacheManager, CachedItem, CacheStrategy, HashBasedCacheStrategy
 - `tests/test_retry_service.py` - RetryService, RetryPolicy, TokenBucketRateLimiter
+- `tests/test_retry_handler.py` - OpenAIRetryHandler, GeminiRetryHandler, ZAIRetryHandler
 - `tests/test_response_sender.py` - send_split_response, send_immediate_response
 - `tests/test_state_manager.py` - BotStateManager, ChannelStateManager, TaskTracker
+- `tests/test_prompt_service.py` - PromptService, PromptBuilder
+- `tests/test_usage_service.py` - ImageUsageService, UsageTracker
+- `tests/test_model_usage_service.py` - ModelUsageService
 
 ### Bot Core
 - `tests/test_chat_handler.py` - ChatReply, resolve_session_for_message
 - `tests/test_session.py` - SessionManager, ChatSession, SessionContext, ResolvedSession
+- `tests/test_session_manager.py` - SessionManager comprehensive tests
+- `tests/test_session_resolver.py` - SessionResolver
 
 ### Handlers
 - `tests/test_handlers.py` - ModelCommandHandler, PersonaCommandHandler
@@ -45,34 +51,28 @@
 
 ### Providers
 - `tests/test_llm_service.py` - ProviderRegistry, LLMService
+- `tests/test_providers_base.py` - BaseProvider, ProviderConfig
+
+### Provider Adapters
+- `tests/test_provider_adapters.py` - GeminiToolAdapter, OpenAIToolAdapter, ZAIToolAdapter
+
+### LLM Services
+- `tests/test_gemini_service.py` - GeminiService, GeminiModel
+- `tests/test_openai_service.py` - OpenAIService, OpenAIModel
+- `tests/test_zai_service.py` - ZAIService, ZAIModel
+
+### Image Services
+- `tests/test_image_service.py` - ImageService, ImageFetcher
 
 ### Tools
 - `tests/test_tool_manager.py` - ToolManager
 
-## Remaining Modules to Test
+## Remaining Modules (Low Priority)
 
-### Services (medium priority)
-- `services/cache_manager.py`
-- `services/gemini_service.py`
-- `services/image_model_service.py`
-- `services/image_service.py`
-- `services/model_usage_service.py`
-- `services/model_wrappers/*` (gemini_model, openai_model, zai_model)
-- `services/openai_service.py`
-- `services/prompt_service.py`
-- `services/retry_handler.py`
-- `services/usage_service.py`
-- `services/zai_service.py`
-
-### Providers (medium priority)
-- `providers/adapters/*` (gemini_adapter, openai_adapter, zai_adapter)
-- `providers/base.py`
-
-### Bot (low priority)
-- `bot/session_resolver.py`
+### Bot
 - `bot/handlers/base_handler.py`
 
-### Config (low priority)
+### Config
 - `config.py`
 - `constants.py`
 - `prompts.py`
@@ -97,9 +97,11 @@ sys.modules['bs4'] = _mock_bs4
 service.check_can_upload = AsyncMock(return_value=True)
 ```
 
-### Fixing SessionManager asyncio task creation
+### Fixing asyncio task creation in tests
 ```python
-mock_config.session_inactive_minutes = 0  # Prevents asyncio.create_task in __init__
+# Disable periodic cleanup tasks that call asyncio.create_task()
+mock_config.gemini_cache_ttl_minutes = 0
+mock_config.session_inactive_minutes = 0
 ```
 
 ### Fixing Mock.text attribute conflict
@@ -108,14 +110,13 @@ mock_response = Mock()
 del mock_response.text  # Remove default .text attribute
 ```
 
-## How to Continue
-
-1. Pull latest: `git pull origin main`
-2. Run tests: `python -m pytest tests/ --ignore=tests/cogs -q`
-3. Continue with remaining modules from the list above
-4. Follow the same test patterns established
+### TTL expiration behavior
+```python
+# ttl_minutes=None uses default, ttl_minutes=0 or negative means no expiration
+ttl = ttl_minutes if ttl_minutes is not None else self.ttl_minutes
+```
 
 ## Test Command
 ```bash
-python -m pytest tests/ --ignore=tests/cogs -v
+python3 -m pytest tests/ --ignore=tests/cogs -v
 ```
