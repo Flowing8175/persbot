@@ -432,6 +432,14 @@ class AssistantCog(BaseChatCog):
         try:
             self.message_buffer.update_delay(value)
             self.config.message_buffer_delay = value
+
+            # Also update AutoChannelCog's message buffer if it exists
+            # Each cog has its own MessageBuffer instance, so we need to update all of them
+            auto_cog = self.bot.get_cog("AutoChannelCog")
+            if auto_cog and hasattr(auto_cog, "message_buffer"):
+                auto_cog.message_buffer.update_delay(value)
+                logger.debug("Updated AutoChannelCog buffer delay to %s", value)
+
             if ctx.interaction:
                 await ctx.reply(f"✅ 버퍼 대기 시간이 {value}초로 설정되었습니다.", ephemeral=False)
             else:
