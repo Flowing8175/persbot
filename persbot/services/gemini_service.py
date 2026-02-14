@@ -5,7 +5,7 @@ import datetime
 import hashlib
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
 import google.genai as genai
@@ -18,7 +18,7 @@ from persbot.constants import (
     DisplayConfig,
     LLMDefaults,
 )
-from persbot.services.base import BaseLLMServiceCore
+from persbot.services.base import BaseLLMServiceCore, ChatMessage
 from persbot.services.model_wrappers.gemini_model import GeminiCachedModel
 from persbot.services.prompt_service import PromptService
 from persbot.services.retry_handler import (
@@ -61,7 +61,7 @@ class GeminiService(BaseLLMServiceCore):
             self._assistant_model_name,
             self.prompt_service.get_active_assistant_prompt(),
         )
-        logger.info(
+        logger.debug(
             "Gemini 모델 assistant='%s', summary='%s' 로드 완료. (구성 캐시 활성화)",
             self._assistant_model_name,
             self._summary_model_name,
@@ -110,7 +110,7 @@ class GeminiService(BaseLLMServiceCore):
 
         model, expires_at = self._model_cache[cache_key]
         if expires_at and now >= expires_at:
-            logger.info("Cached model expired (TTL reached). Refreshing...")
+            logger.debug("Cached model expired (TTL reached). Refreshing...")
             del self._model_cache[cache_key]
             return None
 
@@ -138,7 +138,7 @@ class GeminiService(BaseLLMServiceCore):
 
         # Log cache status
         if cache_name:
-            logger.info("Gemini Model initialized with CachedContent: %s", cache_name)
+            logger.debug("Gemini Model initialized with CachedContent: %s", cache_name)
         else:
             logger.debug("Gemini Model will use standard context (no cache).")
 
@@ -180,7 +180,7 @@ class GeminiService(BaseLLMServiceCore):
     def reload_parameters(self) -> None:
         """Reload parameters by clearing the model cache."""
         self._model_cache.clear()
-        logger.info("Gemini model cache cleared to apply new parameters.")
+        logger.debug("Gemini model cache cleared to apply new parameters.")
 
     def _create_retry_handler(self) -> RetryHandler:
         """Create Gemini-specific retry handler."""
@@ -268,7 +268,7 @@ class GeminiService(BaseLLMServiceCore):
                 response_tokens = getattr(metadata, "candidates_token_count", "unknown")
                 cached_tokens = getattr(metadata, "cached_content_token_count", 0)
                 total_tokens = getattr(metadata, "total_token_count", "unknown")
-                logger.info(
+                logger.debug(
                     f"(prompt={prompt_tokens}, cached={cached_tokens}, response={response_tokens}, total={total_tokens})"
                 )
         except Exception as e:
@@ -340,7 +340,7 @@ class GeminiService(BaseLLMServiceCore):
 
         min_tokens = getattr(self.config, "gemini_cache_min_tokens", CacheConfig.MIN_TOKENS)
         if token_count < min_tokens:
-            logger.info(
+            logger.debug(
                 "Gemini Context Caching skipped: Token count (%d) < min_tokens (%d). Using standard context.",
                 token_count,
                 min_tokens,
@@ -367,7 +367,7 @@ class GeminiService(BaseLLMServiceCore):
             # We iterate to find a cache with our unique display name
             for cache in self.client.caches.list():
                 if cache.display_name == cache_display_name:
-                    logger.info("Found existing Gemini context cache: %s", cache.name)
+                    logger.debug("Found existing Gemini context cache: %s", cache.name)
 
                     # Refresh TTL to prevent expiration
                     try:
@@ -375,8 +375,8 @@ class GeminiService(BaseLLMServiceCore):
                             name=cache.name,
                             config=genai_types.UpdateCachedContentConfig(ttl=f"{ttl_seconds}s"),
                         )
-                        logger.info(
-                            "Successfully refreshed TTL for %s to %ds.",
+                        logger.debug(
+                            "Refreshed TTL for %s to %ds.",
                             cache.name,
                             ttl_seconds,
                         )
@@ -395,7 +395,7 @@ class GeminiService(BaseLLMServiceCore):
 
         # 4. Create new cache using the user's requested style
         try:
-            logger.info(
+            logger.debug(
                 "Creating new Gemini cache '%s' (TTL: %ds)...",
                 cache_display_name,
                 ttl_seconds,
@@ -411,7 +411,7 @@ class GeminiService(BaseLLMServiceCore):
                 ),
             )
 
-            logger.info("Successfully created cache: %s", cache.name)
+            logger.debug("Created cache: %s", cache.name)
             return cache.name, local_expiration
 
         except Exception as e:
@@ -431,7 +431,7 @@ class GeminiService(BaseLLMServiceCore):
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():
             return "요약할 메시지가 없습니다."
-        logger.info(f"Summarizing text ({len(text)} characters)...")
+        logger.debug(f"Summarizing text ({len(text)} characters)...")
         prompt = f"Discord 대화 내용:\n{text}"
 
         async def _refresh_summary_model():
@@ -439,7 +439,7 @@ class GeminiService(BaseLLMServiceCore):
             self.summary_model = self._get_or_create_model(
                 self._summary_model_name, self.prompt_service.get_summary_prompt()
             )
-            logger.info("Refreshed summary model after cache invalidation.")
+            logger.debug("Refreshed summary model after cache invalidation.")
 
         # Use _gemini_retry to handle cache errors
         response = await self._gemini_retry(
@@ -460,7 +460,7 @@ class GeminiService(BaseLLMServiceCore):
         """Generate chat response."""
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("API call aborted due to cancellation signal")
+            logger.debug("API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -498,7 +498,7 @@ class GeminiService(BaseLLMServiceCore):
             # Update the wrapper's factory reference
             chat_session._factory = fresh_model
 
-            logger.info("Chat session successfully refreshed with new model/cache.")
+            logger.debug("Chat session refreshed with new model/cache.")
 
         try:
             # Convert custom tools to Gemini format if provided
@@ -522,8 +522,8 @@ class GeminiService(BaseLLMServiceCore):
             # Check if we need to switch model for this session
             current_model_name = getattr(chat_session._factory, "_model_name", None)
             if model_name and current_model_name != model_name:
-                logger.info(
-                    "Switching chat session model from %s to %s",
+                logger.debug(
+                    "Switching chat session model: %s -> %s",
                     current_model_name,
                     model_name,
                 )
@@ -618,6 +618,153 @@ class GeminiService(BaseLLMServiceCore):
             # Re-raise or return None if still failing
             return None
 
+    async def generate_chat_response_stream(
+        self,
+        chat_session,
+        user_message: str,
+        discord_message: Union[discord.Message, list[discord.Message]],
+        model_name: Optional[str] = None,
+        tools: Optional[Any] = None,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> AsyncIterator[str]:
+        """Generate a streaming chat response from Gemini.
+
+        Yields text chunks as they arrive from the API.
+        Chunks are yielded after each line break for faster initial response.
+
+        Args:
+            chat_session: The Gemini chat session.
+            user_message: The user's message.
+            discord_message: The Discord message(s) for context.
+            model_name: Optional specific model to use.
+            tools: Optional tools for function calling.
+            cancel_event: Optional event to check for cancellation.
+
+        Yields:
+            Text chunks as they are generated.
+        """
+        # Check cancellation event before starting API call
+        if cancel_event and cancel_event.is_set():
+            logger.debug("Streaming API call aborted")
+            raise asyncio.CancelledError("LLM API call aborted by user")
+
+        self._log_raw_request(user_message, chat_session)
+
+        if isinstance(discord_message, list):
+            primary_msg = discord_message[0]
+            message_ids = [str(m.id) for m in discord_message]
+        else:
+            primary_msg = discord_message
+            message_ids = [str(discord_message.id)]
+
+        author_id = primary_msg.author.id
+        author_name = getattr(primary_msg.author, "name", str(author_id))
+
+        # Extract images from messages first
+        images = await self._extract_images_from_messages(discord_message)
+
+        # Convert custom tools to Gemini format if provided
+        custom_tools = []
+        if tools:
+            custom_tools = GeminiToolAdapter.convert_tools(tools)
+
+        # Combine custom tools with search tools
+        final_tools = []
+        if custom_tools:
+            final_tools.extend(custom_tools)
+
+        search_tools = self._get_search_tools(model_name or self._assistant_model_name)
+        if search_tools:
+            final_tools.extend(search_tools)
+
+        # Check if we need to switch model for this session
+        current_model_name = getattr(chat_session._factory, "_model_name", None)
+        if model_name and current_model_name != model_name:
+            logger.debug(
+                "Switching chat session model: %s -> %s",
+                current_model_name,
+                model_name,
+            )
+            system_instr = (
+                getattr(chat_session, "_system_instruction", None)
+                or self.prompt_service.get_active_assistant_prompt()
+            )
+            new_model = self._get_or_create_model(model_name, system_instr, tools=final_tools)
+            chat_session._factory = new_model
+        elif final_tools:
+            logger.debug(f"Using {len(final_tools)} tools for model {current_model_name}")
+
+        # Start streaming - get user message and stream iterator
+        user_msg, stream = await chat_session.send_message_stream(
+            user_message,
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=message_ids,
+            images=images,
+            tools=final_tools,
+        )
+
+        # Buffer for streaming - yield on newline for natural line breaks
+        buffer = ""
+        full_content = ""
+
+        try:
+            async for chunk in stream:
+                # Check for cancellation
+                if cancel_event and cancel_event.is_set():
+                    logger.debug("Streaming aborted")
+                    raise asyncio.CancelledError("LLM streaming aborted by user")
+
+                # Extract text from chunk
+                text = self._extract_text_from_stream_chunk(chunk)
+                if text:
+                    buffer += text
+                    full_content += text
+
+                    # Yield when we see a line break
+                    if "\n" in buffer:
+                        lines = buffer.split("\n")
+                        # Yield all complete lines
+                        for line in lines[:-1]:
+                            if line:  # Skip empty lines
+                                yield line + "\n"
+                        # Keep the last incomplete line in buffer
+                        buffer = lines[-1]
+
+            # Yield any remaining content in buffer
+            if buffer:
+                yield buffer
+
+        except asyncio.CancelledError:
+            logger.debug("Streaming response cancelled")
+            raise
+
+        # Update history with the full conversation
+        model_msg = ChatMessage(
+            role="model",
+            content=full_content,
+            parts=[{"text": full_content}],
+        )
+        chat_session.history.append(user_msg)
+        chat_session.history.append(model_msg)
+
+    def _extract_text_from_stream_chunk(self, chunk: Any) -> str:
+        """Extract text from a streaming chunk, filtering out thoughts."""
+        try:
+            if hasattr(chunk, "candidates") and chunk.candidates:
+                for candidate in chunk.candidates:
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        for part in candidate.content.parts:
+                            # Skip parts that are marked as thoughts
+                            if getattr(part, "thought", False):
+                                continue
+
+                            if hasattr(part, "text") and part.text:
+                                return part.text
+        except Exception as e:
+            logger.debug(f"Error extracting text from stream chunk: {e}")
+        return ""
+
     async def send_tool_results(
         self,
         chat_session,
@@ -640,7 +787,7 @@ class GeminiService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Tool results API call aborted due to cancellation signal")
+            logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         # Convert tools to Gemini format
@@ -688,7 +835,7 @@ class GeminiService(BaseLLMServiceCore):
             try:
                 # Check for cancellation before attempting API call
                 if cancel_event and cancel_event.is_set():
-                    logger.info("API call aborted due to cancellation signal before attempt")
+                    logger.debug("API call aborted")
                     raise asyncio.CancelledError("LLM API call aborted by user")
 
                 response = await asyncio.wait_for(
@@ -735,7 +882,7 @@ class GeminiService(BaseLLMServiceCore):
 
         # Check for cancellation before backoff sleep
         if cancel_event and cancel_event.is_set():
-            logger.info("Retry loop aborted due to cancellation signal during backoff")
+            logger.debug("Retry loop aborted during backoff")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         await asyncio.sleep(self._calculate_backoff(attempt))
@@ -836,7 +983,7 @@ class GeminiService(BaseLLMServiceCore):
                 # Refresh expired cache entries to prevent expiration
                 await self._refresh_expired_cache()
             except asyncio.CancelledError:
-                logger.info("Cache cleanup task cancelled")
+                logger.debug("Cache cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error during cache cleanup: {e}", exc_info=True)

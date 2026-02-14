@@ -1,7 +1,7 @@
 """Gemini cached model wrapper for managing model instances."""
 
 import logging
-from typing import Any, List, Optional, Union
+from typing import Any, AsyncIterator, List, Optional, Union
 
 import google.genai as genai
 from google.genai import types as genai_types
@@ -66,6 +66,32 @@ class GeminiCachedModel:
             contents=contents,
             config=config,
         )
+
+    async def generate_content_stream(
+        self, contents: Union[str, List[Any]], tools: Optional[List[Any]] = None
+    ) -> AsyncIterator[Any]:
+        """
+        Generate content with async streaming.
+
+        Args:
+            contents: The content to generate.
+            tools: Optional override for tools configuration.
+                   Note: Cannot override tools when using cached_content.
+
+        Yields:
+            Response chunks as they arrive from the API.
+        """
+        if tools is not None:
+            config = self._build_config_with_tools(tools)
+        else:
+            config = self._config
+
+        async for chunk in self._client.aio.models.generate_content_stream(
+            model=self._model_name,
+            contents=contents,
+            config=config,
+        ):
+            yield chunk
 
     def _build_config_with_tools(self, tools: List[Any]) -> genai_types.GenerateContentConfig:
         """Build config with tools override, handling cache correctly."""

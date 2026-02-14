@@ -2,7 +2,7 @@
 
 import logging
 from collections import deque
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from google.genai import types as genai_types
 
@@ -140,6 +140,61 @@ class GeminiChatSession:
         )
 
         return user_msg, model_msg, response
+
+    async def send_message_stream(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
+        images: Optional[List[bytes]] = None,
+        tools: Optional[List[Any]] = None,
+    ) -> tuple[ChatMessage, AsyncIterator[Any]]:
+        """
+        Send a message and get an async streaming response.
+
+        Args:
+            user_message: The user's message content.
+            author_id: The Discord user ID of the author.
+            author_name: Optional Discord username of the author.
+            message_ids: Optional list of Discord message IDs.
+            images: Optional list of image bytes.
+            tools: Optional list of tools for function calling.
+
+        Returns:
+            Tuple of (user_message, async_stream_iterator).
+        """
+        # 1. Build the full content list for this turn (History + Current Message)
+        contents = self._get_api_history()
+
+        current_parts = []
+        if user_message:
+            current_parts.append({"text": user_message})
+
+        if images:
+            for img_data in images:
+                mime_type = get_mime_type(img_data)
+                current_parts.append(
+                    genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
+                )
+
+        contents.append({"role": "user", "parts": current_parts})
+
+        # 2. Get async streaming iterator
+        stream = self._factory.generate_content_stream(contents=contents, tools=tools)
+
+        # 3. Create user ChatMessage (model message created after stream completes)
+        user_msg = ChatMessage(
+            role="user",
+            content=user_message,
+            parts=[{"text": user_message}],
+            images=images or [],
+            author_id=author_id,
+            author_name=author_name,
+            message_ids=message_ids or [],
+        )
+
+        return user_msg, stream
 
     def send_tool_results(
         self, tool_rounds: List[tuple[Any, List[Dict[str, Any]]]], tools: Optional[List[Any]] = None
