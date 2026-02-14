@@ -50,6 +50,7 @@ class PromptModeSelectView(discord.ui.View):
         await interaction.response.send_modal(
             PromptCreateModal(self.parent_view, use_questions=False)
         )
+        await interaction.delete_original_response()
 
     @discord.ui.button(label="AI 질문 모드", style=discord.ButtonStyle.primary, emoji="🧠", row=0)
     async def qa_mode(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -58,6 +59,7 @@ class PromptModeSelectView(discord.ui.View):
         await interaction.response.send_modal(
             PromptCreateModal(self.parent_view, use_questions=True)
         )
+        await interaction.delete_original_response()
 
     @discord.ui.button(label="취소", style=discord.ButtonStyle.danger, emoji="❌", row=1)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
