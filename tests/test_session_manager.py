@@ -612,11 +612,11 @@ class TestLinkMessageToSession:
 
     def test_links_message_when_chat_has_history(self, manager):
         """link_message_to_session appends message_id to last history item."""
-        # Create mock chat with history
+        # Create mock chat with _history (accessed directly, not through property)
         mock_chat = Mock()
         last_msg = Mock()
         last_msg.message_ids = []
-        mock_chat.history = [Mock(), last_msg]
+        mock_chat._history = [Mock(), last_msg]
 
         manager.sessions["channel:123"] = Mock(chat=mock_chat)
 
@@ -626,10 +626,10 @@ class TestLinkMessageToSession:
 
     def test_creates_message_ids_list_if_not_exists(self, manager):
         """link_message_to_session creates message_ids list if not present."""
-        # Create mock chat with history but no message_ids
+        # Create mock chat with _history but no message_ids
         mock_chat = Mock()
         last_msg = Mock(spec=[])  # No message_ids attribute
-        mock_chat.history = [last_msg]
+        mock_chat._history = [last_msg]
 
         manager.sessions["channel:123"] = Mock(chat=mock_chat)
 
@@ -646,7 +646,7 @@ class TestLinkMessageToSession:
     def test_does_nothing_when_chat_has_no_history(self, manager):
         """link_message_to_session does nothing when chat has no history."""
         mock_chat = Mock()
-        mock_chat.history = []
+        mock_chat._history = []
 
         manager.sessions["channel:123"] = Mock(chat=mock_chat)
 

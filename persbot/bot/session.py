@@ -323,8 +323,10 @@ class SessionManager:
     def link_message_to_session(self, message_id: str, session_key: str) -> None:
         """Links a Discord message ID to the last message in the session history by appending to message_ids."""
         session = self.sessions.get(session_key)
-        if session and hasattr(session.chat, "history") and session.chat.history:
-            last_msg = session.chat.history[-1]
+        # Access _history directly instead of through the history property,
+        # since the property returns a copy and modifications wouldn't persist
+        if session and hasattr(session.chat, "_history") and session.chat._history:
+            last_msg = session.chat._history[-1]
             if not hasattr(last_msg, "message_ids"):
                 last_msg.message_ids = []
             last_msg.message_ids.append(message_id)
