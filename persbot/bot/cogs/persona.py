@@ -62,7 +62,9 @@ class PromptModeSelectView(discord.ui.View):
     @discord.ui.button(label="취소", style=discord.ButtonStyle.danger, emoji="❌", row=1)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Cancel mode selection."""
-        await interaction.response.delete_message()
+        # Delete the message that contains this view
+        await interaction.response.defer()
+        await interaction.delete_original_response()
 
 
 class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성"):

@@ -3,8 +3,8 @@
 import base64
 import logging
 from collections import deque
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Tuple, Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Deque, Dict, Iterator, List, Optional, Tuple, Callable
 
 from openai import OpenAI
 
@@ -16,6 +16,78 @@ from persbot.services.base import ChatMessage
 from persbot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
+
+
+# --- Stream adapter for Responses API -> Chat Completions format ---
+@dataclass
+class FakeDelta:
+    """Mimics Chat Completions delta object."""
+    content: Optional[str] = None
+
+
+@dataclass
+class FakeChoice:
+    """Mimics Chat Completions choice object."""
+    delta: FakeDelta = field(default_factory=FakeDelta)
+
+
+@dataclass
+class FakeChunk:
+    """Mimics Chat Completions chunk object for Responses API stream."""
+    choices: List[FakeChoice] = field(default_factory=list)
+
+
+class ResponsesAPIStreamAdapter:
+    """Adapts Responses API stream to Chat Completions API format.
+
+    The Responses API stream yields different event types:
+    - response.created, response.output_item.added, etc.
+    - response.output_text.delta contains the actual text content
+
+    This adapter extracts text deltas and wraps them in FakeChunk objects
+    that have the same .choices[0].delta.content structure.
+    """
+
+    def __init__(self, raw_stream: Iterator[Any]):
+        self._raw_stream = raw_stream
+        self._buffer: List[FakeChunk] = []
+
+    def __iter__(self) -> Iterator[FakeChunk]:
+        for event in self._raw_stream:
+            # Responses API uses event types
+            if hasattr(event, 'type'):
+                event_type = event.type
+
+                # Extract text from output_text.delta events
+                if event_type == 'response.output_text.delta':
+                    if hasattr(event, 'delta') and event.delta:
+                        chunk = FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=event.delta))])
+                        yield chunk
+
+                # Also check for content in the event data
+                elif hasattr(event, 'data'):
+                    data = event.data
+                    if isinstance(data, dict):
+                        # Some events have delta in data
+                        delta_text = data.get('delta', {}).get('text', '')
+                        if delta_text:
+                            chunk = FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=delta_text))])
+                            yield chunk
+            else:
+                # Fallback: try to extract content directly for unknown formats
+                # This handles cases where the SDK might normalize the response
+                if hasattr(event, 'choices') and event.choices:
+                    yield event
+                elif hasattr(event, 'content'):
+                    text = event.content if isinstance(event.content, str) else str(event.content)
+                    if text:
+                        chunk = FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=text))])
+                        yield chunk
+
+    def close(self):
+        """Close the underlying stream if it has a close method."""
+        if hasattr(self._raw_stream, 'close'):
+            self._raw_stream.close()
 
 
 def encode_image_to_url(img_bytes: bytes) -> Dict[str, str]:
@@ -382,3 +454,53 @@ class ResponseSession(BaseOpenAISession):
         model_msg = ChatMessage(role="assistant", content=message_content)
 
         return user_msg, model_msg, response
+
+    def send_message_stream(
+        self,
+        user_message: str,
+        author_id: int,
+        author_name: Optional[str] = None,
+        message_ids: Optional[List[str]] = None,
+        images: Optional[List[bytes]] = None,
+        tools: Optional[Any] = None,
+    ) -> Tuple[Any, ChatMessage]:
+        """Send a message and get a streaming response.
+
+        Note: The Responses API uses SSE streaming with different chunk format
+        than Chat Completions API. Returns a stream and user message.
+        """
+        user_msg = self._create_user_message(
+            user_message, author_id, author_name, message_ids, images
+        )
+
+        # Build current message content
+        current_payload = self._build_input_payload()
+
+        content_list = []
+        if user_message:
+            content_list.append({"type": "input_text", "text": user_message})
+
+        if images:
+            logger.warning(
+                "Images provided to ResponseSession streaming, but image support is not fully implemented for this endpoint. Ignoring images."
+            )
+
+        # Append user message to payload
+        current_payload.append({"type": "message", "role": "user", "content": content_list})
+
+        api_kwargs = {
+            "model": self._model_name,
+            "input": current_payload,
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "service_tier": self._service_tier,
+            "stream": True,
+        }
+
+        if tools:
+            api_kwargs["tools"] = tools
+
+        raw_stream = self._client.responses.create(**api_kwargs)
+        # Wrap the stream to produce Chat Completions-compatible chunks
+        adapted_stream = ResponsesAPIStreamAdapter(raw_stream)
+        return adapted_stream, user_msg
