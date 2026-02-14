@@ -64,6 +64,23 @@ class PromptModeSelectView(discord.ui.View):
         """Cancel mode selection."""
         await interaction.response.delete_message()
 
+
+class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성"):
+    """Modal for creating a new persona."""
+
+    concept = discord.ui.TextInput(
+        label="페르소나 컨셉",
+        placeholder="예: 츤데레 여사친, 게으른 천재 해커...",
+        style=discord.TextStyle.long,
+        required=True,
+        max_length=500,
+    )
+
+    def __init__(self, view: "PromptManagerView", use_questions: bool = False) -> None:
+        super().__init__()
+        self.view_ref = view
+        self.use_questions = use_questions
+
     async def on_submit(self, interaction: discord.Interaction) -> None:
         concept_str = self.concept.value
         use_qa = self.use_questions

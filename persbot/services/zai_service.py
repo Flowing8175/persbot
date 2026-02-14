@@ -231,8 +231,7 @@ class ZAIService(BaseLLMServiceCore):
                 temperature=getattr(self.config, "temperature", 1.0),
                 top_p=getattr(self.config, "top_p", 1.0),
             ),
-            "요약",
-            extract_text=self._extract_text_from_response,
+            error_prefix="요약",
             cancel_event=cancel_event,
         )
 
