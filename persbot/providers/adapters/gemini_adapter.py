@@ -36,7 +36,7 @@ class GeminiToolAdapter(BaseToolAdapter):
         for tool in tools:
             try:
                 function_decl = GeminiToolAdapter._create_function_declaration(tool)
-                converted.append(genai_types.Tool(function_declarations=function_decl))
+                converted.append(genai_types.Tool(function_declarations=[function_decl]))
             except Exception as e:
                 logger.warning(f"Failed to convert tool {tool.name}: {e}")
 
