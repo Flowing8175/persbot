@@ -10,6 +10,8 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import aiofiles
+
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -280,8 +282,9 @@ async def _load_memory_vector() -> List[Dict[str, Any]]:
         await _create_sample_memory_file(memory_path)
 
     try:
-        with open(memory_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        async with aiofiles.open(memory_path, "r", encoding="utf-8") as f:
+            content = await f.read()
+            data = json.loads(content)
             return data.get("memories", [])
     except json.JSONDecodeError:
         logger.warning("Invalid JSON in memory file, returning empty list")
@@ -339,8 +342,8 @@ async def _create_sample_memory_file(path: str) -> None:
         ]
     }
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(sample_data, f, ensure_ascii=False, indent=2)
+    async with aiofiles.open(path, "w", encoding="utf-8") as f:
+        await f.write(json.dumps(sample_data, ensure_ascii=False, indent=2))
 
     logger.info("Created sample memory file at %s", path)
 
@@ -358,8 +361,8 @@ async def _save_memory_vector(memories: List[Dict[str, Any]]) -> None:
 
         data = {"memories": memories}
 
-        with open(memory_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        async with aiofiles.open(memory_path, "w", encoding="utf-8") as f:
+            await f.write(json.dumps(data, ensure_ascii=False, indent=2))
 
         logger.debug("Saved %d memory entries to %s", len(memories), memory_path)
     except Exception as e:

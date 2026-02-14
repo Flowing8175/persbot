@@ -68,10 +68,28 @@ async def main(config) -> None:
     intents = discord.Intents.default()
     intents.messages = True
     intents.guilds = True
-    intents.members = True
+    intents.members = True  # Required for get_member_info and get_member_roles tools
     intents.message_content = True
 
-    bot = commands.Bot(command_prefix=config.command_prefix, intents=intents, help_command=None)
+    # Optimize member caching to reduce memory footprint
+    # Only cache members when they become active (send message, react, etc.)
+    # rather than caching all members on guild join
+    member_cache_flags = discord.MemberCacheFlags.from_intents(intents)
+    member_cache_flags = discord.MemberCacheFlags(
+        connected=False,  # Don't cache voice state
+        joined=True,  # Cache when member joins
+    )
+
+    # Limit internal message cache to reduce memory (default is 1000)
+    max_messages = getattr(config, 'max_message_cache', 100)
+
+    bot = commands.Bot(
+        command_prefix=config.command_prefix,
+        intents=intents,
+        help_command=None,
+        member_cache_flags=member_cache_flags,
+        max_messages=max_messages,
+    )
 
     # Initialize services
     llm_service = LLMService(config)

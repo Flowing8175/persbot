@@ -10,6 +10,8 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+import aiofiles
+
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -169,8 +171,9 @@ async def _load_persona_schedule() -> Dict[str, Any]:
         await _create_sample_schedule_file(schedule_path)
 
     try:
-        with open(schedule_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        async with aiofiles.open(schedule_path, "r", encoding="utf-8") as f:
+            content = await f.read()
+            return json.loads(content)
     except json.JSONDecodeError:
         logger.warning("Invalid JSON in schedule file, returning default schedule")
         return _get_default_schedule()
@@ -189,8 +192,8 @@ async def _create_sample_schedule_file(path: str) -> None:
 
     sample_schedule = _get_default_schedule()
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(sample_schedule, f, ensure_ascii=False, indent=2)
+    async with aiofiles.open(path, "w", encoding="utf-8") as f:
+        await f.write(json.dumps(sample_schedule, ensure_ascii=False, indent=2))
 
     logger.info("Created sample schedule file at %s", path)
 

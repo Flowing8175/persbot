@@ -46,6 +46,9 @@ class AutoChannelCog(BaseChatCog):
 
     async def _load_dynamic_channels(self) -> None:
         """Loads auto-channels from JSON and updates config."""
+        # Wait until bot is ready to avoid errors during startup
+        await self.bot.wait_until_ready()
+
         # Using async load for consistency with write operations
         self.dynamic_channel_ids = set()
         if self.json_file_path.exists():

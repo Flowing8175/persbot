@@ -6,6 +6,7 @@ from typing import Optional
 import discord
 
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
+from persbot.tools.discord_cache import cache_member, cache_user, get_cached_member, get_cached_user
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,12 @@ async def get_member_info(
         return ToolResult(success=False, error="Discord context not available or not in a guild")
 
     try:
+        # Try cache first
+        cached_info = await get_cached_member(guild_id, user_id)
+        if cached_info:
+            logger.debug("Cache hit for member %s in guild %s", user_id, guild_id)
+            return ToolResult(success=True, data=cached_info)
+
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
         if not guild:
             guild = discord_context._state.get_guild(guild_id)
@@ -132,6 +139,10 @@ async def get_member_info(
             "guild_avatar_url": member.guild_avatar.url if member.guild_avatar else None,
             "is_owner": guild.owner_id == member.id,
         }
+
+        # Cache the result
+        await cache_member(guild_id, user_id, info)
+        logger.debug("Cached member %s in guild %s", user_id, guild_id)
 
         return ToolResult(success=True, data=info)
 

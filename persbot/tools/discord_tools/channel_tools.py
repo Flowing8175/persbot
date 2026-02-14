@@ -6,6 +6,7 @@ from typing import Optional
 import discord
 
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
+from persbot.tools.discord_cache import cache_message, get_cached_message
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,12 @@ async def get_message(
         return ToolResult(success=False, error="Channel ID not provided and no context available")
 
     try:
+        # Try cache first
+        cached_data = await get_cached_message(channel_id, message_id)
+        if cached_data:
+            logger.debug("Cache hit for message %s in channel %s", message_id, channel_id)
+            return ToolResult(success=True, data=cached_data)
+
         channel = discord_context.guild.get_channel(channel_id)
         if not channel:
             return ToolResult(success=False, error=f"Channel {channel_id} not found")
@@ -181,6 +188,10 @@ async def get_message(
                 else None
             ),
         }
+
+        # Cache the result
+        await cache_message(channel_id, message_id, message_data)
+        logger.debug("Cached message %s in channel %s", message_id, channel_id)
 
         return ToolResult(success=True, data=message_data)
 

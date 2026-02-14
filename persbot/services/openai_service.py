@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import discord
@@ -43,7 +44,9 @@ class OpenAIService(BaseLLMServiceCore):
             api_key=config.openai_api_key,
             timeout=config.api_request_timeout,
         )
-        self._assistant_cache: Dict[int, OpenAIChatCompletionModel] = {}
+        # Use OrderedDict for LRU eviction with max size limit
+        self._assistant_cache: OrderedDict[int, OpenAIChatCompletionModel] = OrderedDict()
+        self._cache_max_size = 10  # Limit cache to 10 model instances
         self._max_messages = 7
         self._assistant_model_name = assistant_model_name
         self._summary_model_name = summary_model_name or assistant_model_name
@@ -64,28 +67,38 @@ class OpenAIService(BaseLLMServiceCore):
     def _get_or_create_assistant(
         self, model_name: str, system_instruction: str
     ) -> OpenAIChatCompletionModel:
-        """Get or create an assistant model wrapper."""
+        """Get or create an assistant model wrapper with LRU eviction."""
         key = hash((model_name, system_instruction))
-        if key not in self._assistant_cache:
-            # Select model wrapper based on configuration (Fine-tuned models use Chat Completions)
-            use_finetuned_logic = (
-                self.config.openai_finetuned_model
-                and model_name == self.config.openai_finetuned_model
-            )
 
-            service_tier = "flex"
-            if use_finetuned_logic:
-                service_tier = "default"
+        # Check if already cached - move to end for LRU
+        if key in self._assistant_cache:
+            self._assistant_cache.move_to_end(key)
+            return self._assistant_cache[key]
 
-            self._assistant_cache[key] = OpenAIChatCompletionModel(
-                client=self.client,
-                model_name=model_name,
-                system_instruction=system_instruction,
-                temperature=getattr(self.config, "temperature", LLMDefaults.TEMPERATURE),
-                top_p=getattr(self.config, "top_p", LLMDefaults.TOP_P),
-                max_messages=self._max_messages,
-                service_tier=service_tier,
-            )
+        # Evict oldest entry if at capacity
+        if len(self._assistant_cache) >= self._cache_max_size:
+            evicted_key, _ = self._assistant_cache.popitem(last=False)
+            logger.debug("Evicted assistant cache entry %s (LRU)", evicted_key)
+
+        # Select model wrapper based on configuration (Fine-tuned models use Chat Completions)
+        use_finetuned_logic = (
+            self.config.openai_finetuned_model
+            and model_name == self.config.openai_finetuned_model
+        )
+
+        service_tier = "flex"
+        if use_finetuned_logic:
+            service_tier = "default"
+
+        self._assistant_cache[key] = OpenAIChatCompletionModel(
+            client=self.client,
+            model_name=model_name,
+            system_instruction=system_instruction,
+            temperature=getattr(self.config, "temperature", LLMDefaults.TEMPERATURE),
+            top_p=getattr(self.config, "top_p", LLMDefaults.TOP_P),
+            max_messages=self._max_messages,
+            service_tier=service_tier,
+        )
         return self._assistant_cache[key]
 
     def create_assistant_model(self, system_instruction: str) -> OpenAIChatCompletionModel:
