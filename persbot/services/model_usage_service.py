@@ -16,7 +16,8 @@ class ModelDefinition:
     api_model_name: str
     daily_limit: int
     scope: str  # 'user', 'channel', or 'guild'
-    provider: str  # 'gemini' or 'openai'
+    provider: str  # 'gemini', 'openai', or 'zai'
+    description: str = ""  # Korean description for UI display
     fallback_alias: Optional[str] = None
 
 
@@ -70,6 +71,7 @@ class ModelUsageService:
                             daily_limit=details["daily_limit"],
                             scope=details["scope"],
                             provider=details["provider"],
+                            description=details.get("description", ""),
                             fallback_alias=details.get("fallback_alias"),
                         )
                         self.MODEL_DEFINITIONS[alias] = model_def
