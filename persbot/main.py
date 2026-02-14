@@ -74,11 +74,8 @@ async def main(config) -> None:
     # Optimize member caching to reduce memory footprint
     # Only cache members when they become active (send message, react, etc.)
     # rather than caching all members on guild join
+    # from_intents() automatically configures appropriate cache flags based on intents
     member_cache_flags = discord.MemberCacheFlags.from_intents(intents)
-    member_cache_flags = discord.MemberCacheFlags(
-        connected=False,  # Don't cache voice state
-        joined=True,  # Cache when member joins
-    )
 
     # Limit internal message cache to reduce memory (default is 1000)
     max_messages = getattr(config, 'max_message_cache', 100)
