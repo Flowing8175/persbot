@@ -86,11 +86,12 @@ class GeminiCachedModel:
         else:
             config = self._config
 
-        async for chunk in self._client.aio.models.generate_content_stream(
+        response = await self._client.aio.models.generate_content_stream(
             model=self._model_name,
             contents=contents,
             config=config,
-        ):
+        )
+        async for chunk in response:
             yield chunk
 
     def _build_config_with_tools(self, tools: List[Any]) -> genai_types.GenerateContentConfig:
