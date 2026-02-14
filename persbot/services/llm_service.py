@@ -776,3 +776,21 @@ class LLMService:
             self.config.top_p,
             self.config.thinking_budget,
         )
+
+    def start_background_cache_warmup(self) -> None:
+        """Start background cache warmup for Gemini backends to reduce first-message latency.
+
+        This should be called after bot startup to pre-create commonly used caches.
+        """
+        # Warm up assistant backend if it's a Gemini service
+        if hasattr(self.assistant_backend, "start_background_warmup"):
+            self.assistant_backend.start_background_warmup()
+            logger.debug("Started background cache warmup for assistant backend")
+
+        # Warm up summarizer backend if it's different and is a Gemini service
+        if (
+            self.summarizer_backend is not self.assistant_backend
+            and hasattr(self.summarizer_backend, "start_background_warmup")
+        ):
+            self.summarizer_backend.start_background_warmup()
+            logger.debug("Started background cache warmup for summarizer backend")

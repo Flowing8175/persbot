@@ -5,6 +5,7 @@ import datetime
 import hashlib
 import logging
 import re
+from functools import lru_cache
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import discord
@@ -31,6 +32,9 @@ from persbot.utils import GENERIC_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
 
+# Maximum size for in-memory cache name lookup
+CACHE_NAME_LRU_SIZE = 64
+
 
 class GeminiService(BaseLLMServiceCore):
     """Gemini API와의 모든 상호작용을 관리합니다."""
@@ -53,16 +57,19 @@ class GeminiService(BaseLLMServiceCore):
         # Stores tuple: (model_wrapper, expiration_time: Optional[datetime.datetime])
         self._model_cache: dict[int, Tuple[GeminiCachedModel, Optional[datetime.datetime]]] = {}
 
-        # Pre-load default models using cache
-        self.summary_model = self._get_or_create_model(
-            self._summary_model_name, self.prompt_service.get_summary_prompt()
-        )
-        self.assistant_model = self._get_or_create_model(
-            self._assistant_model_name,
-            self.prompt_service.get_active_assistant_prompt(),
-        )
+        # In-memory LRU cache for cache name lookups to avoid repeated caches.list() calls
+        # Maps: cache_display_name -> (cache_name, expiration_datetime)
+        self._cache_name_cache: Dict[str, Tuple[str, datetime.datetime]] = {}
+
+        # Models are created lazily on first use to avoid blocking startup
+        # Use properties _assistant_model and _summary_model for lazy access
+        self._assistant_model_instance: Optional[GeminiCachedModel] = None
+        self._summary_model_instance: Optional[GeminiCachedModel] = None
+        self._models_initialized = False
+        self._cache_warmup_task: Optional[asyncio.Task] = None
+
         logger.debug(
-            "Gemini 모델 assistant='%s', summary='%s' 로드 완료. (구성 캐시 활성화)",
+            "Gemini service initialized with assistant='%s', summary='%s' (lazy loading)",
             self._assistant_model_name,
             self._summary_model_name,
         )
@@ -70,6 +77,79 @@ class GeminiService(BaseLLMServiceCore):
         # Start periodic cache cleanup task
         if config.gemini_cache_ttl_minutes > 0:
             asyncio.create_task(self._periodic_cache_cleanup())
+
+    @property
+    def assistant_model(self) -> GeminiCachedModel:
+        """Lazily get or create the assistant model."""
+        if self._assistant_model_instance is None:
+            self._assistant_model_instance = self._get_or_create_model(
+                self._assistant_model_name, self.prompt_service.get_active_assistant_prompt()
+            )
+        return self._assistant_model_instance
+
+    @assistant_model.setter
+    def assistant_model(self, value: GeminiCachedModel) -> None:
+        """Set the assistant model instance (useful for testing)."""
+        self._assistant_model_instance = value
+
+    @property
+    def summary_model(self) -> GeminiCachedModel:
+        """Lazily get or create the summary model."""
+        if self._summary_model_instance is None:
+            self._summary_model_instance = self._get_or_create_model(
+                self._summary_model_name, self.prompt_service.get_summary_prompt()
+            )
+        return self._summary_model_instance
+
+    @summary_model.setter
+    def summary_model(self, value: GeminiCachedModel) -> None:
+        """Set the summary model instance (useful for testing)."""
+        self._summary_model_instance = value
+
+    async def warmup_caches(self) -> None:
+        """Pre-create commonly used caches in background to reduce first-message latency.
+
+        This method should be called during bot startup, not on first message.
+        """
+        if self._models_initialized:
+            return
+
+        try:
+            logger.debug("Starting cache warmup in background...")
+
+            # Create models with caching enabled (async to avoid blocking)
+            async def _create_model_async(model_name: str, system_prompt: str) -> GeminiCachedModel:
+                return await asyncio.to_thread(
+                    self._get_or_create_model, model_name, system_prompt
+                )
+
+            # Warm up both models in parallel
+            self._assistant_model_instance, self._summary_model_instance = await asyncio.gather(
+                _create_model_async(
+                    self._assistant_model_name,
+                    self.prompt_service.get_active_assistant_prompt()
+                ),
+                _create_model_async(
+                    self._summary_model_name,
+                    self.prompt_service.get_summary_prompt()
+                ),
+            )
+
+            self._models_initialized = True
+            logger.debug(
+                "Cache warmup complete: assistant='%s', summary='%s'",
+                self._assistant_model_name,
+                self._summary_model_name,
+            )
+        except Exception as e:
+            logger.warning("Cache warmup failed (will use lazy loading): %s", e)
+            # Models will be created lazily on first use
+
+    def start_background_warmup(self) -> None:
+        """Start cache warmup as a background task (non-blocking)."""
+        if self._cache_warmup_task is None or self._cache_warmup_task.done():
+            self._cache_warmup_task = asyncio.create_task(self.warmup_caches())
+            logger.debug("Background cache warmup task started")
 
     def _get_or_create_model(
         self,
@@ -180,6 +260,10 @@ class GeminiService(BaseLLMServiceCore):
     def reload_parameters(self) -> None:
         """Reload parameters by clearing the model cache."""
         self._model_cache.clear()
+        self._cache_name_cache.clear()
+        self._assistant_model_instance = None
+        self._summary_model_instance = None
+        self._models_initialized = False
         logger.debug("Gemini model cache cleared to apply new parameters.")
 
     def _create_retry_handler(self) -> RetryHandler:
@@ -318,12 +402,40 @@ class GeminiService(BaseLLMServiceCore):
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
         Attempts to find or create a Gemini cache for the given system instruction.
+        Uses in-memory cache for lookups to avoid repeated caches.list() calls.
         Returns: (cache_name, local_expiration_datetime)
+
+        Note: This method is synchronous but uses cached data where possible.
+        For new cache creation, it will make blocking API calls.
         """
         if not system_instruction:
             return None, None
 
-        # 1. Check token count
+        # Generate cache display name
+        cache_display_name = self._get_cache_key(model_name, system_instruction, tools)
+        ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", CacheConfig.TTL_MINUTES)
+        ttl_seconds = ttl_minutes * 60
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        # Calculate local expiration
+        refresh_buffer_minutes = min(
+            CacheConfig.REFRESH_BUFFER_MAX,
+            max(CacheConfig.REFRESH_BUFFER_MIN, ttl_minutes // 2),
+        )
+        local_expiration = now + datetime.timedelta(minutes=ttl_minutes - refresh_buffer_minutes)
+
+        # FAST PATH: Check in-memory cache first to avoid API calls
+        if cache_display_name in self._cache_name_cache:
+            cached_name, cached_expiration = self._cache_name_cache[cache_display_name]
+            # Check if cached entry is still valid
+            if cached_expiration and now < cached_expiration:
+                logger.debug("Using in-memory cached Gemini cache name: %s", cached_name)
+                return cached_name, cached_expiration
+            else:
+                # Expired, remove from cache
+                del self._cache_name_cache[cache_display_name]
+
+        # SLOW PATH: Check token count and create/list caches
         try:
             # We must count tokens including tools and system instruction to be accurate.
             count_result = self.client.models.count_tokens(
@@ -349,20 +461,7 @@ class GeminiService(BaseLLMServiceCore):
 
         logger.info("Token count (%d) meets requirement for Gemini caching.", token_count)
 
-        # 2. Config setup
-        cache_display_name = self._get_cache_key(model_name, system_instruction, tools)
-        ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", CacheConfig.TTL_MINUTES)
-        ttl_seconds = ttl_minutes * 60
-
-        now = datetime.datetime.now(datetime.timezone.utc)
-        # local_expiration: trigger refresh halfway through TTL window or with a buffer
-        refresh_buffer_minutes = min(
-            CacheConfig.REFRESH_BUFFER_MAX,
-            max(CacheConfig.REFRESH_BUFFER_MIN, ttl_minutes // 2),
-        )
-        local_expiration = now + datetime.timedelta(minutes=ttl_minutes - refresh_buffer_minutes)
-
-        # 3. Search for existing cache
+        # Search for existing cache
         try:
             # We iterate to find a cache with our unique display name
             for cache in self.client.caches.list():
@@ -380,6 +479,8 @@ class GeminiService(BaseLLMServiceCore):
                             cache.name,
                             ttl_seconds,
                         )
+                        # Cache the result in memory for future lookups
+                        self._cache_name_cache[cache_display_name] = (cache.name, local_expiration)
                         return cache.name, local_expiration
                     except Exception as update_err:
                         logger.warning(
@@ -393,7 +494,7 @@ class GeminiService(BaseLLMServiceCore):
         except Exception as e:
             logger.error("Error listing Gemini caches: %s", e)
 
-        # 4. Create new cache using the user's requested style
+        # Create new cache
         try:
             logger.debug(
                 "Creating new Gemini cache '%s' (TTL: %ds)...",
@@ -412,6 +513,8 @@ class GeminiService(BaseLLMServiceCore):
             )
 
             logger.debug("Created cache: %s", cache.name)
+            # Cache the result in memory for future lookups
+            self._cache_name_cache[cache_display_name] = (cache.name, local_expiration)
             return cache.name, local_expiration
 
         except Exception as e:
@@ -989,10 +1092,20 @@ class GeminiService(BaseLLMServiceCore):
                 logger.error(f"Error during cache cleanup: {e}", exc_info=True)
 
     async def _refresh_expired_cache(self):
-        """Refresh expired cache entries to prevent expiration."""
+        """Refresh expired cache entries to prevent expiration and update in-memory cache."""
         try:
             ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", 60)
-            cache_name = f"persbot-{self._assistant_model_name[:20]}"
+            ttl_seconds = ttl_minutes * 60
+
+            # Calculate local expiration for cached entries
+            refresh_buffer_minutes = min(
+                CacheConfig.REFRESH_BUFFER_MAX,
+                max(CacheConfig.REFRESH_BUFFER_MIN, ttl_minutes // 2),
+            )
+            local_expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+                minutes=ttl_minutes - refresh_buffer_minutes
+            )
+
             # Use a timeout to avoid blocking too long
             timeout = 5.0
             response = await asyncio.wait_for(
@@ -1005,16 +1118,19 @@ class GeminiService(BaseLLMServiceCore):
             for cache in cached_items:
                 try:
                     # Refresh TTL for frequently used caches
-                    ttl_seconds = ttl_minutes * 60
                     await asyncio.wait_for(
                         asyncio.to_thread(
-                            self.client.caches.update(
-                                name=cache.name,
-                                config=genai_types.UpdateCachedContentConfig(ttl=f"{ttl_seconds}s"),
-                            )
+                            self.client.caches.update,
+                            cache.name,
+                            genai_types.UpdateCachedContentConfig(ttl=f"{ttl_seconds}s"),
                         ),
                         timeout=2.0,
                     )
+
+                    # Update in-memory cache for faster lookups
+                    if cache.display_name:
+                        self._cache_name_cache[cache.display_name] = (cache.name, local_expiration)
+
                 except Exception as e:
                     # Log but don't fail on individual cache refresh
                     if "403 PERMISSION_DENIED" not in str(e):

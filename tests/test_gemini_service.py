@@ -719,13 +719,13 @@ class TestGeminiServiceLogRawResponse:
         )
 
         with patch("persbot.services.gemini_service.logger") as mock_logger:
-            mock_logger.info = Mock()
+            mock_logger.debug = Mock()
             mock_logger.isEnabledFor.return_value = False
 
             service._log_raw_response(mock_response, 1)
 
             # Should have logged token counts
-            assert mock_logger.info.called
+            assert mock_logger.debug.called
 
     def test_handles_tuple_response(self, service):
         """_log_raw_response handles tuple response from chat session."""
@@ -738,10 +738,10 @@ class TestGeminiServiceLogRawResponse:
         )
 
         with patch("persbot.services.gemini_service.logger") as mock_logger:
-            mock_logger.info = Mock()
+            mock_logger.debug = Mock()
             mock_logger.isEnabledFor.return_value = False
 
             service._log_raw_response(mock_response, 1)
 
             # Should have extracted response from tuple
-            assert mock_logger.info.called
+            assert mock_logger.debug.called

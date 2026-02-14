@@ -94,6 +94,10 @@ async def main(config) -> None:
     prompt_service = PromptService()
     tool_manager = ToolManager(config)
 
+    # Start background cache warmup to reduce first-message latency
+    # This pre-creates commonly used Gemini caches asynchronously
+    llm_service.start_background_cache_warmup()
+
     # Register cogs before starting so listeners are ready on first connect
     # and won't raise on reconnect (on_ready can fire multiple times).
     await bot.add_cog(SummarizerCog(bot, config, llm_service))
