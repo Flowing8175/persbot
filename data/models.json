@@ -3,6 +3,7 @@
     "Gemini 3 flash": {
       "display_name": "Gemini 3 flash",
       "api_model_name": "gemini-3-flash-preview",
+      "description": "최신 Gemini 3 프리뷰, 빠른 응답속도",
       "daily_limit": 100,
       "scope": "guild",
       "provider": "gemini",
@@ -11,6 +12,7 @@
     "Gemini 2.5 flash": {
       "display_name": "Gemini 2.5 flash",
       "api_model_name": "gemini-2.5-flash",
+      "description": "빠르고 효율적인 범용 모델",
       "daily_limit": 100,
       "scope": "guild",
       "provider": "gemini",
@@ -19,6 +21,7 @@
     "GLM 4.7": {
       "display_name": "GLM 4.7",
       "api_model_name": "glm-4.7",
+      "description": "Z.AI 최신 고성능 모델",
       "daily_limit": 1000,
       "scope": "guild",
       "provider": "zai",
@@ -27,6 +30,7 @@
     "GLM 4.6V": {
       "display_name": "GLM 4.6V",
       "api_model_name": "glm-4.6v",
+      "description": "이미지 인식이 가능한 멀티모달 모델",
       "daily_limit": 1000,
       "scope": "guild",
       "provider": "zai",
@@ -35,6 +39,7 @@
     "GLM 4.5 Air": {
       "display_name": "GLM 4.5 Air",
       "api_model_name": "glm-4.5-air",
+      "description": "가볍고 빠른 경량 모델",
       "daily_limit": 1000,
       "scope": "guild",
       "provider": "zai",
@@ -43,6 +48,7 @@
     "GPT 4o": {
       "display_name": "GPT 4o",
       "api_model_name": "gpt-4o",
+      "description": "OpenAI 멀티모달 고성능 모델",
       "daily_limit": 200,
       "scope": "guild",
       "provider": "openai",
@@ -51,6 +57,7 @@
     "GPT 5 mini": {
       "display_name": "GPT 5 mini",
       "api_model_name": "gpt-5-mini",
+      "description": "GPT 5 시리즈 경량 버전",
       "daily_limit": 50,
       "scope": "guild",
       "provider": "openai",
@@ -59,6 +66,7 @@
     "GPT 5 nano": {
       "display_name": "GPT 5 nano",
       "api_model_name": "gpt-5-nano",
+      "description": "가장 가볍고 빠른 GPT 모델",
       "daily_limit": 100,
       "scope": "guild",
       "provider": "openai",
