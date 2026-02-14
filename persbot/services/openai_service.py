@@ -384,7 +384,7 @@ class OpenAIService(BaseLLMServiceCore):
         # Convert tools to OpenAI format if provided
         converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None
 
-        # Start streaming
+        # Start streaming - get stream object synchronously (fast, just initiates request)
         stream, user_msg = await asyncio.to_thread(
             chat_session.send_message_stream,
             user_message,
@@ -395,18 +395,71 @@ class OpenAIService(BaseLLMServiceCore):
             tools=converted_tools,
         )
 
-        # Buffer for streaming - yield on newline for natural line breaks
+        # Buffer for streaming - yield chunks immediately for faster first response
         buffer = ""
         full_content = ""
 
-        try:
-            for chunk in stream:
-                # Check for cancellation
-                if cancel_event and cancel_event.is_set():
-                    logger.info("Streaming aborted due to cancellation signal")
-                    stream.close()
-                    raise asyncio.CancelledError("LLM streaming aborted by user")
+        async def _iterate_stream():
+            """Iterate the synchronous stream in a thread and yield chunks via queue."""
+            queue: asyncio.Queue = asyncio.Queue()
+            sentinel = object()  # Sentinel to signal end of stream
 
+            def _sync_iterate():
+                """Run in thread: iterate stream and put chunks in queue."""
+                try:
+                    for chunk in stream:
+                        # Put chunk in queue for async consumption
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                queue.put(chunk), asyncio.get_event_loop()
+                            ).result(timeout=5.0)
+                        except Exception:
+                            break
+                except Exception as e:
+                    logger.debug("Stream iteration error: %s", e)
+                finally:
+                    # Signal end of stream
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            queue.put(sentinel), asyncio.get_event_loop()
+                        ).result(timeout=5.0)
+                    except Exception:
+                        pass
+                    stream.close()
+
+            # Start sync iteration in thread
+            loop = asyncio.get_event_loop()
+            future = loop.run_in_executor(None, _sync_iterate)
+
+            try:
+                while True:
+                    # Check for cancellation
+                    if cancel_event and cancel_event.is_set():
+                        logger.info("Streaming aborted due to cancellation signal")
+                        stream.close()
+                        raise asyncio.CancelledError("LLM streaming aborted by user")
+
+                    # Get chunk from queue with timeout
+                    try:
+                        chunk = await asyncio.wait_for(queue.get(), timeout=0.1)
+                    except asyncio.TimeoutError:
+                        # No chunk yet, check cancellation and continue
+                        continue
+
+                    # Check for end of stream
+                    if chunk is sentinel:
+                        break
+
+                    yield chunk
+            finally:
+                # Ensure thread is done
+                try:
+                    await asyncio.wait_for(future, timeout=1.0)
+                except (asyncio.TimeoutError, Exception):
+                    pass
+
+        try:
+            async for chunk in _iterate_stream():
                 # Extract text delta from chunk
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
@@ -415,7 +468,8 @@ class OpenAIService(BaseLLMServiceCore):
                         buffer += text
                         full_content += text
 
-                        # Yield when we see a line break
+                        # Yield immediately when we have content with line break,
+                        # OR yield after accumulating reasonable content for faster first response
                         if "\n" in buffer:
                             lines = buffer.split("\n")
                             # Yield all complete lines
@@ -424,13 +478,18 @@ class OpenAIService(BaseLLMServiceCore):
                                     yield line + "\n"
                             # Keep the last incomplete line in buffer
                             buffer = lines[-1]
+                        elif len(buffer) > 50:
+                            # Yield partial content for faster first response
+                            yield buffer
+                            buffer = ""
 
             # Yield any remaining content in buffer
             if buffer:
                 yield buffer
 
-        finally:
-            stream.close()
+        except asyncio.CancelledError:
+            logger.info("Streaming response cancelled")
+            raise
 
         # Update history with the full conversation
         model_msg = ChatMessage(role="assistant", content=full_content)
