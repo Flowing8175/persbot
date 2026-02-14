@@ -168,7 +168,9 @@ class AutoChannelCog(BaseChatCog):
         if messages_to_prepend:
             # Ensure the list exists before prepending
             if message.channel.id in self.message_buffer.buffers:
-                self.message_buffer.buffers[message.channel.id][0:0] = messages_to_prepend
+                # Use extendleft to prepend messages (reversed because deque prepends in reverse order)
+                for msg in reversed(messages_to_prepend):
+                    self.message_buffer.buffers[message.channel.id].appendleft(msg)
 
     @commands.Cog.listener()
     async def on_typing(
