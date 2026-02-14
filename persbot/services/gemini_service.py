@@ -168,8 +168,18 @@ class GeminiService(BaseLLMServiceCore):
             return cached
 
         # Configure tools and caching
-        # Use provided tools or fall back to search tools
-        effective_tools = tools if tools is not None else self._get_search_tools(model_name)
+        # Combine provided tools with search tools if they exist
+        search_tools = self._get_search_tools(model_name)
+        effective_tools = []
+
+        # Add custom tools if provided
+        if tools is not None:
+            effective_tools.extend(GeminiToolAdapter.convert_tools(tools))
+
+        # Add search tools if they exist and aren't already included
+        if search_tools:
+            effective_tools.extend(search_tools)
+
         cache_name, cache_expiration = self._resolve_gemini_cache(
             model_name, system_instruction, effective_tools, use_cache
         )
