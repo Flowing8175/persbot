@@ -195,7 +195,7 @@ class BaseLLMService(ABC):
         if delay <= 0:
             return
 
-        logger.info("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
+        logger.debug("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
         sent_message: Optional[discord.Message] = None
 
         remaining = int(delay)
@@ -216,7 +216,7 @@ class BaseLLMService(ABC):
                         await sent_message.edit(content=countdown_message)
                     except discord.HTTPException:
                         pass  # Ignore edit errors
-                logger.info(countdown_message)
+                logger.debug(countdown_message)
             await asyncio.sleep(1)
             remaining -= 1
 

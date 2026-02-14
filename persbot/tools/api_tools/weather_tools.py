@@ -34,7 +34,7 @@ async def get_weather(
 
     # Check for cancellation before HTTP requests
     if cancel_event and cancel_event.is_set():
-        logger.info("Weather lookup aborted due to cancellation signal before API call")
+        logger.debug("Weather lookup aborted before API call")
         return ToolResult(success=False, error="Weather lookup aborted by user")
 
     units = units.lower()
@@ -81,7 +81,7 @@ async def get_weather(
                         return ToolResult(success=False, error=f"Weather API error: {resp.status}")
 
         except asyncio.CancelledError:
-            logger.info("Weather lookup cancelled by user")
+            logger.debug("Weather lookup cancelled")
             return ToolResult(success=False, error="Weather lookup aborted by user")
         except aiohttp.ClientError as e:
             logger.error("Weather API request failed: %s", e)
@@ -93,7 +93,7 @@ async def get_weather(
     # Fallback: Use wttr.in (no API key required, but limited)
     # Check for cancellation before fallback request
     if cancel_event and cancel_event.is_set():
-        logger.info("Weather lookup aborted due to cancellation signal before fallback API call")
+        logger.debug("Weather lookup aborted before fallback API call")
         return ToolResult(success=False, error="Weather lookup aborted by user")
     try:
         async with aiohttp.ClientSession() as session:

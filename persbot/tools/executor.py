@@ -150,9 +150,7 @@ class ToolExecutor:
         try:
             # Check for cancellation before executing tool
             if cancel_event and cancel_event.is_set():
-                logger.info(
-                    "Tool execution aborted due to cancellation signal before tool execution"
-                )
+                logger.debug("Tool execution aborted")
                 return ToolResult(
                     success=False,
                     error=f"Tool '{tool.name}' execution aborted by user",

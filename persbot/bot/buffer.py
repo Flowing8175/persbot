@@ -100,7 +100,7 @@ class MessageBuffer:
         if delay < 0:
             raise ValueError("Delay must be non-negative")
         self.default_delay = delay
-        logger.info(f"Buffer delay updated to {delay}s")
+        logger.debug(f"Buffer delay updated to {delay}s")
 
     async def _process_buffer(
         self,
@@ -119,7 +119,7 @@ class MessageBuffer:
             self.tasks.pop(channel_id, None)
 
             if messages:
-                logger.info(
+                logger.debug(
                     f"Processing batch of {len(messages)} messages for channel {channel_id} (waited {delay:.1f}s)"
                 )
                 await callback(messages)

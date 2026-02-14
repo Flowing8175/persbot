@@ -129,7 +129,7 @@ class ModelUsageService:
         today_str = now_kst.strftime("%Y-%m-%d")
 
         if self.usage_data.get("date") != today_str:
-            logger.info(f"Resetting model usage stats for new day: {today_str}")
+            logger.debug(f"Resetting model usage stats for new day: {today_str}")
             self.usage_data = {"date": today_str, "usage": {}}
 
     def _get_usage_key(self, model_def: ModelDefinition, guild_id: int) -> str:
@@ -176,7 +176,7 @@ class ModelUsageService:
             else:
                 # Limit reached
                 if model_def.fallback_alias:
-                    logger.info(
+                    logger.debug(
                         f"Usage limit reached for {current_alias} (Key: {usage_key}). Falling back to {model_def.fallback_alias}."
                     )
 

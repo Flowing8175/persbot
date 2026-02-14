@@ -81,14 +81,14 @@ async def send_split_response(
         if reply.images:
             for img_bytes in reply.images:
                 async with channel.typing():
-                    img_file = discord.File(io.BytesIO(img_bytes), filename="generated_image.png")
+                    img_file = discord.File(fp=io.BytesIO(img_bytes), filename="generated_image.png")
                     img_msg = await channel.send(file=img_file)
 
                     # Link image message to session
                     session_manager.link_message_to_session(str(img_msg.id), reply.session_key)
 
     except asyncio.CancelledError:
-        logger.info(f"Sending interrupted for channel {channel.id}.")
+        logger.debug(f"Sending interrupted for channel {channel.id}.")
         raise  # Re-raise to signal cancellation
 
 
@@ -144,7 +144,7 @@ async def send_with_images(
     # Send images
     for i, img_bytes in enumerate(images):
         async with channel.typing():
-            img_file = discord.File(io.BytesIO(img_bytes), filename=f"generated_image_{i}.png")
+            img_file = discord.File(fp=io.BytesIO(img_bytes), filename="generated_image_{}.png".format(i))
             img_msg = await channel.send(file=img_file)
             session_manager.link_message_to_session(str(img_msg.id), session_key)
             sent_messages.append(img_msg)
@@ -217,7 +217,7 @@ async def send_streaming_response(
         )
 
     except asyncio.CancelledError:
-        logger.info("Streaming response interrupted for channel %s", channel.id)
+        logger.debug("Streaming response interrupted for channel %s", channel.id)
         raise
 
     return sent_messages

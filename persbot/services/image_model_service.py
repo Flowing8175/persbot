@@ -58,7 +58,7 @@ def _load_image_models():
                     except ValueError:
                         logger.warning(f"Invalid channel ID in preferences: {channel_id_str}")
 
-                logger.info(
+                logger.debug(
                     f"Loaded {len(_image_models_cache)} image models, "
                     f"default: {_default_image_model}"
                 )
@@ -152,7 +152,7 @@ def set_channel_image_model(channel_id: int, model_name: str) -> bool:
         True if successful.
     """
     _channel_image_preferences[channel_id] = model_name
-    logger.info("Set image model for channel %d to %s", channel_id, model_name)
+    logger.debug("Set image model for channel %d to %s", channel_id, model_name)
     _save_preferences()
     return True
 
@@ -179,7 +179,7 @@ def clear_channel_image_model(channel_id: int) -> None:
     """
     if channel_id in _channel_image_preferences:
         del _channel_image_preferences[channel_id]
-        logger.info("Cleared image model preference for channel %d", channel_id)
+        logger.debug("Cleared image model preference for channel %d", channel_id)
         _save_preferences()
 
 

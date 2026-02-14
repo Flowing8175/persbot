@@ -183,11 +183,11 @@ async def create_chat_reply(
 
         # Check for cancellation before starting tool execution
         if cancel_event and cancel_event.is_set():
-            logger.info("Tool execution loop aborted due to cancellation signal")
+            logger.debug("Tool execution loop aborted")
             function_calls = None  # Prevent the loop from executing
         else:
             while function_calls and tool_rounds < max_tool_rounds:
-                logger.info(
+                logger.debug(
                     "Detected %d function calls in response (round %d)",
                     len(function_calls),
                     tool_rounds + 1,
@@ -208,7 +208,7 @@ async def create_chat_reply(
                     results = await tool_manager.execute_tools(
                         function_calls, primary_msg, cancel_event
                     )
-                    logger.info(
+                    logger.debug(
                         "Executed %d tools: %s",
                         len(results),
                         [r.get("name") for r in results],
@@ -340,7 +340,7 @@ async def send_split_response(
                     session_manager.link_message_to_session(str(img_msg.id), reply.session_key)
 
     except asyncio.CancelledError:
-        logger.info(f"Sending interrupted for channel {channel.id}.")
+        logger.debug(f"Sending interrupted for channel {channel.id}.")
         raise  # Re-raise to signal cancellation
 
 
@@ -465,7 +465,7 @@ async def send_streaming_response(
         )
 
     except asyncio.CancelledError:
-        logger.info("Streaming response interrupted for channel %s", channel.id)
+        logger.debug("Streaming response interrupted for channel %s", channel.id)
         raise
 
     return sent_messages

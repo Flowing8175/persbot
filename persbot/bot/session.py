@@ -123,14 +123,14 @@ class SessionManager:
 
         # Store preference permanently for this runtime (handles cases where session doesn't exist yet)
         self.channel_model_preferences[channel_id] = model_alias
-        logger.info(f"Updated channel {channel_id} model preference to {model_alias}")
+        logger.debug(f"Updated channel {channel_id} model preference to {model_alias}")
 
         # We only update the context. This forces get_or_create to detect a mismatch
         # with the active session (if any) and trigger a recreation/model switch
         # on the next interaction.
         if session_key in self.session_contexts:
             self.session_contexts[session_key].model_alias = model_alias
-            logger.info(f"Updated session context {session_key} preference to {model_alias}")
+            logger.debug(f"Updated session context {session_key} preference to {model_alias}")
 
     async def get_or_create(
         self,
@@ -203,7 +203,7 @@ class SessionManager:
     ) -> bool:
         """Check if existing session is compatible with target model. Returns False if needs reset."""
         if session.model_alias != target_alias:
-            logger.info(
+            logger.debug(
                 f"Session {session_key} model alias changed from {session.model_alias} to {target_alias}. Resetting session."
             )
             return False
@@ -240,7 +240,7 @@ class SessionManager:
         model_alias: str,
     ) -> Tuple[object, str]:
         """Create a new chat session."""
-        logger.info(
+        logger.debug(
             f"Creating new session {session_key} for user {user_id} with model {model_alias}"
         )
 
@@ -294,7 +294,7 @@ class SessionManager:
             removed = True
 
         if removed:
-            logger.info("Session %s reset for channel %s", session_key, channel_id)
+            logger.debug("Session %s reset for channel %s", session_key, channel_id)
 
         return removed
 
@@ -421,7 +421,7 @@ class SessionManager:
                 await asyncio.sleep(cleanup_interval)
                 await self._cleanup_inactive_sessions()
             except asyncio.CancelledError:
-                logger.info("Session cleanup task cancelled")
+                logger.debug("Session cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error during session cleanup: {e}", exc_info=True)
@@ -455,6 +455,6 @@ class SessionManager:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                logger.info("Session cleanup task cancelled during shutdown")
+                logger.debug("Session cleanup task cancelled during shutdown")
         self.sessions.clear()
         self.session_contexts.clear()

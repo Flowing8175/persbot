@@ -190,28 +190,20 @@ def cancel_channel_tasks(
 
     # Trigger cancellation signal to abort LLM API calls
     if cancellation_signals and channel_id in cancellation_signals:
-        logger.info(
-            "%s triggered abort signal for channel #%s",
-            reason,
-            channel_name,
-        )
+        logger.debug("%s triggered abort signal for channel #%s", reason, channel_name)
         cancellation_signals[channel_id].set()
 
     if channel_id in processing_tasks:
         task = processing_tasks[channel_id]
         if not task.done():
-            logger.info(
-                "%s interrupted active processing in channel #%s",
-                reason,
-                channel_name,
-            )
+            logger.debug("%s interrupted active processing in #%s", reason, channel_name)
             task.cancel()
             cancelled = True
 
     if channel_id in sending_tasks:
         task = sending_tasks[channel_id]
         if not task.done():
-            logger.info("%s interrupted active sending in channel #%s", reason, channel_name)
+            logger.debug("%s interrupted active sending in #%s", reason, channel_name)
             task.cancel()
             cancelled = True
 

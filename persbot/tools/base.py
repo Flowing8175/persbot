@@ -184,12 +184,26 @@ class ToolDefinition:
                 "google.genai is not installed. Please install it to use Gemini format."
             )
 
+        # Map string type names to genai_types.Type enum values
+        type_map = {
+            "string": genai_types.Type.STRING,
+            "integer": genai_types.Type.INTEGER,
+            "number": genai_types.Type.NUMBER,
+            "boolean": genai_types.Type.BOOLEAN,
+            "array": genai_types.Type.ARRAY,
+            "object": genai_types.Type.OBJECT,
+        }
+
+        def get_schema_type(type_str: str) -> genai_types.Type:
+            """Convert string type to genai_types.Type enum."""
+            return type_map.get(type_str.lower(), genai_types.Type.STRING)
+
         properties = {}
         required = []
 
         for param in self.parameters:
             prop_def = genai_types.Schema(
-                type=param.type,
+                type=get_schema_type(param.type),
                 description=param.description,
             )
             if param.enum:
@@ -197,7 +211,7 @@ class ToolDefinition:
             if param.default is not None:
                 prop_def.default = param.default
             if param.type == "array" and param.items_type:
-                prop_def.items = genai_types.Schema(type=param.items_type)
+                prop_def.items = genai_types.Schema(type=get_schema_type(param.items_type))
 
             properties[param.name] = prop_def
             if param.required:
@@ -207,7 +221,7 @@ class ToolDefinition:
             name=self.name,
             description=self.description,
             parameters=genai_types.Schema(
-                type="object",
+                type=genai_types.Type.OBJECT,
                 properties=properties,
                 required=required,
             ),

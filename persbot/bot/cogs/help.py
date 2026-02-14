@@ -107,7 +107,7 @@ class HelpCog(commands.Cog):
             )
 
             await ctx.reply(embed=embed, mention_author=False)
-            logger.info(f"Help command requested by {ctx.author.name}")
+            logger.debug(f"Help command requested by {ctx.author.name}")
 
         except Exception as e:
             logger.error(f"Failed to show help: {e}")

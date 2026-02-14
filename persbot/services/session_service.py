@@ -165,7 +165,7 @@ class SessionService:
         self._sessions[session_key] = new_session
         self._evict_if_needed()
 
-        logger.info(f"Created new session: {session_key}")
+        logger.debug(f"Created new session: {session_key}")
         return chat_object, True
 
     def remove_session(self, session_key: str) -> bool:
@@ -179,7 +179,7 @@ class SessionService:
         """
         session = self._sessions.pop(session_key, None)
         if session:
-            logger.info(f"Removed session: {session_key}")
+            logger.debug(f"Removed session: {session_key}")
             return True
         return False
 
@@ -195,7 +195,7 @@ class SessionService:
             self._sessions.pop(key)
 
         if to_remove:
-            logger.info(f"Cleaned up {len(to_remove)} stale sessions")
+            logger.debug(f"Cleaned up {len(to_remove)} stale sessions")
 
         return len(to_remove)
 
@@ -218,7 +218,7 @@ class SessionService:
             prompt: The prompt content.
         """
         self._channel_prompts[channel_id] = prompt
-        logger.info(f"Set custom prompt for channel {channel_id}")
+        logger.debug(f"Set custom prompt for channel {channel_id}")
 
     def get_channel_model(self, channel_id: int) -> Optional[str]:
         """Get preferred model for a channel.
@@ -239,7 +239,7 @@ class SessionService:
             model_alias: The model alias.
         """
         self._channel_models[channel_id] = model_alias
-        logger.info(f"Set model {model_alias} for channel {channel_id}")
+        logger.debug(f"Set model {model_alias} for channel {channel_id}")
 
     def get_all_sessions(self) -> List[ChatSessionData]:
         """Get all active sessions.
@@ -274,7 +274,7 @@ class SessionService:
                 if removed > 0:
                     logger.info(f"Periodic cleanup: removed {removed} sessions")
             except asyncio.CancelledError:
-                logger.info("Session cleanup task cancelled")
+                logger.debug("Session cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error in session cleanup: {e}", exc_info=True)

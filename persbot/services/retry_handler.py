@@ -91,7 +91,7 @@ class RetryHandler(ABC):
         if delay <= 0:
             return
 
-        logger.info("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
+        logger.debug("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
         sent_message: Optional[discord.Message] = None
 
         remaining = int(delay)
@@ -112,11 +112,11 @@ class RetryHandler(ABC):
                         await sent_message.edit(content=countdown_message)
                     except discord.HTTPException:
                         pass
-                logger.info(countdown_message)
+                logger.debug(countdown_message)
 
             # Check for cancellation before sleep
             if cancel_event and cancel_event.is_set():
-                logger.info("Rate limit wait aborted due to cancellation signal")
+                logger.debug("Rate limit wait aborted")
                 if sent_message:
                     try:
                         await sent_message.delete()
@@ -181,8 +181,8 @@ class RetryHandler(ABC):
             # Check for cancellation at the start of each retry iteration
             # This ensures immediate cancellation when new message arrives
             if cancel_event and cancel_event.is_set():
-                logger.info(
-                    "API call aborted due to cancellation signal at start of retry iteration %d",
+                logger.debug(
+                    "API call aborted at start of retry iteration %d",
                     attempt,
                 )
                 raise asyncio.CancelledError("LLM API call aborted by user")
@@ -206,8 +206,8 @@ class RetryHandler(ABC):
 
             except asyncio.CancelledError:
                 # Re-raise cancellation immediately - don't retry
-                logger.info(
-                    "API call cancelled via asyncio task cancellation (attempt %d)", attempt
+                logger.debug(
+                    "API call cancelled via task cancellation (attempt %d)", attempt
                 )
                 raise
 
@@ -220,7 +220,7 @@ class RetryHandler(ABC):
                 )
 
                 if attempt < self.config.max_retries:
-                    logger.info("API 타임아웃, 재시도 중...")
+                    logger.debug("API 타임아웃, 재시도 중...")
                     continue
                 break
 
@@ -241,7 +241,7 @@ class RetryHandler(ABC):
                 if self._is_rate_limit_error(e):
                     # Try fallback call if provided
                     if fallback_call is not None:
-                        logger.info("Rate limit detected, trying fallback API...")
+                        logger.debug("Rate limit detected, trying fallback API...")
                         try:
                             fallback_response = await asyncio.wait_for(
                                 self._execute_with_timeout(fallback_call),
@@ -266,11 +266,11 @@ class RetryHandler(ABC):
                     break
 
                 backoff = self._calculate_backoff(attempt)
-                logger.info("에러 발생, %.1f초 후 재시도", backoff)
+                logger.debug("에러 발생, %.1f초 후 재시도", backoff)
 
                 # Check for cancellation before backoff sleep
                 if cancel_event and cancel_event.is_set():
-                    logger.info("Retry loop aborted due to cancellation signal during backoff")
+                    logger.debug("Retry loop aborted during backoff")
                     raise asyncio.CancelledError("LLM API call aborted by user")
 
                 await asyncio.sleep(backoff)

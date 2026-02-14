@@ -770,7 +770,7 @@ class LLMService:
             if hasattr(backend, "reload_parameters"):
                 backend.reload_parameters()
 
-        logger.info(
+        logger.debug(
             "Updated parameters: temperature=%s, top_p=%s, thinking_budget=%s",
             self.config.temperature,
             self.config.top_p,

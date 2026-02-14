@@ -278,7 +278,7 @@ def load_config() -> AppConfig:
     # If using OpenAI and a fine-tuned model is specified, override the assistant model
     if assistant_llm_provider == "openai" and openai_finetuned_model:
         assistant_model_name = openai_finetuned_model
-        logger.info("OpenAI Fine-tuned model selected: %s", assistant_model_name)
+        logger.debug("OpenAI Fine-tuned model selected: %s", assistant_model_name)
 
     summarizer_model_name = _resolve_model_name(summarizer_llm_provider, role="summary")
 

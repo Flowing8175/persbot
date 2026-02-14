@@ -210,20 +210,20 @@ class RetryService:
         for attempt in range(1, effective_policy.max_retries + 1):
             # Check for cancellation before attempt
             if cancel_event and cancel_event.is_set():
-                logger.info(f"{operation_name} cancelled before attempt {attempt}")
+                logger.debug(f"{operation_name} cancelled before attempt {attempt}")
                 raise asyncio.CancelledError(f"{operation_name} cancelled")
 
             try:
                 result = await func()
                 if attempt > 1:
-                    logger.info(
+                    logger.debug(
                         f"{operation_name} succeeded on attempt {attempt}/{effective_policy.max_retries}"
                     )
                 return result
 
             except asyncio.CancelledError:
                 # Always propagate cancellation
-                logger.info(f"{operation_name} cancelled on attempt {attempt}")
+                logger.debug(f"{operation_name} cancelled on attempt {attempt}")
                 raise
 
             except Exception as e:
@@ -259,7 +259,7 @@ class RetryService:
                         timeout=delay + 1,
                     )
                 except asyncio.CancelledError:
-                    logger.info(f"{operation_name} cancelled during backoff")
+                    logger.debug(f"{operation_name} cancelled during backoff")
                     raise
 
         # All retries exhausted

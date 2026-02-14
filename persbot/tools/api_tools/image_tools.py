@@ -182,7 +182,7 @@ async def generate_image(
 
     # Check for cancellation before starting
     if cancel_event and cancel_event.is_set():
-        logger.info("Image generation aborted due to cancellation signal before API call")
+        logger.debug("Image generation aborted before API call")
         return ToolResult(success=False, error="Image generation aborted by user")
 
     # Process image reference with priority:
@@ -255,7 +255,7 @@ async def generate_image(
         )
 
     except asyncio.CancelledError:
-        logger.info("Image generation cancelled by user")
+        logger.debug("Image generation cancelled")
         return ToolResult(success=False, error="Image generation aborted by user")
     except ImageGenerationError as e:
         logger.error("Image generation error: %s", e)

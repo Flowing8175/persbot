@@ -309,7 +309,7 @@ def process_image_sync(image_data: bytes, filename: str) -> bytes:
                 new_width = int(width * ratio)
                 new_height = int(height * ratio)
 
-                logger.info(
+                logger.debug(
                     "Downscaling image %s from %dx%d to %dx%d",
                     filename,
                     width,

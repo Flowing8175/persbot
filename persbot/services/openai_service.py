@@ -57,7 +57,7 @@ class OpenAIService(BaseLLMServiceCore):
             self._assistant_model_name,
             self.prompt_service.get_active_assistant_prompt(),
         )
-        logger.info("OpenAI 모델 '%s' 준비 완료.", self._assistant_model_name)
+        logger.debug("OpenAI 모델 '%s' 준비 완료.", self._assistant_model_name)
 
     def _create_retry_handler(self) -> OpenAIRetryHandler:
         """Create retry handler for OpenAI API."""
@@ -108,7 +108,7 @@ class OpenAIService(BaseLLMServiceCore):
     def reload_parameters(self) -> None:
         """Reload parameters by clearing the assistant cache."""
         self._assistant_cache.clear()
-        logger.info("OpenAI assistant cache cleared to apply new parameters.")
+        logger.debug("OpenAI assistant cache cleared to apply new parameters.")
 
     def get_user_role_name(self) -> str:
         """Return the role name for user messages."""
@@ -234,7 +234,7 @@ class OpenAIService(BaseLLMServiceCore):
 
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Summary API call aborted due to cancellation signal")
+            logger.debug("Summary API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         prompt = f"Discord 대화 내용:\n{text}"
@@ -270,7 +270,7 @@ class OpenAIService(BaseLLMServiceCore):
         """Generate a chat response."""
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("API call aborted due to cancellation signal")
+            logger.debug("API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -288,11 +288,7 @@ class OpenAIService(BaseLLMServiceCore):
         # Check for model switch
         current_model_name = getattr(chat_session, "_model_name", None)
         if model_name and current_model_name != model_name:
-            logger.info(
-                "Switching OpenAI chat session model from %s to %s",
-                current_model_name,
-                model_name,
-            )
+            logger.debug("Model: %s → %s", current_model_name, model_name)
             chat_session._model_name = model_name
 
         # Extract images from message(s) - supports both single and list of messages
@@ -353,7 +349,7 @@ class OpenAIService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Streaming API call aborted due to cancellation signal")
+            logger.debug("Streaming API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -371,11 +367,7 @@ class OpenAIService(BaseLLMServiceCore):
         # Check for model switch
         current_model_name = getattr(chat_session, "_model_name", None)
         if model_name and current_model_name != model_name:
-            logger.info(
-                "Switching OpenAI chat session model from %s to %s",
-                current_model_name,
-                model_name,
-            )
+            logger.debug("Model: %s → %s", current_model_name, model_name)
             chat_session._model_name = model_name
 
         # Extract images from message(s) - supports both single and list of messages
@@ -435,7 +427,7 @@ class OpenAIService(BaseLLMServiceCore):
                 while True:
                     # Check for cancellation
                     if cancel_event and cancel_event.is_set():
-                        logger.info("Streaming aborted due to cancellation signal")
+                        logger.debug("Streaming aborted")
                         stream.close()
                         raise asyncio.CancelledError("LLM streaming aborted by user")
 
@@ -488,7 +480,7 @@ class OpenAIService(BaseLLMServiceCore):
                 yield buffer
 
         except asyncio.CancelledError:
-            logger.info("Streaming response cancelled")
+            logger.debug("Streaming response cancelled")
             raise
 
         # Update history with the full conversation
@@ -518,7 +510,7 @@ class OpenAIService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Tool results API call aborted due to cancellation signal")
+            logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None

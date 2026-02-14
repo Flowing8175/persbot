@@ -115,7 +115,7 @@ class ToolRegistry:
         tool = self._tools.get(tool_name)
         if tool:
             tool.enabled = enabled
-            logger.info("Tool %s %s", tool_name, "enabled" if enabled else "disabled")
+            logger.debug("Tool %s %s", tool_name, "enabled" if enabled else "disabled")
             return True
         return False
 

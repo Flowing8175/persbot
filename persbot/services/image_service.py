@@ -142,7 +142,7 @@ class ImageService(BaseLLMService):
         """
         # Check cancellation event before starting
         if cancel_event and cancel_event.is_set():
-            logger.info("Image generation aborted due to cancellation signal before API call")
+            logger.debug("Image generation aborted before API call")
             raise asyncio.CancelledError("Image generation aborted by user")
 
         if not prompt or not prompt.strip():
@@ -171,7 +171,7 @@ class ImageService(BaseLLMService):
 
         # Check for cancellation before API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Image generation aborted due to cancellation signal before API call")
+            logger.debug("Image generation aborted before API call")
             raise asyncio.CancelledError("Image generation aborted by user")
 
         # Build image config with aspect_ratio
@@ -217,7 +217,7 @@ class ImageService(BaseLLMService):
             return (image_bytes, image_format)
 
         except asyncio.CancelledError:
-            logger.info("Image generation cancelled by user (prompt_hash=%s)", prompt_hash)
+            logger.debug("Image generation cancelled (prompt_hash=%s)", prompt_hash)
             raise
         except Exception as e:
             logger.error(
@@ -377,7 +377,7 @@ class ImageService(BaseLLMService):
         """
         # Check for cancellation before fetching
         if cancel_event and cancel_event.is_set():
-            logger.info("Image fetch aborted due to cancellation signal before fetch")
+            logger.debug("Image fetch aborted before fetch")
             raise asyncio.CancelledError("Image fetch aborted by user")
 
         try:
@@ -395,7 +395,7 @@ class ImageService(BaseLLMService):
                     return image_bytes
 
         except asyncio.CancelledError:
-            logger.info("Image fetch cancelled by user")
+            logger.debug("Image fetch cancelled")
             raise
         except Exception as e:
             logger.error("Failed to fetch image from URL: %s", e)

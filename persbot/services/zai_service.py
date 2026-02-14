@@ -65,7 +65,7 @@ class ZAIService(BaseLLMServiceCore):
             self.prompt_service.get_active_assistant_prompt(),
         )
         api_type = "Coding Plan" if self.config.zai_coding_plan else "Standard"
-        logger.info(
+        logger.debug(
             "Z.AI %s API 모델 '%s' 준비 완료 (endpoint: %s)",
             api_type,
             self._assistant_model_name,
@@ -102,7 +102,7 @@ class ZAIService(BaseLLMServiceCore):
         """Reload parameters by clearing assistant cache."""
         self._assistant_cache.clear()
         api_type = "Coding Plan" if self.config.zai_coding_plan else "Standard"
-        logger.info("Z.AI %s API assistant cache cleared to apply new parameters.", api_type)
+        logger.debug("Z.AI %s API cache cleared to apply new parameters.", api_type)
 
     def get_user_role_name(self) -> str:
         """Return role name for user messages."""
@@ -118,8 +118,8 @@ class ZAIService(BaseLLMServiceCore):
         GLM-4.7 doesn't support vision, so we auto-switch to glm-4.6v when images are detected.
         """
         if has_images and model_name in NON_VISION_MODELS:
-            logger.info(
-                "📷 이미지가 감지되어 비전 모델(%s)로 자동 전환합니다: %s -> %s",
+            logger.debug(
+                "📷 이미지 감지 → 비전 모델(%s)로 전환: %s -> %s",
                 VISION_MODEL,
                 model_name,
                 VISION_MODEL,
@@ -214,7 +214,7 @@ class ZAIService(BaseLLMServiceCore):
 
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Summary API call aborted due to cancellation signal")
+            logger.debug("Summary API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         prompt = f"Discord 대화 내용:\n{text}"
@@ -247,7 +247,7 @@ class ZAIService(BaseLLMServiceCore):
         """Generate chat response."""
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("API call aborted due to cancellation signal")
+            logger.debug("API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -276,11 +276,7 @@ class ZAIService(BaseLLMServiceCore):
         # Check for model switch
         current_model_name = getattr(chat_session, "_model_name", None)
         if actual_model and current_model_name != actual_model:
-            logger.info(
-                "Switching Z.AI chat session model from %s to %s",
-                current_model_name,
-                actual_model,
-            )
+            logger.debug("Model: %s → %s", current_model_name, actual_model)
             chat_session._model_name = actual_model
 
         # Convert tools to Z.AI (OpenAI-compatible) format if provided
@@ -338,7 +334,7 @@ class ZAIService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Streaming API call aborted due to cancellation signal")
+            logger.debug("Streaming API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -367,11 +363,7 @@ class ZAIService(BaseLLMServiceCore):
         # Check for model switch
         current_model_name = getattr(chat_session, "_model_name", None)
         if actual_model and current_model_name != actual_model:
-            logger.info(
-                "Switching Z.AI chat session model from %s to %s",
-                current_model_name,
-                actual_model,
-            )
+            logger.debug("Model: %s → %s", current_model_name, actual_model)
             chat_session._model_name = actual_model
 
         # Convert tools to Z.AI format if provided
@@ -396,7 +388,7 @@ class ZAIService(BaseLLMServiceCore):
             for chunk in stream:
                 # Check for cancellation
                 if cancel_event and cancel_event.is_set():
-                    logger.info("Streaming aborted due to cancellation signal")
+                    logger.debug("Streaming aborted")
                     stream.close()
                     raise asyncio.CancelledError("LLM streaming aborted by user")
 
@@ -452,7 +444,7 @@ class ZAIService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.info("Tool results API call aborted due to cancellation signal")
+            logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None

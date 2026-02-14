@@ -216,7 +216,7 @@ class AssistantCog(BaseChatCog):
         # Send appropriate response
         if aborted:
             await utils.send_abort_success(ctx)
-            logger.info("User %s requested abort in channel %s", ctx.author.name, channel_id)
+            logger.debug("🛑 %s stopped the bot in #%s", ctx.author.name, ctx.channel.name)
         else:
             await utils.send_abort_no_tasks(ctx)
 

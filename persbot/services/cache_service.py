@@ -289,7 +289,7 @@ class GeminiCacheStrategy(CacheStrategy):
             token_count = count_result.total_tokens
 
             if token_count < min_tokens:
-                logger.info(f"Cache skipped: tokens ({token_count}) < min_tokens ({min_tokens})")
+                logger.debug(f"Cache skipped: tokens ({token_count}) < min_tokens ({min_tokens})")
                 return CacheResult(success=False, error="Token count below minimum")
 
             # Search for existing cache
@@ -303,7 +303,7 @@ class GeminiCacheStrategy(CacheStrategy):
                             name=cache.name,
                             config={"ttl": f"{ttl_seconds}s"},
                         )
-                        logger.info(f"Refreshed existing cache: {cache.name}")
+                        logger.debug(f"Refreshed existing cache: {cache.name}")
                         entry = CacheEntry(
                             name=cache.name,
                             display_name=display_name,
@@ -326,7 +326,7 @@ class GeminiCacheStrategy(CacheStrategy):
                         # Continue to create new cache
 
             # Create new cache
-            logger.info(f"Creating new cache '{display_name}'...")
+            logger.debug(f"Creating new cache '{display_name}'...")
             cache = await asyncio.to_thread(
                 self.client.caches.create,
                 model=model,
@@ -507,7 +507,7 @@ class CacheService:
                         if removed > 0:
                             logger.info(f"Periodic cleanup: removed {removed} expired entries")
                 except asyncio.CancelledError:
-                    logger.info("Periodic cleanup task cancelled")
+                    logger.debug("Periodic cleanup task cancelled")
                     break
                 except Exception as e:
                     logger.error(f"Error in periodic cleanup: {e}", exc_info=True)

@@ -122,7 +122,7 @@ class SlidingWindowRateLimiter:
             wait_time = oldest_request + self.window_seconds - current_time
 
             if wait_time > 0:
-                logger.info(
+                logger.debug(
                     "Rate limit: waiting %.2fs for key=%s",
                     wait_time,
                     key,
@@ -293,7 +293,7 @@ class TokenBucketRateLimiter:
             tokens_needed = tokens - token_count
             wait_time = tokens_needed / self.refill_rate
 
-            logger.info(
+            logger.debug(
                 "Token bucket: waiting %.2fs for key=%s (need %.1f more tokens)",
                 wait_time,
                 key,

@@ -113,7 +113,7 @@ async def inspect_external_content(
 
     # Check for cancellation before HTTP request
     if cancel_event and cancel_event.is_set():
-        logger.info("Web content inspection aborted due to cancellation signal before HTTP call")
+        logger.debug("Web content inspection aborted before HTTP call")
         return ToolResult(success=False, error="Web content inspection aborted by user")
 
     try:
@@ -171,7 +171,7 @@ async def _inspect_web_page(url: str) -> ToolResult:
         )
 
     except asyncio.CancelledError:
-        logger.info("Web content inspection cancelled by user")
+        logger.debug("Web content inspection cancelled")
         return ToolResult(success=False, error="Web content inspection aborted by user")
     except aiohttp.ClientError as e:
         logger.error("HTTP client error: %s", e)
@@ -198,9 +198,7 @@ async def _inspect_youtube_content(
     """
     # Check for cancellation before HTTP request
     if cancel_event and cancel_event.is_set():
-        logger.info(
-            "YouTube content inspection aborted due to cancellation signal before HTTP call"
-        )
+        logger.debug("YouTube content inspection aborted before HTTP call")
         return ToolResult(success=False, error="YouTube content inspection aborted by user")
 
     # Try to get video info via YouTube's oEmbed endpoint (no API key needed)
@@ -226,7 +224,7 @@ async def _inspect_youtube_content(
                     )
 
     except asyncio.CancelledError:
-        logger.info("YouTube content inspection cancelled by user")
+        logger.debug("YouTube content inspection cancelled")
         return ToolResult(success=False, error="YouTube content inspection aborted by user")
     except Exception as e:
         logger.debug("YouTube oEmbed failed: %s", e)

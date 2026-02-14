@@ -251,7 +251,7 @@ class AutoChannelCog(BaseChatCog):
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.info("Undo interrupted active processing in #%s", ctx.channel.name)
+                logger.debug("Undo interrupted processing in #%s", ctx.channel.name)
                 task.cancel()
 
                 # Delete pending messages
@@ -268,7 +268,7 @@ class AutoChannelCog(BaseChatCog):
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
-                logger.info("Undo interrupted active sending in #%s", ctx.channel.name)
+                logger.debug("Undo interrupted sending in #%s", ctx.channel.name)
                 task.cancel()
 
         return undo_performed, num_to_undo
