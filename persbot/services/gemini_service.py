@@ -168,17 +168,10 @@ class GeminiService(BaseLLMServiceCore):
             return cached
 
         # Configure tools and caching
-        # Combine provided tools with search tools if they exist
+        # Combine provided tools with search tools using the helper
         search_tools = self._get_search_tools(model_name)
-        effective_tools = []
-
-        # Add custom tools if provided
-        if tools is not None:
-            effective_tools.extend(GeminiToolAdapter.convert_tools(tools))
-
-        # Add search tools if they exist and aren't already included
-        if search_tools:
-            effective_tools.extend(search_tools)
+        custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
+        effective_tools = self._combine_tools(custom_tools, search_tools)
 
         cache_name, cache_expiration = self._resolve_gemini_cache(
             model_name, system_instruction, effective_tools, use_cache
@@ -210,6 +203,42 @@ class GeminiService(BaseLLMServiceCore):
         """Get Google Search tools for Gemini models."""
         # All Gemini models support search tools
         return [genai_types.Tool(google_search=genai_types.GoogleSearch())]
+
+    def _combine_tools(
+        self,
+        custom_tools: Optional[list],
+        search_tools: Optional[list],
+    ) -> Optional[list]:
+        """Combine custom function tools with Google Search into a single Tool object.
+
+        Gemini API requires all tools to be combined into a single Tool object
+        when using both function_declarations and google_search together.
+        """
+        if not custom_tools and not search_tools:
+            return None
+
+        # Extract all function declarations from custom tools
+        all_function_declarations = []
+        for tool in custom_tools or []:
+            if hasattr(tool, "function_declarations") and tool.function_declarations:
+                all_function_declarations.extend(tool.function_declarations)
+
+        # Check if we have search tools
+        has_google_search = any(
+            hasattr(tool, "google_search") and tool.google_search is not None
+            for tool in (search_tools or [])
+        )
+
+        if all_function_declarations or has_google_search:
+            # Combine into a single Tool object
+            return [
+                genai_types.Tool(
+                    function_declarations=all_function_declarations if all_function_declarations else None,
+                    google_search=genai_types.GoogleSearch() if has_google_search else None,
+                )
+            ]
+
+        return None
 
     def _resolve_gemini_cache(
         self,
@@ -615,22 +644,11 @@ class GeminiService(BaseLLMServiceCore):
 
         try:
             # Convert custom tools to Gemini format if provided
-            custom_tools = []
-            if tools:
-                custom_tools = GeminiToolAdapter.convert_tools(tools)
+            custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
 
-            # Combine custom tools with search tools (for assistant model only)
-            # Always start with an empty list, then add both custom and search tools
-            final_tools = []
-
-            # Add custom tools if they exist
-            if custom_tools:
-                final_tools.extend(custom_tools)
-
-            # Add search tools for assistant model if not already added
+            # Combine custom tools with search tools using the helper
             search_tools = self._get_search_tools(model_name or self._assistant_model_name)
-            if search_tools:
-                final_tools.extend(search_tools)
+            final_tools = self._combine_tools(custom_tools, search_tools)
 
             # Check if we need to switch model for this session
             current_model_name = getattr(chat_session._factory, "_model_name", None)
@@ -777,18 +795,11 @@ class GeminiService(BaseLLMServiceCore):
         images = await self._extract_images_from_messages(discord_message)
 
         # Convert custom tools to Gemini format if provided
-        custom_tools = []
-        if tools:
-            custom_tools = GeminiToolAdapter.convert_tools(tools)
+        custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
 
-        # Combine custom tools with search tools
-        final_tools = []
-        if custom_tools:
-            final_tools.extend(custom_tools)
-
+        # Combine custom tools with search tools using the helper
         search_tools = self._get_search_tools(model_name or self._assistant_model_name)
-        if search_tools:
-            final_tools.extend(search_tools)
+        final_tools = self._combine_tools(custom_tools, search_tools)
 
         # Check if we need to switch model for this session
         current_model_name = getattr(chat_session._factory, "_model_name", None)
@@ -903,16 +914,11 @@ class GeminiService(BaseLLMServiceCore):
             logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
-        # Convert tools to Gemini format
-        final_tools = []
-        if tools:
-            custom_tools = GeminiToolAdapter.convert_tools(tools)
-            final_tools.extend(custom_tools)
-
+        # Convert tools to Gemini format and combine with search tools
+        custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
         model_name = getattr(chat_session._factory, "_model_name", self._assistant_model_name)
         search_tools = self._get_search_tools(model_name)
-        if search_tools:
-            final_tools.extend(search_tools)
+        final_tools = self._combine_tools(custom_tools, search_tools)
 
         result = await self.execute_with_retry(
             lambda: chat_session.send_tool_results(tool_rounds, tools=final_tools or None),
