@@ -114,6 +114,9 @@ class OpenAIMessage:
 class BaseOpenAISession:
     """Base class for OpenAI chat sessions."""
 
+    # Models that don't support top_p parameter
+    _MODELS_WITHOUT_TOP_P = frozenset(["gpt-5", "o1", "o3", "o4"])
+
     def __init__(
         self,
         client: OpenAI,
@@ -134,6 +137,11 @@ class BaseOpenAISession:
         self._service_tier = service_tier
         self._text_extractor = text_extractor or (lambda x: "")
         self._history: Deque[ChatMessage] = deque(maxlen=max_messages)
+
+    def _supports_top_p(self) -> bool:
+        """Check if the current model supports top_p parameter."""
+        model_lower = self._model_name.lower()
+        return not any(model_lower.startswith(prefix) for prefix in self._MODELS_WITHOUT_TOP_P)
 
     @property
     def history(self) -> List[ChatMessage]:
@@ -212,9 +220,10 @@ class ChatCompletionSession(BaseOpenAISession):
             "model": self._model_name,
             "messages": messages,
             "temperature": self._temperature,
-            "top_p": self._top_p,
             "service_tier": self._service_tier,
         }
+        if self._supports_top_p():
+            api_kwargs["top_p"] = self._top_p
 
         if tools:
             api_kwargs["tools"] = tools
@@ -253,10 +262,11 @@ class ChatCompletionSession(BaseOpenAISession):
             "model": self._model_name,
             "messages": messages,
             "temperature": self._temperature,
-            "top_p": self._top_p,
             "service_tier": self._service_tier,
             "stream": True,
         }
+        if self._supports_top_p():
+            api_kwargs["top_p"] = self._top_p
 
         if tools:
             api_kwargs["tools"] = tools
@@ -358,9 +368,10 @@ class ChatCompletionSession(BaseOpenAISession):
             "model": self._model_name,
             "messages": messages,
             "temperature": self._temperature,
-            "top_p": self._top_p,
             "service_tier": self._service_tier,
         }
+        if self._supports_top_p():
+            api_kwargs["top_p"] = self._top_p
         if tools:
             api_kwargs["tools"] = tools
 
@@ -441,9 +452,10 @@ class ResponseSession(BaseOpenAISession):
             "model": self._model_name,
             "input": current_payload,
             "temperature": self._temperature,
-            "top_p": self._top_p,
             "service_tier": self._service_tier,
         }
+        if self._supports_top_p():
+            api_kwargs["top_p"] = self._top_p
 
         if tools:
             api_kwargs["tools"] = tools
@@ -492,10 +504,11 @@ class ResponseSession(BaseOpenAISession):
             "model": self._model_name,
             "input": current_payload,
             "temperature": self._temperature,
-            "top_p": self._top_p,
             "service_tier": self._service_tier,
             "stream": True,
         }
+        if self._supports_top_p():
+            api_kwargs["top_p"] = self._top_p
 
         if tools:
             api_kwargs["tools"] = tools

@@ -31,6 +31,15 @@ logger = logging.getLogger(__name__)
 class OpenAIService(BaseLLMServiceCore):
     """OpenAI API와의 모든 상호작용을 관리합니다."""
 
+    # Models that don't support top_p parameter
+    _MODELS_WITHOUT_TOP_P = frozenset(["gpt-5", "o1", "o3", "o4"])
+
+    @staticmethod
+    def _supports_top_p(model_name: str) -> bool:
+        """Check if a model supports the top_p parameter."""
+        model_lower = model_name.lower()
+        return not any(model_lower.startswith(prefix) for prefix in OpenAIService._MODELS_WITHOUT_TOP_P)
+
     def __init__(
         self,
         config: AppConfig,
@@ -238,10 +247,11 @@ class OpenAIService(BaseLLMServiceCore):
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         prompt = f"Discord 대화 내용:\n{text}"
-        return await self.execute_with_retry(
-            lambda: self.client.chat.completions.create(
-                model=self._summary_model_name,
-                messages=[
+
+        def _create_summary_request():
+            api_kwargs = {
+                "model": self._summary_model_name,
+                "messages": [
                     {
                         "role": "system",
                         "content": self.prompt_service.get_summary_prompt(),
@@ -249,10 +259,15 @@ class OpenAIService(BaseLLMServiceCore):
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=getattr(self.config, "temperature", 1.0),
-                top_p=getattr(self.config, "top_p", 1.0),
-                service_tier=getattr(self.config, "service_tier", "flex"),
-            ),
+                "temperature": getattr(self.config, "temperature", 1.0),
+                "service_tier": getattr(self.config, "service_tier", "flex"),
+            }
+            if self._supports_top_p(self._summary_model_name):
+                api_kwargs["top_p"] = getattr(self.config, "top_p", 1.0)
+            return self.client.chat.completions.create(**api_kwargs)
+
+        return await self.execute_with_retry(
+            _create_summary_request,
             "요약",
             extract_text=self._extract_text_from_response,
             cancel_event=cancel_event,
