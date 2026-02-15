@@ -447,19 +447,23 @@ class GeminiService(BaseLLMServiceCore):
                 cached_tokens = getattr(metadata, "cached_content_token_count", 0)
                 total_tokens = getattr(metadata, "total_token_count", "unknown")
 
+                # Note: cached_content_token_count is only populated for EXPLICIT caching
+                # (via cached_content parameter). Implicit caching (automatic for Gemini 2.5+)
+                # reduces billing costs but doesn't appear in response metadata.
+
                 # Log token counts at INFO level for visibility (always show)
                 if cached_tokens and cached_tokens > 0:
                     savings_percent = (cached_tokens / prompt_tokens * 100) if isinstance(prompt_tokens, int) else 0
                     logger.info(
-                        "💰 Cache hit! %d/%d tokens cached (%.1f%% savings)",
+                        "💰 Explicit cache hit! %d/%d tokens cached (%.1f%% savings)",
                         cached_tokens,
                         prompt_tokens,
                         savings_percent,
                     )
                 else:
-                    # Log when NO cache hit to help diagnose caching issues
+                    # Log token usage - note that implicit caching savings appear in billing, not here
                     logger.info(
-                        "📊 Token usage: prompt=%s, cached=0, response=%s, total=%s",
+                        "📊 Token usage: prompt=%s, response=%s, total=%s (implicit caching savings in billing)",
                         prompt_tokens,
                         response_tokens,
                         total_tokens,
