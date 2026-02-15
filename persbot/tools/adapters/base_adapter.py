@@ -186,10 +186,21 @@ class OpenAIStyleAdapter(BaseToolAdapter):
 
     @staticmethod
     def convert_tools(tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
-        """Convert tool definitions to OpenAI format."""
+        """Convert tool definitions to OpenAI Chat Completions API format."""
         if not tools:
             return []
         return [tool.to_openai_format() for tool in tools if tool.enabled]
+
+    @staticmethod
+    def convert_tools_for_responses_api(tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
+        """Convert tool definitions to OpenAI Responses API format.
+
+        The Responses API expects a flatter format where name and parameters
+        are at the top level, not nested under 'function'.
+        """
+        if not tools:
+            return []
+        return [tool.to_openai_responses_format() for tool in tools if tool.enabled]
 
     @staticmethod
     def extract_function_calls(response: Any) -> List[Dict[str, Any]]:
