@@ -74,6 +74,32 @@ class BaseChatCog(commands.Cog):
         # Track active API calls for proper cancellation (per-channel)
         self.active_api_calls: dict[int, ActiveAPICall] = {}
 
+    async def check_guild_admin_permission(self, ctx: commands.Context) -> bool:
+        """Check if user has manage_guild permission.
+
+        Returns True if the check passes (user has permission or checks disabled).
+        Returns False and sends error message if check fails.
+
+        Usage:
+            if not await self.check_guild_admin_permission(ctx):
+                return
+        """
+        if self.config.no_check_permission:
+            return True
+        if not isinstance(ctx.author, discord.Member):
+            await ctx.reply(
+                "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                mention_author=False,
+            )
+            return False
+        if not ctx.author.guild_permissions.manage_guild:
+            await ctx.reply(
+                "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
+                mention_author=False,
+            )
+            return False
+        return True
+
     @abstractmethod
     async def _send_response(self, message: discord.Message, reply: ChatReply):
         """Send the generated reply to the channel. Must be implemented by subclasses."""

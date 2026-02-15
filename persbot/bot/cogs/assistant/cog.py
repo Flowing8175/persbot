@@ -178,17 +178,8 @@ class AssistantCog(BaseChatCog):
     )
     async def abort_command(self, ctx: commands.Context) -> None:
         """진행 중인 모든 메시지 전송 및 처리를 강제로 중단합니다."""
-        # Check permissions unless NO_CHECK_PERMISSION is set
-        if not self.config.no_check_permission:
-            if (
-                not isinstance(ctx.author, discord.Member)
-                or not ctx.author.guild_permissions.manage_guild
-            ):
-                await ctx.reply(
-                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
-                    mention_author=False,
-                )
-                return
+        if not await self.check_guild_admin_permission(ctx):
+            return
 
         channel_id = ctx.channel.id
 
@@ -244,17 +235,8 @@ class AssistantCog(BaseChatCog):
     @app_commands.describe(value="설정할 Temperature 값 (0.0~2.0)")
     async def set_temperature(self, ctx: commands.Context, value: Optional[float] = None) -> None:
         """LLM의 창의성(Temperature)을 설정합니다 (0.0~2.0)."""
-        # Check permissions unless NO_CHECK_PERMISSION is set
-        if not self.config.no_check_permission:
-            if (
-                not isinstance(ctx.author, discord.Member)
-                or not ctx.author.guild_permissions.manage_guild
-            ):
-                await ctx.reply(
-                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
-                    mention_author=False,
-                )
-                return
+        if not await self.check_guild_admin_permission(ctx):
+            return
 
         if value is None:
             current_temp = getattr(self.config, "temperature", 1.0)
@@ -279,17 +261,8 @@ class AssistantCog(BaseChatCog):
     @app_commands.describe(value="설정할 Top-P 값 (0.0~1.0)")
     async def set_top_p(self, ctx: commands.Context, value: Optional[float] = None) -> None:
         """LLM의 다양성(Top-P)을 설정합니다 (0.0~1.0)."""
-        # Check permissions unless NO_CHECK_PERMISSION is set
-        if not self.config.no_check_permission:
-            if (
-                not isinstance(ctx.author, discord.Member)
-                or not ctx.author.guild_permissions.manage_guild
-            ):
-                await ctx.reply(
-                    "❌ 이 명령어를 실행할 권한이 없습니다. (필요 권한: manage_guild)",
-                    mention_author=False,
-                )
-                return
+        if not await self.check_guild_admin_permission(ctx):
+            return
 
         if value is None:
             current_top_p = getattr(self.config, "top_p", 1.0)
