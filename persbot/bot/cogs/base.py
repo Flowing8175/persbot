@@ -233,10 +233,6 @@ class BaseChatCog(commands.Cog):
         def _cleanup(t) -> None:
             if self.sending_tasks.get(channel_id) == t:
                 self.sending_tasks.pop(channel_id, None)
-            # Also clean up active_batches if still present (handles stacking during send)
-            if channel_id in self.active_batches:
-                self.active_batches.pop(channel_id, None)
-                logger.debug(f"Cleaned up active_batches for channel {channel_id} after send completed")
 
         task.add_done_callback(_cleanup)
 
@@ -296,10 +292,7 @@ class BaseChatCog(commands.Cog):
         finally:
             if self.processing_tasks.get(channel_id) == current_task:
                 self.processing_tasks.pop(channel_id, None)
-                # Don't clear active_batches if sending is still happening - let send callback handle it
-                # This ensures messages are available for stacking during the send phase
-                if channel_id not in self.sending_tasks or self.sending_tasks[channel_id].done():
-                    self.active_batches.pop(channel_id, None)
+                self.active_batches.pop(channel_id, None)
                 self.cancellation_signals.pop(channel_id, None)
             # Ensure API call is cleaned up if still present
             self.active_api_calls.pop(channel_id, None)
@@ -385,18 +378,13 @@ class BaseChatCog(commands.Cog):
             self.cancellation_signals[channel_id].set()
 
         # Step 3: Cancel sending task if in break-cut mode
-        # Also check for messages to stack (handles case where API call finished but sending is ongoing)
-        if channel_id in self.sending_tasks:
+        if self.config.break_cut_mode and channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
                 logger.debug(
                     f"{message_type} from {author_name} interrupted sending in #{channel_id}"
                 )
-                if self.config.break_cut_mode:
-                    task.cancel()
-                # Get messages for stacking even if not cancelling (API done, but response still sending)
-                if not messages_to_prepend:
-                    messages_to_prepend = self.active_batches.get(channel_id, [])
+                task.cancel()
 
         # Step 4: Cancel the processing task itself
         if channel_id in self.processing_tasks:
