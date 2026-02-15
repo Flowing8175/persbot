@@ -3,7 +3,7 @@
 import io
 import logging
 import re
-from typing import Any, Optional, Union
+from typing import Any, Optional, Tuple, Union
 
 import discord
 from PIL import Image
@@ -18,6 +18,25 @@ ERROR_PERMISSION_DENIED = "❌ 권한이 없습니다."
 ERROR_INVALID_ARGUMENT = "❌ 잘못된 인자입니다."
 
 logger = logging.getLogger(__name__)
+
+
+def extract_message_metadata(
+    discord_message: Union[discord.Message, list[discord.Message]]
+) -> Tuple[int, int, int, discord.abc.User]:
+    """Extract user_id, channel_id, guild_id, and author from message(s).
+
+    Args:
+        discord_message: Single message or list of messages.
+
+    Returns:
+        Tuple of (user_id, channel_id, guild_id, primary_author).
+    """
+    primary = discord_message[0] if isinstance(discord_message, list) else discord_message
+    primary_author = primary.author
+    user_id = primary_author.id
+    channel_id = primary.channel.id
+    guild_id = primary.guild.id if primary.guild else user_id
+    return user_id, channel_id, guild_id, primary_author
 
 
 def smart_split(text: str, max_length: int = 1900) -> list[str]:

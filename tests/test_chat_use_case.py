@@ -191,17 +191,11 @@ class TestChatUseCase:
     def test_chat_use_case_has_tool_labels(
         self, mock_config, mock_llm_service, mock_session_manager
     ):
-        """ChatUseCase has tool labels mapping."""
-        from persbot.use_cases.chat_use_case import ChatUseCase
+        """ChatUseCase module has tool labels mapping via TOOL_NAME_KOREAN."""
+        from persbot.constants import TOOL_NAME_KOREAN
 
-        use_case = ChatUseCase(
-            config=mock_config,
-            llm_service=mock_llm_service,
-            session_manager=mock_session_manager,
-        )
-
-        assert hasattr(use_case, '_tool_labels')
-        assert len(use_case._tool_labels) > 0
+        assert TOOL_NAME_KOREAN is not None
+        assert len(TOOL_NAME_KOREAN) > 0
 
     def test_get_primary_message_returns_single(
         self, mock_config, mock_llm_service, mock_session_manager

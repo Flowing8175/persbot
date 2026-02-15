@@ -308,6 +308,34 @@ class ToolLabels:
     DESCRIBE_SCENE = "장면 분위기 묘사 도구"
 
 
+# Tool name to Korean label mapping (for progress notifications)
+TOOL_NAME_KOREAN: dict[str, str] = {
+    "generate_image": ToolLabels.GENERATE_IMAGE,
+    "send_image": ToolLabels.SEND_IMAGE,
+    "get_time": ToolLabels.GET_TIME,
+    "web_search": ToolLabels.WEB_SEARCH,
+    "get_weather": ToolLabels.GET_WEATHER,
+    "get_guild_info": ToolLabels.GET_GUILD_INFO,
+    "get_guild_roles": ToolLabels.GET_GUILD_ROLES,
+    "get_guild_emojis": ToolLabels.GET_GUILD_EMOJIS,
+    "search_episodic_memory": ToolLabels.SEARCH_EPISODIC_MEMORY,
+    "save_episodic_memory": ToolLabels.SAVE_EPISODIC_MEMORY,
+    "remove_episodic_memory": ToolLabels.REMOVE_EPISODIC_MEMORY,
+    "get_user_info": ToolLabels.GET_USER_INFO,
+    "get_member_info": ToolLabels.GET_MEMBER_INFO,
+    "get_member_roles": ToolLabels.GET_MEMBER_ROLES,
+    "inspect_external_content": ToolLabels.INSPECT_EXTERNAL_CONTENT,
+    "get_channel_info": ToolLabels.GET_CHANNEL_INFO,
+    "get_channel_history": ToolLabels.GET_CHANNEL_HISTORY,
+    "get_message": ToolLabels.GET_MESSAGE,
+    "list_channels": ToolLabels.LIST_CHANNELS,
+    "check_virtual_routine_status": ToolLabels.CHECK_ROUTINE_STATUS,
+    "get_routine_schedule": ToolLabels.GET_ROUTINE_SCHEDULE,
+    "generate_situational_snapshot": ToolLabels.GENERATE_SNAPSHOT,
+    "describe_scene_atmosphere": ToolLabels.DESCRIBE_SCENE,
+}
+
+
 # =============================================================================
 # System Prompts
 # =============================================================================

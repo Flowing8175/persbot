@@ -19,6 +19,7 @@ from persbot.services.openai_service import OpenAIService
 from persbot.services.prompt_service import PromptService
 from persbot.services.usage_service import ImageUsageService
 from persbot.services.zai_service import ZAIService
+from persbot.utils import extract_message_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -655,18 +656,6 @@ class LLMService:
             cancel_event=cancel_event,
         )
 
-    def get_tools_for_backend(self, backend: BaseLLMService, tools: List[Any]) -> Any:
-        """Get tools in the format required by a specific backend.
-
-        Args:
-            backend: The backend service to format tools for.
-            tools: List of tool definitions.
-
-        Returns:
-            Provider-specific tool format.
-        """
-        return backend.get_tools_for_provider(tools)
-
     def extract_function_calls_from_response(
         self, backend: BaseLLMService, response: Any
     ) -> List[Dict[str, Any]]:
@@ -681,20 +670,6 @@ class LLMService:
         """
         return backend.extract_function_calls(response)
 
-    def format_function_results_for_backend(
-        self, backend: BaseLLMService, results: List[Dict[str, Any]]
-    ) -> Any:
-        """Format function results for a specific backend.
-
-        Args:
-            backend: The backend service to format results for.
-            results: List of tool execution results.
-
-        Returns:
-            Provider-specific formatted results.
-        """
-        return backend.format_function_results(results)
-
     def _extract_message_metadata(self, discord_message) -> tuple:
         """Extract user_id, channel_id, guild_id, and primary_author from message(s).
 
@@ -704,12 +679,7 @@ class LLMService:
         Returns:
             Tuple of (user_id, channel_id, guild_id, primary_author).
         """
-        primary = discord_message[0] if isinstance(discord_message, list) else discord_message
-        primary_author = primary.author
-        user_id = primary_author.id
-        channel_id = primary.channel.id
-        guild_id = primary.guild.id if primary.guild else user_id
-        return user_id, channel_id, guild_id, primary_author
+        return extract_message_metadata(discord_message)
 
     def _prepare_response_with_notification(
         self, response, notification: Optional[str]

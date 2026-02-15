@@ -13,6 +13,7 @@ import discord
 
 from persbot.bot.session import ResolvedSession, SessionManager
 from persbot.config import AppConfig
+from persbot.constants import TOOL_NAME_KOREAN
 from persbot.exceptions import (
     CancellationException,
 )
@@ -20,6 +21,7 @@ from persbot.services.cache_service import CacheService
 from persbot.services.llm_service import LLMService
 from persbot.services.prompt_service import PromptService
 from persbot.tools import ToolManager
+from persbot.utils import extract_message_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -84,33 +86,6 @@ class ChatUseCase:
         self.tool_manager = tool_manager
         self.prompt_service = prompt_service
         self.cache_service = cache_service
-
-        # Tool name translations for UI
-        self._tool_labels: dict[str, str] = {
-            "generate_image": "이미지 생성 도구",
-            "send_image": "이미지 전송 도구",
-            "get_time": "시간 확인 도구",
-            "web_search": "웹 검색 도구",
-            "get_weather": "날씨 확인 도구",
-            "get_guild_info": "서버 정보 도구",
-            "get_guild_roles": "서버 역할 도구",
-            "get_guild_emojis": "서버 이모지 도구",
-            "search_episodic_memory": "기억 검색 도구",
-            "save_episodic_memory": "기억 저장 도구",
-            "remove_episodic_memory": "기억 삭제 도구",
-            "get_user_info": "사용자 정보 도구",
-            "get_member_info": "멤버 정보 도구",
-            "get_member_roles": "멤버 역할 도구",
-            "inspect_external_content": "웹 콘텐츠 확인 도구",
-            "get_channel_info": "채널 정보 도구",
-            "get_channel_history": "채널 기록 도구",
-            "get_message": "메시지 확인 도구",
-            "list_channels": "채널 목록 도구",
-            "check_virtual_routine_status": "루틴 상태 확인 도구",
-            "get_routine_schedule": "루틴 일정 확인 도구",
-            "generate_situational_snapshot": "상황 스냅샷 도구",
-            "describe_scene_atmosphere": "장면 분위기 묘사 도구",
-        }
 
     async def generate_chat_response(self, request: ChatRequest) -> Optional[ChatResponse]:
         """Generate a chat response for the given request.
@@ -308,11 +283,7 @@ class ChatUseCase:
         Returns:
             Tuple of (user_id, channel_id, guild_id, author).
         """
-        primary_author = message.author
-        user_id = primary_author.id
-        channel_id = message.channel.id
-        guild_id = message.guild.id if message.guild else user_id
-        return user_id, channel_id, guild_id, primary_author
+        return extract_message_metadata(message)
 
     async def _generate_with_tools(
         self,
@@ -495,7 +466,7 @@ class ChatUseCase:
         """
         try:
             names = [
-                self._tool_labels.get(call.get("name", "unknown"), call.get("name", "unknown"))
+                TOOL_NAME_KOREAN.get(call.get("name", "unknown"), call.get("name", "unknown"))
                 for call in function_calls
             ]
             notification = f"🔧 {', '.join(names)} 사용 중..."

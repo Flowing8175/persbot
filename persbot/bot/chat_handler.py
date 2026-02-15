@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, AsyncIterator, Optional, Union
 import discord
 
 from persbot.bot.session import ResolvedSession, SessionManager
+from persbot.constants import TOOL_NAME_KOREAN
 from persbot.services.llm_service import LLMService
 from persbot.utils import smart_split
 
@@ -20,39 +21,13 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "ChatReply",
+    "TOOL_NAME_KOREAN",
     "resolve_session_for_message",
     "create_chat_reply",
     "create_chat_reply_stream",
     "send_split_response",
     "send_streaming_response",
 ]
-
-# Tool name to Korean translation mapping for progress notifications
-TOOL_NAME_KOREAN: dict[str, str] = {
-    "generate_image": "이미지 생성 도구",
-    "send_image": "이미지 전송 도구",
-    "get_time": "시간 확인 도구",
-    "web_search": "웹 검색 도구",
-    "get_weather": "날씨 확인 도구",
-    "get_guild_info": "서버 정보 도구",
-    "get_guild_roles": "서버 역할 도구",
-    "get_guild_emojis": "서버 이모지 도구",
-    "search_episodic_memory": "기억 검색 도구",
-    "save_episodic_memory": "기억 저장 도구",
-    "remove_episodic_memory": "기억 삭제 도구",
-    "get_user_info": "사용자 정보 도구",
-    "get_member_info": "멤버 정보 도구",
-    "get_member_roles": "멤버 역할 도구",
-    "inspect_external_content": "웹 콘텐츠 확인 도구",
-    "get_channel_info": "채널 정보 도구",
-    "get_channel_history": "채널 기록 도구",
-    "get_message": "메시지 확인 도구",
-    "list_channels": "채널 목록 도구",
-    "check_virtual_routine_status": "루틴 상태 확인 도구",
-    "get_routine_schedule": "루틴 일정 확인 도구",
-    "generate_situational_snapshot": "상황 스냅샷 도구",
-    "describe_scene_atmosphere": "장면 분위기 묘사 도구",
-}
 
 
 @dataclass(frozen=True)
