@@ -398,6 +398,9 @@ class GeminiService(BaseLLMServiceCore):
 
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
+                history_len = len(history)
+                logger.debug("[RAW API REQUEST] Conversation history: %d messages", history_len)
+
                 formatted_history = []
                 for msg in history[-DisplayConfig.HISTORY_DISPLAY_LIMIT :]:
                     role = msg.role
