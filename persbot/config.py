@@ -89,8 +89,8 @@ class AppConfig:
     temperature: float = 1.0
     # Nucleus sampling (Top-p) controls diversity
     top_p: float = 1.0
-    # Gemini Context Caching
-    gemini_cache_min_tokens: int = 32768
+    # Gemini Context Caching (2.5 Flash: 1024, 2.5 Pro: 2048 tokens minimum)
+    gemini_cache_min_tokens: int = 2048
     gemini_cache_ttl_minutes: int = 60
     # Gemini Thinking Budget (in tokens)
     thinking_budget: int | None = None
@@ -354,7 +354,7 @@ def load_config() -> AppConfig:
         message_buffer_delay=message_buffer_delay,
         temperature=temperature,
         top_p=top_p,
-        gemini_cache_min_tokens=_parse_int_env("GEMINI_CACHE_MIN_TOKENS", 32768),
+        gemini_cache_min_tokens=_parse_int_env("GEMINI_CACHE_MIN_TOKENS", 2048),
         gemini_cache_ttl_minutes=_parse_int_env("GEMINI_CACHE_TTL_MINUTES", 60),
         thinking_budget=thinking_budget,
         max_history=max_history,

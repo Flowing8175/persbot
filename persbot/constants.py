@@ -29,9 +29,16 @@ class APITimeout:
 
 
 class CacheConfig:
-    """Gemini context cache configuration."""
+    """Gemini context cache configuration.
 
-    MIN_TOKENS = 32768
+    Minimum token requirements by model (as of 2025):
+    - Gemini 2.5 Flash: 1,024 tokens (implicit caching)
+    - Gemini 2.5 Pro: 2,048 tokens (implicit caching)
+
+    We use 2,048 as the default to support all Gemini 2.5+ models.
+    """
+
+    MIN_TOKENS = 2048  # Supports Gemini 2.5 Pro (highest requirement)
     TTL_MINUTES = 60
     REFRESH_BUFFER_MIN = 1
     REFRESH_BUFFER_MAX = 5

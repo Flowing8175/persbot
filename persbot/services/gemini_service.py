@@ -262,21 +262,46 @@ class GeminiService(BaseLLMServiceCore):
         tools: Optional[list],
         use_cache: bool,
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
-        """Resolve Gemini cache and log status."""
+        """Resolve Gemini cache and log status.
+
+        NOTE: As of 2025, explicit context caching requires `contents` parameter
+        with actual content to cache. System instructions alone don't create
+        effective caches. Instead, we rely on implicit caching which is
+        automatically enabled for Gemini 2.5+ models (1,024+ tokens minimum).
+        """
         if not use_cache:
             return None, None
 
-        cache_name, cache_expiration = self._get_gemini_cache(
-            model_name, system_instruction, tools=tools
-        )
+        # Check if implicit caching is viable (system_instruction >= min_tokens)
+        # Implicit caching is automatically enabled for Gemini 2.5+ models
+        # We still count tokens for logging purposes
+        try:
+            count_result = self.client.models.count_tokens(
+                model=model_name,
+                contents=[system_instruction],
+            )
+            token_count = count_result.total_tokens
+            min_tokens = getattr(self.config, "gemini_cache_min_tokens", CacheConfig.MIN_TOKENS)
 
-        # Log cache status
-        if cache_name:
-            logger.debug("Gemini Model initialized with CachedContent: %s", cache_name)
-        else:
-            logger.debug("Gemini Model will use standard context (no cache).")
+            if token_count >= min_tokens:
+                logger.info(
+                    "System instruction (%d tokens) qualifies for implicit caching (min: %d)",
+                    token_count,
+                    min_tokens,
+                )
+            else:
+                logger.debug(
+                    "System instruction (%d tokens) below implicit cache threshold (%d)",
+                    token_count,
+                    min_tokens,
+                )
+        except Exception as e:
+            logger.warning("Failed to count tokens for caching check: %s", e)
 
-        return cache_name, cache_expiration
+        # Return None to use implicit caching (system_instruction passed directly)
+        # This is more reliable than explicit caching which requires `contents`
+        logger.debug("Gemini Model will use implicit context caching (system_instruction passed directly).")
+        return None, None
 
     def _build_generation_config(
         self, cache_name: Optional[str], system_instruction: str, tools: Optional[list]
@@ -406,6 +431,17 @@ class GeminiService(BaseLLMServiceCore):
                 response_tokens = getattr(metadata, "candidates_token_count", "unknown")
                 cached_tokens = getattr(metadata, "cached_content_token_count", 0)
                 total_tokens = getattr(metadata, "total_token_count", "unknown")
+
+                # Log cache hits at INFO level for visibility
+                if cached_tokens and cached_tokens > 0:
+                    savings_percent = (cached_tokens / prompt_tokens * 100) if isinstance(prompt_tokens, int) else 0
+                    logger.info(
+                        "💰 Cache hit! %d/%d tokens cached (%.1f%% savings)",
+                        cached_tokens,
+                        prompt_tokens,
+                        savings_percent,
+                    )
+
                 logger.debug(
                     f"(prompt={prompt_tokens}, cached={cached_tokens}, response={response_tokens}, total={total_tokens})"
                 )
@@ -455,12 +491,32 @@ class GeminiService(BaseLLMServiceCore):
         self, model_name: str, system_instruction: str, tools: Optional[list] = None
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
+        DEPRECATED: As of 2025, explicit context caching requires `contents` parameter
+        with actual content (files, documents). System instructions alone don't create
+        effective explicit caches.
+
+        This method is kept for potential future use if Google fixes the API.
+        Currently returns (None, None) to use implicit caching instead.
+
         Attempts to find or create a Gemini cache for the given system instruction.
         Uses in-memory cache for lookups to avoid repeated caches.list() calls.
         Returns: (cache_name, local_expiration_datetime)
 
         Note: This method is synchronous but uses cached data where possible.
         For new cache creation, it will make blocking API calls.
+        """
+        # DEPRECATED: Explicit caching doesn't work with system_instruction only
+        # Return None to use implicit caching
+        return None, None
+
+    def _get_gemini_cache_legacy(
+        self, model_name: str, system_instruction: str, tools: Optional[list] = None
+    ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
+        """
+        Legacy explicit cache implementation (kept for reference).
+
+        This method attempts to create explicit caches but doesn't work effectively
+        because it lacks the `contents` parameter that Google's API requires.
         """
         if not system_instruction:
             return None, None
@@ -1126,70 +1182,26 @@ class GeminiService(BaseLLMServiceCore):
         return GeminiToolAdapter.format_results(results)
 
     async def _periodic_cache_cleanup(self):
-        """Periodically clean up expired cache entries."""
-        ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", 60)
-        if ttl_minutes <= 0:
-            return
+        """Periodically clean up expired cache entries.
 
-        # Cleanup interval: half of TTL to prevent too frequent refreshes
-        cleanup_interval = ttl_minutes * 30  # seconds
+        NOTE: As of 2025, we rely on implicit caching which is managed automatically
+        by Google. This task is kept for potential future explicit cache use but
+        currently does minimal work.
+        """
+        # Implicit caching is handled by Google - no manual cleanup needed
+        # This task is kept for potential future explicit cache management
+        logger.debug("Using implicit caching - no explicit cache cleanup needed")
 
+        # Clear in-memory cache name lookup since we don't use explicit caches
+        self._cache_name_cache.clear()
+        self._model_cache.clear()
+
+        # Sleep indefinitely - no periodic work needed with implicit caching
         while True:
             try:
-                await asyncio.sleep(cleanup_interval)
-                # Refresh expired cache entries to prevent expiration
-                await self._refresh_expired_cache()
+                await asyncio.sleep(3600)  # Sleep for 1 hour
             except asyncio.CancelledError:
                 logger.debug("Cache cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error during cache cleanup: {e}", exc_info=True)
-
-    async def _refresh_expired_cache(self):
-        """Refresh expired cache entries to prevent expiration and update in-memory cache."""
-        try:
-            ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", 60)
-            ttl_seconds = ttl_minutes * 60
-
-            # Calculate local expiration for cached entries
-            refresh_buffer_minutes = min(
-                CacheConfig.REFRESH_BUFFER_MAX,
-                max(CacheConfig.REFRESH_BUFFER_MIN, ttl_minutes // 2),
-            )
-            local_expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
-                minutes=ttl_minutes - refresh_buffer_minutes
-            )
-
-            # Use a timeout to avoid blocking too long
-            timeout = 5.0
-            response = await asyncio.wait_for(
-                asyncio.to_thread(self.client.caches.list), timeout=timeout
-            )
-
-            # Process a reasonable number of caches to avoid API overload
-            cached_items = list(response)[:100]  # Limit to 100 caches
-
-            for cache in cached_items:
-                try:
-                    # Refresh TTL for frequently used caches
-                    await asyncio.wait_for(
-                        asyncio.to_thread(
-                            self.client.caches.update,
-                            cache.name,
-                            genai_types.UpdateCachedContentConfig(ttl=f"{ttl_seconds}s"),
-                        ),
-                        timeout=2.0,
-                    )
-
-                    # Update in-memory cache for faster lookups
-                    if cache.display_name:
-                        self._cache_name_cache[cache.display_name] = (cache.name, local_expiration)
-
-                except Exception as e:
-                    # Log but don't fail on individual cache refresh
-                    if "403 PERMISSION_DENIED" not in str(e):
-                        logger.debug(f"Failed to refresh cache {cache.name}: {e}")
-        except asyncio.TimeoutError:
-            logger.debug("Cache list operation timed out")
-        except Exception as e:
-            logger.error(f"Cache cleanup task error: {e}", exc_info=True)

@@ -295,16 +295,23 @@ class TestGeminiServiceResolveGeminiCache:
         )
         assert result == (None, None)
 
-    def test_calls_get_gemini_cache_when_enabled(self, service):
-        """_resolve_gemini_cache calls _get_gemini_cache when use_cache is True."""
+    def test_uses_implicit_caching_when_enabled(self, service):
+        """_resolve_gemini_cache returns (None, None) to use implicit caching.
+
+        As of 2025, explicit caching requires `contents` parameter. We rely on
+        implicit caching which is automatically enabled for Gemini 2.5+ models.
+        """
+        # Mock count_tokens to avoid actual API call
         with patch.object(
-            service, "_get_gemini_cache", return_value=("cache-name", None)
+            service.client.models, "count_tokens", return_value=Mock(total_tokens=2500)
         ):
             result = service._resolve_gemini_cache(
-                "model", "instruction", [], use_cache=True
+                "gemini-2.5-flash", "instruction" * 100, [], use_cache=True
             )
 
-            assert result == ("cache-name", None)
+            # Should return (None, None) to use implicit caching
+            # (system_instruction passed directly in each request)
+            assert result == (None, None)
 
 
 class TestGeminiServiceBuildGenerationConfig:
