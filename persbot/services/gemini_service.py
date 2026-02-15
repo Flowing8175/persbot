@@ -228,9 +228,37 @@ class GeminiService(BaseLLMServiceCore):
 
         return model
 
+    # Models that don't support function calling / tool use
+    # These models will return 400 Bad Request if tools are passed
+    MODELS_WITHOUT_TOOL_SUPPORT = frozenset([
+        "gemini-3-flash-preview",
+        "gemini-3-flash",
+    ])
+
+    def _model_supports_tools(self, model_name: Optional[str]) -> bool:
+        """Check if a model supports function calling / tool use.
+
+        Args:
+            model_name: The model name to check.
+
+        Returns:
+            True if the model supports tools, False otherwise.
+        """
+        if not model_name:
+            return True  # Assume supported if no model specified
+        return model_name not in self.MODELS_WITHOUT_TOOL_SUPPORT
+
     def _get_search_tools(self, model_name: str) -> Optional[list]:
-        """Get Google Search tools for Gemini models."""
-        # All Gemini models support search tools
+        """Get Google Search tools for Gemini models.
+
+        Note: Some preview models (e.g., gemini-3-flash-preview) don't support
+        tool use yet and will return 400 Bad Request if tools are passed.
+        """
+        # Check if this model supports tools
+        if not self._model_supports_tools(model_name):
+            logger.debug("Model %s does not support tools, skipping search tools", model_name)
+            return None
+
         return [genai_types.Tool(google_search=genai_types.GoogleSearch())]
 
     def _combine_tools(
@@ -722,12 +750,19 @@ class GeminiService(BaseLLMServiceCore):
             logger.debug("Chat session refreshed with new model/cache.")
 
         try:
-            # Convert custom tools to Gemini format if provided
-            custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
+            effective_model = model_name or self._assistant_model_name
 
-            # Combine custom tools with search tools using the helper
-            search_tools = self._get_search_tools(model_name or self._assistant_model_name)
-            final_tools = self._combine_tools(custom_tools, search_tools)
+            # Only process tools if the model supports them
+            if self._model_supports_tools(effective_model):
+                # Convert custom tools to Gemini format if provided
+                custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
+
+                # Combine custom tools with search tools using the helper
+                search_tools = self._get_search_tools(effective_model)
+                final_tools = self._combine_tools(custom_tools, search_tools)
+            else:
+                logger.debug("Model %s does not support tools, skipping all tool processing", effective_model)
+                final_tools = None
 
             # Check if we need to switch model for this session
             current_model_name = getattr(chat_session._factory, "_model_name", None)
@@ -884,12 +919,19 @@ class GeminiService(BaseLLMServiceCore):
         # Extract images from messages first
         images = await self._extract_images_from_messages(discord_message)
 
-        # Convert custom tools to Gemini format if provided
-        custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
+        effective_model = model_name or self._assistant_model_name
 
-        # Combine custom tools with search tools using the helper
-        search_tools = self._get_search_tools(model_name or self._assistant_model_name)
-        final_tools = self._combine_tools(custom_tools, search_tools)
+        # Only process tools if the model supports them
+        if self._model_supports_tools(effective_model):
+            # Convert custom tools to Gemini format if provided
+            custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
+
+            # Combine custom tools with search tools using the helper
+            search_tools = self._get_search_tools(effective_model)
+            final_tools = self._combine_tools(custom_tools, search_tools)
+        else:
+            logger.debug("Model %s does not support tools, skipping all tool processing", effective_model)
+            final_tools = None
 
         # Check if we need to switch model for this session
         current_model_name = getattr(chat_session._factory, "_model_name", None)
@@ -1024,11 +1066,16 @@ class GeminiService(BaseLLMServiceCore):
             logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
-        # Convert tools to Gemini format and combine with search tools
-        custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
         model_name = getattr(chat_session._factory, "_model_name", self._assistant_model_name)
-        search_tools = self._get_search_tools(model_name)
-        final_tools = self._combine_tools(custom_tools, search_tools)
+
+        # Only process tools if the model supports them
+        if self._model_supports_tools(model_name):
+            # Convert tools to Gemini format and combine with search tools
+            custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
+            search_tools = self._get_search_tools(model_name)
+            final_tools = self._combine_tools(custom_tools, search_tools)
+        else:
+            final_tools = None
 
         result = await self.execute_with_retry(
             lambda: chat_session.send_tool_results(tool_rounds, tools=final_tools or None),
