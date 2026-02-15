@@ -16,6 +16,33 @@
       "daily_limit": 100,
       "scope": "guild",
       "provider": "gemini",
+      "fallback_alias": "GPT 4o"
+    },
+    "GPT 4o": {
+      "display_name": "GPT 4o",
+      "api_model_name": "gpt-4o",
+      "description": "OpenAI 멀티모달 고성능 모델",
+      "daily_limit": 200,
+      "scope": "guild",
+      "provider": "openai",
+      "fallback_alias": "GLM 4.7"
+    },
+    "GPT 5 mini": {
+      "display_name": "GPT 5 mini",
+      "api_model_name": "gpt-5-mini",
+      "description": "GPT 5 시리즈 경량 버전",
+      "daily_limit": 50,
+      "scope": "guild",
+      "provider": "openai",
+      "fallback_alias": "GLM 4.7"
+    },
+    "GPT 5 nano": {
+      "display_name": "GPT 5 nano",
+      "api_model_name": "gpt-5-nano",
+      "description": "가장 가볍고 빠른 GPT 모델",
+      "daily_limit": 100,
+      "scope": "guild",
+      "provider": "openai",
       "fallback_alias": "GLM 4.7"
     },
     "GLM 4.7": {
@@ -25,7 +52,7 @@
       "daily_limit": 1000,
       "scope": "guild",
       "provider": "zai",
-      "fallback_alias": "GLM 4.5 Air"
+      "fallback_alias": null
     },
     "GLM 4.6V": {
       "display_name": "GLM 4.6V",
@@ -44,33 +71,6 @@
       "scope": "guild",
       "provider": "zai",
       "fallback_alias": "GLM 4.7"
-    },
-    "GPT 4o": {
-      "display_name": "GPT 4o",
-      "api_model_name": "gpt-4o",
-      "description": "OpenAI 멀티모달 고성능 모델",
-      "daily_limit": 200,
-      "scope": "guild",
-      "provider": "openai",
-      "fallback_alias": null
-    },
-    "GPT 5 mini": {
-      "display_name": "GPT 5 mini",
-      "api_model_name": "gpt-5-mini",
-      "description": "GPT 5 시리즈 경량 버전",
-      "daily_limit": 50,
-      "scope": "guild",
-      "provider": "openai",
-      "fallback_alias": "GPT 4o"
-    },
-    "GPT 5 nano": {
-      "display_name": "GPT 5 nano",
-      "api_model_name": "gpt-5-nano",
-      "description": "가장 가볍고 빠른 GPT 모델",
-      "daily_limit": 100,
-      "scope": "guild",
-      "provider": "openai",
-      "fallback_alias": "GPT 4o"
     }
   },
   "image_models": [
