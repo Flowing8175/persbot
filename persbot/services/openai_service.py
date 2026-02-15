@@ -294,8 +294,16 @@ class OpenAIService(BaseLLMServiceCore):
         # Extract images from message(s) - supports both single and list of messages
         images = await self._extract_images_from_messages(discord_message)
 
-        # Convert tools to OpenAI format if provided
-        converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None
+        # Convert tools to appropriate format based on session type
+        if tools:
+            # ResponseSession uses Responses API which expects flatter format
+            if isinstance(chat_session, ResponseSession):
+                converted_tools = OpenAIToolAdapter.convert_tools_for_responses_api(tools)
+            else:
+                # ChatCompletionSession uses Chat Completions API
+                converted_tools = OpenAIToolAdapter.convert_tools(tools)
+        else:
+            converted_tools = None
 
         result = await self.execute_with_retry(
             lambda: chat_session.send_message(
@@ -373,8 +381,16 @@ class OpenAIService(BaseLLMServiceCore):
         # Extract images from message(s) - supports both single and list of messages
         images = await self._extract_images_from_messages(discord_message)
 
-        # Convert tools to OpenAI format if provided
-        converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None
+        # Convert tools to appropriate format based on session type
+        if tools:
+            # ResponseSession uses Responses API which expects flatter format
+            if isinstance(chat_session, ResponseSession):
+                converted_tools = OpenAIToolAdapter.convert_tools_for_responses_api(tools)
+            else:
+                # ChatCompletionSession uses Chat Completions API
+                converted_tools = OpenAIToolAdapter.convert_tools(tools)
+        else:
+            converted_tools = None
 
         # Start streaming - get stream object synchronously (fast, just initiates request)
         stream, user_msg = await asyncio.to_thread(
@@ -513,7 +529,14 @@ class OpenAIService(BaseLLMServiceCore):
             logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
-        converted_tools = OpenAIToolAdapter.convert_tools(tools) if tools else None
+        # Convert tools to appropriate format based on session type
+        if tools:
+            if isinstance(chat_session, ResponseSession):
+                converted_tools = OpenAIToolAdapter.convert_tools_for_responses_api(tools)
+            else:
+                converted_tools = OpenAIToolAdapter.convert_tools(tools)
+        else:
+            converted_tools = None
 
         result = await self.execute_with_retry(
             lambda: chat_session.send_tool_results(tool_rounds, tools=converted_tools),

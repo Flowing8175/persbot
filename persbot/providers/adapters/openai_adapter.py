@@ -22,13 +22,13 @@ class OpenAIToolAdapter(BaseToolAdapter):
 
     @staticmethod
     def convert_tools(tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
-        """Convert tool definitions to OpenAI format.
+        """Convert tool definitions to OpenAI Chat Completions API format.
 
         Args:
             tools: List of tool definitions to convert.
 
         Returns:
-            List of tool dictionaries in OpenAI format.
+            List of tool dictionaries in OpenAI Chat Completions format.
         """
         converted = []
 
@@ -39,6 +39,31 @@ class OpenAIToolAdapter(BaseToolAdapter):
                 converted.append(openai_format)
             except Exception as e:
                 logger.warning(f"Failed to convert tool {tool.name}: {e}")
+
+        return converted
+
+    @staticmethod
+    def convert_tools_for_responses_api(tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
+        """Convert tool definitions to OpenAI Responses API format.
+
+        The Responses API expects a flatter format where name and parameters
+        are at the top level, not nested under 'function'.
+
+        Args:
+            tools: List of tool definitions to convert.
+
+        Returns:
+            List of tool dictionaries in OpenAI Responses API format.
+        """
+        converted = []
+
+        for tool in tools:
+            try:
+                # Use the tool's Responses API format method
+                responses_format = tool.to_openai_responses_format()
+                converted.append(responses_format)
+            except Exception as e:
+                logger.warning(f"Failed to convert tool {tool.name} for Responses API: {e}")
 
         return converted
 

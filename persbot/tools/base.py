@@ -173,6 +173,45 @@ class ToolDefinition:
             },
         }
 
+    def to_openai_responses_format(self) -> Dict[str, Any]:
+        """Convert tool definition to OpenAI Responses API format.
+
+        The Responses API expects a flatter format where name and parameters
+        are at the top level, not nested under 'function'.
+
+        Returns:
+            Dictionary in OpenAI Responses API format.
+        """
+        properties = {}
+        required = []
+
+        for param in self.parameters:
+            prop_def = {
+                "type": param.type,
+                "description": param.description,
+            }
+            if param.enum:
+                prop_def["enum"] = param.enum
+            if param.default is not None:
+                prop_def["default"] = param.default
+            if param.type == "array" and param.items_type:
+                prop_def["items"] = {"type": param.items_type}
+
+            properties[param.name] = prop_def
+            if param.required:
+                required.append(param.name)
+
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            },
+        }
+
     def to_gemini_format(self) -> Any:
         """Convert tool definition to Gemini function declaration format.
 
