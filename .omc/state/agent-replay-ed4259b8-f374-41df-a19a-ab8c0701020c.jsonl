@@ -1,0 +1,7 @@
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:ultraqa"}
+{"t":0,"agent":"aa42c4a","agent_type":"explore","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"aa42c4a","agent_type":"explore","event":"agent_stop","success":true,"duration_ms":129236}
+{"t":0,"agent":"a4a53a1","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a60cab3","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a7a5534","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a3310fa","agent_type":"unknown","event":"agent_stop","success":true}

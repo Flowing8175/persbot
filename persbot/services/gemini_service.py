@@ -387,20 +387,32 @@ class GeminiService(BaseLLMServiceCore):
         return None
 
     def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
-        """Log raw API request data being sent (debug level only)."""
-        if not logger.isEnabledFor(logging.DEBUG):
-            return
-
+        """Log raw API request data being sent."""
         try:
+            # Always log the request at INFO level for visibility
+            if chat_session and hasattr(chat_session, "history"):
+                history = chat_session.history
+                history_len = len(history)
+                logger.info(
+                    "📤 API request: history=%d messages, new_msg='%s'",
+                    history_len,
+                    user_message[:50].replace("\n", " ") + ("..." if len(user_message) > 50 else ""),
+                )
+            else:
+                logger.info(
+                    "📤 API request (no session): new_msg='%s'",
+                    user_message[:50].replace("\n", " ") + ("..." if len(user_message) > 50 else ""),
+                )
+
+            if not logger.isEnabledFor(logging.DEBUG):
+                return
+
             logger.debug(
                 f"[RAW API REQUEST] User message preview: {user_message[: DisplayConfig.REQUEST_PREVIEW_LENGTH]!r}"
             )
 
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
-                history_len = len(history)
-                logger.debug("[RAW API REQUEST] Conversation history: %d messages", history_len)
-
                 formatted_history = []
                 for msg in history[-DisplayConfig.HISTORY_DISPLAY_LIMIT :]:
                     role = msg.role
@@ -435,7 +447,7 @@ class GeminiService(BaseLLMServiceCore):
                 cached_tokens = getattr(metadata, "cached_content_token_count", 0)
                 total_tokens = getattr(metadata, "total_token_count", "unknown")
 
-                # Log cache hits at INFO level for visibility
+                # Log token counts at INFO level for visibility (always show)
                 if cached_tokens and cached_tokens > 0:
                     savings_percent = (cached_tokens / prompt_tokens * 100) if isinstance(prompt_tokens, int) else 0
                     logger.info(
@@ -443,6 +455,14 @@ class GeminiService(BaseLLMServiceCore):
                         cached_tokens,
                         prompt_tokens,
                         savings_percent,
+                    )
+                else:
+                    # Log when NO cache hit to help diagnose caching issues
+                    logger.info(
+                        "📊 Token usage: prompt=%s, cached=0, response=%s, total=%s",
+                        prompt_tokens,
+                        response_tokens,
+                        total_tokens,
                     )
 
                 logger.debug(
