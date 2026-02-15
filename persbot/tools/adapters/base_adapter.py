@@ -1,13 +1,37 @@
-"""Base tool adapter with common functionality for all providers."""
+"""Base tool adapter with common functionality for all providers.
+
+This module provides the unified base interface, dataclasses, and registry
+for converting between the bot's tool format and provider-specific formats.
+"""
 
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from persbot.tools.base import ToolDefinition
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FunctionCall:
+    """Represents a function call from an LLM."""
+
+    name: str
+    parameters: Dict[str, Any]
+    id: Optional[str] = None  # For OpenAI/Z.AI format
+
+
+@dataclass
+class FunctionResult:
+    """Represents the result of a function execution."""
+
+    name: str
+    result: Any
+    error: Optional[str] = None
+    id: Optional[str] = None  # For OpenAI/Z.AI format
 
 
 class BaseToolAdapter(ABC):
@@ -186,3 +210,76 @@ class OpenAIStyleAdapter(BaseToolAdapter):
             "tool_call_id": call_id,
             "content": result_str,
         }
+
+
+class ToolAdapterRegistry:
+    """Registry for tool adapters by provider type."""
+
+    _adapters: Dict[str, BaseToolAdapter] = {}
+
+    @classmethod
+    def register(cls, provider: str, adapter: BaseToolAdapter) -> None:
+        """Register an adapter for a provider.
+
+        Args:
+            provider: The provider name ('gemini', 'openai', 'zai').
+            adapter: The adapter instance.
+        """
+        cls._adapters[provider.lower()] = adapter
+
+    @classmethod
+    def get(cls, provider: str) -> Optional[BaseToolAdapter]:
+        """Get the adapter for a provider.
+
+        Args:
+            provider: The provider name.
+
+        Returns:
+            The adapter, or None if not found.
+        """
+        return cls._adapters.get(provider.lower())
+
+    @classmethod
+    def get_or_create(cls, provider: str) -> BaseToolAdapter:
+        """Get existing adapter or create default.
+
+        Args:
+            provider: The provider name.
+
+        Returns:
+            An adapter instance.
+
+        Raises:
+            ValueError: If the provider is unknown.
+        """
+        adapter = cls.get(provider)
+        if adapter:
+            return adapter
+
+        # Create default adapter based on provider (lazy import to avoid cycles)
+        if provider.lower() == "gemini":
+            from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
+            adapter = GeminiToolAdapter()
+        elif provider.lower() == "openai":
+            from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
+            adapter = OpenAIToolAdapter()
+        elif provider.lower() == "zai":
+            from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
+            adapter = ZAIToolAdapter()
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
+
+        cls.register(provider, adapter)
+        return adapter
+
+
+def get_tool_adapter(provider: str) -> BaseToolAdapter:
+    """Convenience function to get a tool adapter.
+
+    Args:
+        provider: The provider name.
+
+    Returns:
+        The adapter for the provider.
+    """
+    return ToolAdapterRegistry.get_or_create(provider)

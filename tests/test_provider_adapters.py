@@ -246,7 +246,7 @@ class TestGeminiToolAdapterConvertTools:
 
     def test_convert_tools_returns_list(self):
         """convert_tools returns a list."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
         from unittest.mock import patch
 
         # Mock _create_function_declaration to avoid real genai_types validation
@@ -267,7 +267,7 @@ class TestGeminiToolAdapterConvertTools:
 
     def test_convert_tools_converts_single_tool(self):
         """convert_tools converts a single tool."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
         from unittest.mock import patch
 
         with patch.object(GeminiToolAdapter, '_create_function_declaration') as mock_create:
@@ -289,7 +289,7 @@ class TestGeminiToolAdapterConvertTools:
 
     def test_convert_tools_converts_multiple_tools(self):
         """convert_tools converts multiple tools."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
         from unittest.mock import patch
 
         with patch.object(GeminiToolAdapter, '_create_function_declaration') as mock_create:
@@ -307,7 +307,7 @@ class TestGeminiToolAdapterConvertTools:
 
     def test_convert_tools_empty_list(self):
         """convert_tools handles empty list."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         result = GeminiToolAdapter.convert_tools([])
 
@@ -315,7 +315,7 @@ class TestGeminiToolAdapterConvertTools:
 
     def test_convert_tools_with_parameters(self):
         """convert_tools includes parameters in converted tools."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
         from unittest.mock import patch
 
         with patch.object(GeminiToolAdapter, '_create_function_declaration') as mock_create:
@@ -342,7 +342,7 @@ class TestGeminiToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_returns_list(self):
         """extract_function_calls returns a list."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         response = MockGeminiResponse(candidates=[])
         result = GeminiToolAdapter.extract_function_calls(response)
@@ -351,7 +351,7 @@ class TestGeminiToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_extracts_single_call(self):
         """extract_function_calls extracts a single function call."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         response = MockGeminiResponse(
             candidates=[
@@ -378,7 +378,7 @@ class TestGeminiToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_extracts_multiple_calls(self):
         """extract_function_calls extracts multiple function calls."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         response = MockGeminiResponse(
             candidates=[
@@ -401,7 +401,7 @@ class TestGeminiToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_empty_response(self):
         """extract_function_calls handles empty response."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         response = MockGeminiResponse(candidates=[])
         result = GeminiToolAdapter.extract_function_calls(response)
@@ -410,7 +410,7 @@ class TestGeminiToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_no_function_call(self):
         """extract_function_calls handles parts without function calls."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         response = MockGeminiResponse(
             candidates=[
@@ -428,7 +428,7 @@ class TestGeminiToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_multiple_candidates(self):
         """extract_function_calls handles multiple candidates."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         response = MockGeminiResponse(
             candidates=[
@@ -455,7 +455,7 @@ class TestGeminiToolAdapterFormatResults:
 
     def test_format_results_returns_list(self):
         """format_results returns a list."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         results = [{"name": "test", "result": "ok"}]
         formatted = GeminiToolAdapter.format_results(results)
@@ -464,7 +464,7 @@ class TestGeminiToolAdapterFormatResults:
 
     def test_format_results_single_result(self):
         """format_results formats a single result."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         results = [{"name": "get_weather", "result": "Sunny"}]
         formatted = GeminiToolAdapter.format_results(results)
@@ -473,7 +473,7 @@ class TestGeminiToolAdapterFormatResults:
 
     def test_format_results_multiple_results(self):
         """format_results formats multiple results."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         results = [
             {"name": "func1", "result": "result1"},
@@ -485,7 +485,7 @@ class TestGeminiToolAdapterFormatResults:
 
     def test_format_results_with_dict_result(self):
         """format_results formats dict result as JSON."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         results = [{"name": "search", "result": {"items": [1, 2, 3]}}]
         formatted = GeminiToolAdapter.format_results(results)
@@ -494,7 +494,7 @@ class TestGeminiToolAdapterFormatResults:
 
     def test_format_results_with_error(self):
         """format_results includes error message."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         results = [{"name": "failing_tool", "error": "Something went wrong"}]
         formatted = GeminiToolAdapter.format_results(results)
@@ -503,7 +503,7 @@ class TestGeminiToolAdapterFormatResults:
 
     def test_format_results_with_none_result(self):
         """format_results handles None result."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         results = [{"name": "tool", "result": None}]
         formatted = GeminiToolAdapter.format_results(results)
@@ -520,7 +520,7 @@ class TestOpenAIToolAdapterConvertTools:
 
     def test_convert_tools_returns_list(self):
         """convert_tools returns a list."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         tools = [
             MockToolDefinition(name="test_tool", description="A test tool", parameters=[])
@@ -532,7 +532,7 @@ class TestOpenAIToolAdapterConvertTools:
 
     def test_convert_tools_converts_single_tool(self):
         """convert_tools converts a single tool to OpenAI format."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         tools = [
             MockToolDefinition(
@@ -552,7 +552,7 @@ class TestOpenAIToolAdapterConvertTools:
 
     def test_convert_tools_converts_multiple_tools(self):
         """convert_tools converts multiple tools."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         tools = [
             MockToolDefinition(name="tool1", description="First", parameters=[]),
@@ -565,7 +565,7 @@ class TestOpenAIToolAdapterConvertTools:
 
     def test_convert_tools_empty_list(self):
         """convert_tools handles empty list."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         result = OpenAIToolAdapter.convert_tools([])
 
@@ -573,7 +573,7 @@ class TestOpenAIToolAdapterConvertTools:
 
     def test_convert_tools_includes_parameters(self):
         """convert_tools includes parameter schema."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         tools = [
             MockToolDefinition(
@@ -599,7 +599,7 @@ class TestOpenAIToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_returns_list(self):
         """extract_function_calls returns a list."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         response = MockOpenAIResponse(choices=[])
         result = OpenAIToolAdapter.extract_function_calls(response)
@@ -608,7 +608,7 @@ class TestOpenAIToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_extracts_single_call(self):
         """extract_function_calls extracts a single function call."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         response = MockOpenAIResponse(
             choices=[
@@ -637,7 +637,7 @@ class TestOpenAIToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_extracts_multiple_calls(self):
         """extract_function_calls extracts multiple function calls."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         response = MockOpenAIResponse(
             choices=[
@@ -660,7 +660,7 @@ class TestOpenAIToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_empty_response(self):
         """extract_function_calls handles empty response."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         response = MockOpenAIResponse(choices=[])
         result = OpenAIToolAdapter.extract_function_calls(response)
@@ -669,7 +669,7 @@ class TestOpenAIToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_no_tool_calls(self):
         """extract_function_calls handles message without tool calls."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         response = MockOpenAIResponse(
             choices=[
@@ -683,7 +683,7 @@ class TestOpenAIToolAdapterExtractFunctionCalls:
 
     def test_extract_function_calls_empty_tool_calls(self):
         """extract_function_calls handles empty tool calls list."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         response = MockOpenAIResponse(
             choices=[
@@ -701,7 +701,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_returns_list(self):
         """format_results returns a list."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [{"id": "call_1", "name": "test", "result": "ok"}]
         formatted = OpenAIToolAdapter.format_results(results)
@@ -710,7 +710,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_single_result(self):
         """format_results formats a single result."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [{"id": "call_123", "name": "get_weather", "result": "Sunny"}]
         formatted = OpenAIToolAdapter.format_results(results)
@@ -722,7 +722,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_multiple_results(self):
         """format_results formats multiple results."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [
             {"id": "call_1", "name": "func1", "result": "result1"},
@@ -734,7 +734,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_with_dict_result(self):
         """format_results formats dict result as JSON."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [{"id": "call_1", "name": "search", "result": {"items": [1, 2, 3]}}]
         formatted = OpenAIToolAdapter.format_results(results)
@@ -743,7 +743,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_with_error(self):
         """format_results includes error message."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "error": "Failed"}]
         formatted = OpenAIToolAdapter.format_results(results)
@@ -752,7 +752,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_with_none_result(self):
         """format_results handles None result."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "result": None}]
         formatted = OpenAIToolAdapter.format_results(results)
@@ -761,7 +761,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_with_string_result(self):
         """format_results formats string result."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "result": "Hello world"}]
         formatted = OpenAIToolAdapter.format_results(results)
@@ -770,7 +770,7 @@ class TestOpenAIToolAdapterFormatResults:
 
     def test_format_results_with_bytes_result(self):
         """format_results encodes bytes as base64."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "result": b"binary data"}]
         formatted = OpenAIToolAdapter.format_results(results)
@@ -790,14 +790,14 @@ class TestZAIToolAdapterInheritance:
 
     def test_inherits_from_openai_adapter(self):
         """ZAIToolAdapter inherits from OpenAIToolAdapter."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         assert issubclass(ZAIToolAdapter, OpenAIToolAdapter)
 
     def test_inherits_convert_tools(self):
         """ZAIToolAdapter inherits convert_tools from OpenAIToolAdapter."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         tools = [MockToolDefinition(name="test", description="Test", parameters=[])]
         result = ZAIToolAdapter.convert_tools(tools)
@@ -807,7 +807,7 @@ class TestZAIToolAdapterInheritance:
 
     def test_inherits_extract_function_calls(self):
         """ZAIToolAdapter inherits extract_function_calls from OpenAIToolAdapter."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         response = MockOpenAIResponse(
             choices=[
@@ -835,7 +835,7 @@ class TestZAIToolAdapterFormatResults:
 
     def test_format_results_returns_list(self):
         """format_results returns a list."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         results = [{"id": "call_1", "name": "test", "result": "ok"}]
         formatted = ZAIToolAdapter.format_results(results)
@@ -844,7 +844,7 @@ class TestZAIToolAdapterFormatResults:
 
     def test_format_results_with_dict_result(self):
         """format_results formats dict result as JSON."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "result": {"key": "value"}}]
         formatted = ZAIToolAdapter.format_results(results)
@@ -853,7 +853,7 @@ class TestZAIToolAdapterFormatResults:
 
     def test_format_results_with_bytes_result_keeps_binary(self):
         """format_results keeps bytes as binary (Z.AI specific)."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         binary_data = b"\x89PNG\r\n\x1a\n"  # PNG header
         results = [{"id": "call_1", "name": "generate_image", "result": binary_data}]
@@ -864,7 +864,7 @@ class TestZAIToolAdapterFormatResults:
 
     def test_format_results_with_error(self):
         """format_results includes error message."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "error": "Z.AI error"}]
         formatted = ZAIToolAdapter.format_results(results)
@@ -873,7 +873,7 @@ class TestZAIToolAdapterFormatResults:
 
     def test_format_results_with_none_result(self):
         """format_results handles None result."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "result": None}]
         formatted = ZAIToolAdapter.format_results(results)
@@ -882,7 +882,7 @@ class TestZAIToolAdapterFormatResults:
 
     def test_format_results_with_string_result(self):
         """format_results formats string result."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "result": "Z.AI response"}]
         formatted = ZAIToolAdapter.format_results(results)
@@ -891,7 +891,7 @@ class TestZAIToolAdapterFormatResults:
 
     def test_format_results_tool_role(self):
         """format_results sets role to 'tool'."""
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         results = [{"id": "call_1", "name": "tool", "result": "data"}]
         formatted = ZAIToolAdapter.format_results(results)
@@ -908,8 +908,8 @@ class TestToolAdapterRegistry:
 
     def test_register_and_get_adapter(self):
         """ToolAdapterRegistry can register and retrieve adapters."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         # Clear any existing registration
         ToolAdapterRegistry._adapters.pop("test_provider", None)
@@ -925,15 +925,15 @@ class TestToolAdapterRegistry:
 
     def test_get_returns_none_for_unknown_provider(self):
         """ToolAdapterRegistry.get returns None for unknown provider."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
 
         result = ToolAdapterRegistry.get("unknown_provider_xyz")
         assert result is None
 
     def test_get_is_case_insensitive(self):
         """ToolAdapterRegistry.get is case-insensitive."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         # Clear any existing registration
         ToolAdapterRegistry._adapters.pop("casetest", None)
@@ -950,8 +950,8 @@ class TestToolAdapterRegistry:
 
     def test_get_or_create_returns_existing(self):
         """ToolAdapterRegistry.get_or_create returns existing adapter."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         # Clear any existing registration
         ToolAdapterRegistry._adapters.pop("openai", None)
@@ -964,8 +964,8 @@ class TestToolAdapterRegistry:
 
     def test_get_or_create_creates_gemini_adapter(self):
         """ToolAdapterRegistry.get_or_create creates GeminiToolAdapter for 'gemini'."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
 
         # Clear any existing registration
         ToolAdapterRegistry._adapters.pop("gemini", None)
@@ -979,8 +979,8 @@ class TestToolAdapterRegistry:
 
     def test_get_or_create_creates_openai_adapter(self):
         """ToolAdapterRegistry.get_or_create creates OpenAIToolAdapter for 'openai'."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
         # Clear any existing registration
         ToolAdapterRegistry._adapters.pop("openai", None)
@@ -994,8 +994,8 @@ class TestToolAdapterRegistry:
 
     def test_get_or_create_creates_zai_adapter(self):
         """ToolAdapterRegistry.get_or_create creates ZAIToolAdapter for 'zai'."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         # Clear any existing registration
         ToolAdapterRegistry._adapters.pop("zai", None)
@@ -1009,7 +1009,7 @@ class TestToolAdapterRegistry:
 
     def test_get_or_create_raises_for_unknown_provider(self):
         """ToolAdapterRegistry.get_or_create raises ValueError for unknown provider."""
-        from persbot.providers.adapters.base_adapter import ToolAdapterRegistry
+        from persbot.tools.adapters.base_adapter import ToolAdapterRegistry
 
         with pytest.raises(ValueError) as exc_info:
             ToolAdapterRegistry.get_or_create("unknown_provider")
@@ -1022,7 +1022,7 @@ class TestGetToolAdapter:
 
     def test_get_tool_adapter_returns_adapter(self):
         """get_tool_adapter returns an adapter."""
-        from persbot.providers.adapters.base_adapter import get_tool_adapter
+        from persbot.tools.adapters.base_adapter import get_tool_adapter
 
         adapter = get_tool_adapter("openai")
 
@@ -1030,7 +1030,7 @@ class TestGetToolAdapter:
 
     def test_get_tool_adapter_caches_adapter(self):
         """get_tool_adapter caches the adapter."""
-        from persbot.providers.adapters.base_adapter import get_tool_adapter, ToolAdapterRegistry
+        from persbot.tools.adapters.base_adapter import get_tool_adapter, ToolAdapterRegistry
 
         # Clear cache
         ToolAdapterRegistry._adapters.pop("openai", None)
@@ -1050,8 +1050,8 @@ class TestAdapterComparison:
 
     def test_openai_vs_zai_binary_handling(self):
         """OpenAI and ZAI adapters handle binary data differently."""
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         import base64
 
@@ -1069,9 +1069,9 @@ class TestAdapterComparison:
 
     def test_all_adapters_format_results_with_error(self):
         """All adapters handle error results."""
-        from persbot.providers.adapters.gemini_adapter import GeminiToolAdapter
-        from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
-        from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
+        from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
+        from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
         error_results = [{"id": "call_1", "name": "tool", "error": "Test error"}]
 

@@ -25,7 +25,7 @@ from persbot.services.session_wrappers.openai_session import (
     ChatCompletionSession,
     ResponseSession,
 )
-from persbot.providers.adapters.openai_adapter import OpenAIToolAdapter
+from persbot.tools.adapters.openai_adapter import OpenAIToolAdapter
 
 logger = logging.getLogger(__name__)
 

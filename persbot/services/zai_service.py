@@ -27,7 +27,7 @@ from persbot.services.retry_handler import (
     ZAIRetryHandler,
 )
 from persbot.services.session_wrappers.zai_session import ZAIChatSession
-from persbot.providers.adapters.zai_adapter import ZAIToolAdapter
+from persbot.tools.adapters.zai_adapter import ZAIToolAdapter
 
 logger = logging.getLogger(__name__)
 
