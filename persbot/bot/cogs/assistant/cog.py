@@ -220,6 +220,9 @@ class AssistantCog(BaseChatCog):
         """현재 채널의 대화 세션을 초기화합니다."""
 
         try:
+            # Cancel any active API calls/processing/sending for this channel FIRST
+            self._cancel_active_tasks(ctx.channel.id, ctx.author.name, "reset command")
+            # Then reset the session data
             self.session_manager.reset_session_by_channel(ctx.channel.id)
             if ctx.interaction:
                 await ctx.reply("✅ 대화 세션이 초기화되었습니다.", ephemeral=False)
