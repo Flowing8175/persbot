@@ -405,7 +405,10 @@ class ZAIService(BaseLLMServiceCore):
                 async for chunk in stream:
                     # Check for cancellation
                     if cancel_event and cancel_event.is_set():
-                        logger.debug("Streaming aborted")
+                        logger.debug("Streaming aborted - closing async stream")
+                        # Close the stream to stop server-side generation
+                        if hasattr(stream, 'close'):
+                            stream.close()
                         raise asyncio.CancelledError("LLM streaming aborted by user")
 
                     # Extract text from Gemini chunk format
@@ -426,8 +429,12 @@ class ZAIService(BaseLLMServiceCore):
                 for chunk in stream:
                     # Check for cancellation
                     if cancel_event and cancel_event.is_set():
-                        logger.debug("Streaming aborted")
-                        stream.close()
+                        logger.debug("Streaming aborted - closing sync stream")
+                        # Close the stream to stop server-side generation
+                        try:
+                            stream.close()
+                        except Exception:
+                            pass
                         raise asyncio.CancelledError("LLM streaming aborted by user")
 
                     # Extract text delta from OpenAI chunk format
@@ -451,11 +458,29 @@ class ZAIService(BaseLLMServiceCore):
                 yield buffer
 
         except asyncio.CancelledError:
-            logger.debug("Streaming response cancelled")
+            logger.debug("Streaming response cancelled - ensuring stream is closed")
+            # Ensure stream is closed on cancellation to stop server-side generation
+            if hasattr(stream, 'close'):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            raise
+        except Exception:
+            # Close stream on any exception to prevent resource leaks
+            if hasattr(stream, 'close'):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
             raise
         finally:
-            if not is_async_stream:
-                stream.close()
+            # Always try to close stream as a safety net
+            if hasattr(stream, 'close'):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
 
         # Update history with the full conversation
         model_msg = ChatMessage(role="assistant", content=full_content)
