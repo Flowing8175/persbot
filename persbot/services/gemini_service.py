@@ -925,6 +925,7 @@ class GeminiService(BaseLLMServiceCore):
         # Buffer for streaming - yield on newline for natural line breaks
         buffer = ""
         full_content = ""
+        final_chunk = None  # Track final chunk for usage metadata
 
         try:
             async for chunk in stream:
@@ -932,6 +933,9 @@ class GeminiService(BaseLLMServiceCore):
                 if cancel_event and cancel_event.is_set():
                     logger.debug("Streaming aborted")
                     raise asyncio.CancelledError("LLM streaming aborted by user")
+
+                # Save reference to final chunk for metadata extraction
+                final_chunk = chunk
 
                 # Extract text from chunk
                 text = self._extract_text_from_stream_chunk(chunk)
@@ -952,6 +956,10 @@ class GeminiService(BaseLLMServiceCore):
             # Yield any remaining content in buffer
             if buffer:
                 yield buffer
+
+            # Log usage metadata from final chunk
+            if final_chunk:
+                self._log_raw_response(final_chunk, 1)
 
         except asyncio.CancelledError:
             logger.debug("Streaming response cancelled")
