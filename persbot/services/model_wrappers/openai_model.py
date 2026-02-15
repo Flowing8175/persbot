@@ -1,7 +1,7 @@
 """OpenAI model wrapper for managing model instances."""
 
 import logging
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from openai import OpenAI
 
@@ -31,6 +31,7 @@ class OpenAIChatCompletionModel:
         top_p: float,
         max_messages: int = 50,
         service_tier: Optional[str] = None,
+        text_extractor: Optional[Callable[[Any], str]] = None,
     ):
         """
         Initialize the OpenAI model wrapper.
@@ -43,6 +44,7 @@ class OpenAIChatCompletionModel:
             top_p: Top-p for response generation.
             max_messages: Maximum number of messages to keep in history.
             service_tier: Optional service tier for specialized behavior.
+            text_extractor: Optional callback to extract text from Responses API.
         """
         self._client = client
         self._model_name = model_name
@@ -51,6 +53,7 @@ class OpenAIChatCompletionModel:
         self._top_p = top_p
         self._max_messages = max_messages
         self._service_tier = service_tier
+        self._text_extractor = text_extractor
 
     @property
     def model_name(self) -> str:
@@ -67,6 +70,7 @@ class OpenAIChatCompletionModel:
             top_p=self._top_p,
             max_messages=self._max_messages,
             service_tier=self._service_tier,
+            text_extractor=self._text_extractor,
         )
 
     def create_response_session(self) -> ResponseSession:
@@ -79,6 +83,7 @@ class OpenAIChatCompletionModel:
             top_p=self._top_p,
             max_messages=0,  # Responses API doesn't maintain history
             service_tier=self._service_tier,
+            text_extractor=self._text_extractor,
         )
 
     def start_chat(self, use_responses_api: bool = False) -> BaseOpenAISession:

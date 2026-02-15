@@ -223,7 +223,19 @@ class BaseChatCog(commands.Cog):
         try:
             reply = await api_call_task
             if reply:
-                await self._send_response(anchor_message, reply)
+                # Wrap send in a tracked task so !reset can cancel it during sending phase
+                async def _send_task():
+                    await self._send_response(anchor_message, reply)
+
+                send_task = asyncio.create_task(_send_task())
+                self.sending_tasks[channel_id] = send_task
+
+                def _cleanup_send(t):
+                    if self.sending_tasks.get(channel_id) == t:
+                        self.sending_tasks.pop(channel_id, None)
+
+                send_task.add_done_callback(_cleanup_send)
+                await send_task
         finally:
             # Clean up API call tracking
             self.active_api_calls.pop(channel_id, None)

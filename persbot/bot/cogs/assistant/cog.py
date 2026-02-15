@@ -222,6 +222,10 @@ class AssistantCog(BaseChatCog):
         try:
             # Cancel any active API calls/processing/sending for this channel FIRST
             self._cancel_active_tasks(ctx.channel.id, ctx.author.name, "reset command")
+            # Also cancel tasks in auto_channel cog if it exists (for auto-reply channels)
+            auto_cog = self.bot.get_cog("AutoChannelCog")
+            if auto_cog:
+                auto_cog._cancel_active_tasks(ctx.channel.id, ctx.author.name, "reset command")
             # Then reset the session data
             self.session_manager.reset_session_by_channel(ctx.channel.id)
             if ctx.interaction:

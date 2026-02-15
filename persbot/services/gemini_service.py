@@ -1118,6 +1118,11 @@ class GeminiService(BaseLLMServiceCore):
                     self._execute_model_call(model_call),
                     timeout=self.config.api_request_timeout,
                 )
+                # Check for cancellation AFTER API call returns
+                # The underlying thread can't be cancelled mid-flight, so we check here
+                if cancel_event and cancel_event.is_set():
+                    logger.debug("API call completed but cancelled - discarding response")
+                    raise asyncio.CancelledError("LLM API call aborted by user")
                 self._log_raw_response(response, attempt)
                 return response
 

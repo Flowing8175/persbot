@@ -109,6 +109,7 @@ class OpenAIService(BaseLLMServiceCore):
             top_p=getattr(self.config, "top_p", LLMDefaults.TOP_P),
             max_messages=self._max_messages,
             service_tier=service_tier,
+            text_extractor=self._extract_text_from_response,
         )
         return self._assistant_cache[key]
 
@@ -175,16 +176,21 @@ class OpenAIService(BaseLLMServiceCore):
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text content from OpenAI chat completion response."""
+        logger.info("Extracting text from response type: %s", type(response_obj).__name__)
         try:
             choices = getattr(response_obj, "choices", []) or []
             for choice in choices:
                 message = getattr(choice, "message", None)
                 if message and getattr(message, "content", None):
-                    return str(message.content).strip()
+                    content = str(message.content).strip()
+                    logger.info("Extracted from choices: %s", content[:100] if content else "(empty)")
+                    return content
         except Exception:
             logger.exception("Failed to extract text from OpenAI response")
 
-        return self._extract_text_from_response_output(response_obj)
+        result = self._extract_text_from_response_output(response_obj)
+        logger.info("Extracted from Responses API: %s", result[:100] if result else "(empty)")
+        return result
 
     def _extract_text_from_response_output(self, response_obj: Any) -> str:
         """Extract text from Responses API output."""
