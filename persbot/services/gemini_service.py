@@ -159,7 +159,10 @@ class GeminiService(BaseLLMServiceCore):
         tools: Optional[list] = None,
     ) -> GeminiCachedModel:
         """Get cached model instance or create new one."""
-        key = hash((model_name, system_instruction, use_cache))
+        # Include tools in cache key so tool-enabled and non-tool models use different caches
+        # Hash the tool list to create a stable key component
+        tools_hash = hash(tuple(id(t) for t in (tools or [])))
+        key = hash((model_name, system_instruction, use_cache, tools_hash))
         now = datetime.datetime.now(datetime.timezone.utc)
 
         # Check for valid cached model
@@ -665,8 +668,19 @@ class GeminiService(BaseLLMServiceCore):
                 new_model = self._get_or_create_model(model_name, system_instr, tools=final_tools)
                 chat_session._factory = new_model
             elif final_tools:
-                # Update tools for the current model if they changed
-                logger.debug(f"Using {len(final_tools)} tools for model {current_model_name}")
+                # When using cached content, tools are baked into the cache and cannot be overridden.
+                # We need to get/create a model that has these tools in its cache.
+                system_instr = (
+                    getattr(chat_session, "_system_instruction", None)
+                    or self.prompt_service.get_active_assistant_prompt()
+                )
+                new_model = self._get_or_create_model(
+                    current_model_name or self._assistant_model_name,
+                    system_instr,
+                    tools=final_tools
+                )
+                chat_session._factory = new_model
+                logger.debug(f"Recreated model with {len(final_tools)} tools for cached content compatibility")
 
             # First attempt: normal flow with retry for cache errors
             result = await self._gemini_retry(
@@ -816,7 +830,19 @@ class GeminiService(BaseLLMServiceCore):
             new_model = self._get_or_create_model(model_name, system_instr, tools=final_tools)
             chat_session._factory = new_model
         elif final_tools:
-            logger.debug(f"Using {len(final_tools)} tools for model {current_model_name}")
+            # When using cached content, tools are baked into the cache and cannot be overridden.
+            # We need to get/create a model that has these tools in its cache.
+            system_instr = (
+                getattr(chat_session, "_system_instruction", None)
+                or self.prompt_service.get_active_assistant_prompt()
+            )
+            new_model = self._get_or_create_model(
+                current_model_name or self._assistant_model_name,
+                system_instr,
+                tools=final_tools
+            )
+            chat_session._factory = new_model
+            logger.debug(f"Recreated model with {len(final_tools)} tools for cached content compatibility")
 
         # Start streaming - get user message and stream iterator
         user_msg, stream = await chat_session.send_message_stream(

@@ -175,7 +175,9 @@ class TestGeminiServiceGetOrCreateModel:
     def test_returns_cached_model_when_valid(self, minimal_service):
         """_get_or_create_model returns cached model when still valid."""
         # Pre-populate cache with a valid model
-        cache_key = hash(("test-model", "system instruction", True))
+        # Cache key now includes tools_hash (hash of empty tuple when tools=None)
+        tools_hash = hash(())
+        cache_key = hash(("test-model", "system instruction", True, tools_hash))
         cached_model = MockGeminiCachedModel()
         future_expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
         minimal_service._model_cache[cache_key] = (cached_model, future_expiration)
@@ -189,7 +191,9 @@ class TestGeminiServiceGetOrCreateModel:
     def test_refreshes_expired_model(self, minimal_service):
         """_get_or_create_model refreshes expired cached model."""
         # Pre-populate cache with an expired model
-        cache_key = hash(("test-model", "system instruction", True))
+        # Cache key now includes tools_hash (hash of empty tuple when tools=None)
+        tools_hash = hash(())
+        cache_key = hash(("test-model", "system instruction", True, tools_hash))
         expired_model = MockGeminiCachedModel()
         past_expiration = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
         minimal_service._model_cache[cache_key] = (expired_model, past_expiration)
