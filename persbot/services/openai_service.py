@@ -1,6 +1,7 @@
 """OpenAI API service for SoyeBot."""
 
 import asyncio
+import inspect
 import logging
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Tuple, Union
@@ -407,104 +408,142 @@ class OpenAIService(BaseLLMServiceCore):
         else:
             converted_tools = None
 
-        # Start streaming - get stream object synchronously (fast, just initiates request)
-        stream, user_msg = await asyncio.to_thread(
-            chat_session.send_message_stream,
-            user_message,
-            author_id,
-            author_name=author_name,
-            message_ids=message_ids,
-            images=images,
-            tools=converted_tools,
-        )
+        # Start streaming - get stream object
+        # Check if send_message_stream is async (e.g., from GeminiChatSession passed incorrectly)
+        is_async_stream = inspect.iscoroutinefunction(chat_session.send_message_stream)
+
+        if is_async_stream:
+            # Async version - call directly with await
+            # Note: async version returns (user_msg, stream) not (stream, user_msg)
+            user_msg, stream = await chat_session.send_message_stream(
+                user_message,
+                author_id,
+                author_name=author_name,
+                message_ids=message_ids,
+                images=images,
+                tools=converted_tools,
+            )
+        else:
+            # Sync version - run in thread to avoid blocking
+            stream, user_msg = await asyncio.to_thread(
+                chat_session.send_message_stream,
+                user_message,
+                author_id,
+                author_name=author_name,
+                message_ids=message_ids,
+                images=images,
+                tools=converted_tools,
+            )
 
         # Buffer for streaming - yield chunks immediately for faster first response
         buffer = ""
         full_content = ""
 
         async def _iterate_stream():
-            """Iterate the synchronous stream in a thread and yield chunks via queue."""
-            queue: asyncio.Queue = asyncio.Queue()
-            sentinel = object()  # Sentinel to signal end of stream
+            """Iterate the stream and yield chunks.
 
-            def _sync_iterate():
-                """Run in thread: iterate stream and put chunks in queue."""
+            Handles both sync streams (from OpenAI sessions) and async streams
+            (from Gemini sessions that were incorrectly passed here).
+            """
+            if is_async_stream:
+                # Direct async iteration for async streams (e.g., GeminiChatSession)
                 try:
-                    for chunk in stream:
-                        # Put chunk in queue for async consumption
+                    async for chunk in stream:
+                        # Check for cancellation
+                        if cancel_event and cancel_event.is_set():
+                            logger.debug("Streaming aborted")
+                            raise asyncio.CancelledError("LLM streaming aborted by user")
+                        yield chunk
+                except asyncio.CancelledError:
+                    logger.debug("Streaming response cancelled")
+                    raise
+            else:
+                # Sync stream - iterate in thread to avoid blocking
+                queue: asyncio.Queue = asyncio.Queue()
+                sentinel = object()  # Sentinel to signal end of stream
+
+                def _sync_iterate():
+                    """Run in thread: iterate stream and put chunks in queue."""
+                    try:
+                        for chunk in stream:
+                            # Put chunk in queue for async consumption
+                            # Use put_nowait since queue is unbounded (no maxsize)
+                            queue.put_nowait(chunk)
+                    except Exception as e:
+                        logger.debug("Stream iteration error: %s", e)
+                    finally:
+                        # Signal end of stream
                         try:
-                            asyncio.run_coroutine_threadsafe(
-                                queue.put(chunk), asyncio.get_event_loop()
-                            ).result(timeout=5.0)
+                            queue.put_nowait(sentinel)
                         except Exception:
-                            break
-                except Exception as e:
-                    logger.debug("Stream iteration error: %s", e)
-                finally:
-                    # Signal end of stream
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            queue.put(sentinel), asyncio.get_event_loop()
-                        ).result(timeout=5.0)
-                    except Exception:
-                        pass
-                    stream.close()
-
-            # Start sync iteration in thread
-            loop = asyncio.get_event_loop()
-            future = loop.run_in_executor(None, _sync_iterate)
-
-            try:
-                while True:
-                    # Check for cancellation
-                    if cancel_event and cancel_event.is_set():
-                        logger.debug("Streaming aborted")
+                            pass
                         stream.close()
-                        raise asyncio.CancelledError("LLM streaming aborted by user")
 
-                    # Get chunk from queue with timeout
-                    try:
-                        chunk = await asyncio.wait_for(queue.get(), timeout=0.1)
-                    except asyncio.TimeoutError:
-                        # No chunk yet, check cancellation and continue
-                        continue
+                # Start sync iteration in thread
+                loop = asyncio.get_event_loop()
+                future = loop.run_in_executor(None, _sync_iterate)
 
-                    # Check for end of stream
-                    if chunk is sentinel:
-                        break
-
-                    yield chunk
-            finally:
-                # Ensure thread is done
                 try:
-                    await asyncio.wait_for(future, timeout=1.0)
-                except (asyncio.TimeoutError, Exception):
-                    pass
+                    while True:
+                        # Check for cancellation
+                        if cancel_event and cancel_event.is_set():
+                            logger.debug("Streaming aborted")
+                            stream.close()
+                            raise asyncio.CancelledError("LLM streaming aborted by user")
+
+                        # Get chunk from queue with timeout
+                        try:
+                            chunk = await asyncio.wait_for(queue.get(), timeout=0.1)
+                        except asyncio.TimeoutError:
+                            # No chunk yet, check cancellation and continue
+                            continue
+
+                        # Check for end of stream
+                        if chunk is sentinel:
+                            break
+
+                        yield chunk
+                finally:
+                    # Ensure thread is done
+                    try:
+                        await asyncio.wait_for(future, timeout=1.0)
+                    except (asyncio.TimeoutError, Exception):
+                        pass
 
         try:
             async for chunk in _iterate_stream():
                 # Extract text delta from chunk
-                if chunk.choices and len(chunk.choices) > 0:
+                # Handle both OpenAI Chat Completions format and potential foreign formats
+                text = None
+                if hasattr(chunk, 'choices') and chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
-                    if delta and delta.content:
+                    if delta and hasattr(delta, 'content') and delta.content:
                         text = delta.content
-                        buffer += text
-                        full_content += text
+                elif hasattr(chunk, 'text'):
+                    # Direct text format (some simplified streaming formats)
+                    text = chunk.text
+                elif isinstance(chunk, str):
+                    # Plain string chunks
+                    text = chunk
 
-                        # Yield immediately when we have content with line break,
-                        # OR yield after accumulating reasonable content for faster first response
-                        if "\n" in buffer:
-                            lines = buffer.split("\n")
-                            # Yield all complete lines
-                            for line in lines[:-1]:
-                                if line:  # Skip empty lines
-                                    yield line + "\n"
-                            # Keep the last incomplete line in buffer
-                            buffer = lines[-1]
-                        elif len(buffer) > 50:
-                            # Yield partial content for faster first response
-                            yield buffer
-                            buffer = ""
+                if text:
+                    buffer += text
+                    full_content += text
+
+                    # Yield immediately when we have content with line break,
+                    # OR yield after accumulating reasonable content for faster first response
+                    if "\n" in buffer:
+                        lines = buffer.split("\n")
+                        # Yield all complete lines
+                        for line in lines[:-1]:
+                            if line:  # Skip empty lines
+                                yield line + "\n"
+                        # Keep the last incomplete line in buffer
+                        buffer = lines[-1]
+                    elif len(buffer) > 50:
+                        # Yield partial content for faster first response
+                        yield buffer
+                        buffer = ""
 
             # Yield any remaining content in buffer
             if buffer:
