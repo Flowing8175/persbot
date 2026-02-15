@@ -172,9 +172,21 @@ class GeminiService(BaseLLMServiceCore):
 
         # Configure tools and caching
         # Combine provided tools with search tools using the helper
+        # NOTE: tools may already be converted genai_types.Tool objects (from generate_chat_response_stream)
+        # or may be ToolDefinition objects. Handle both cases.
         search_tools = self._get_search_tools(model_name)
-        custom_tools = GeminiToolAdapter.convert_tools(tools) if tools else None
-        effective_tools = self._combine_tools(custom_tools, search_tools)
+        if tools:
+            # Check if tools are already genai_types.Tool objects (already converted)
+            # genai_types.Tool has function_declarations, google_search, etc. but not 'name'
+            if hasattr(tools[0], 'function_declarations') or hasattr(tools[0], 'google_search'):
+                # Already converted, use as-is
+                effective_tools = self._combine_tools(tools, search_tools)
+            else:
+                # Need to convert from ToolDefinition
+                custom_tools = GeminiToolAdapter.convert_tools(tools)
+                effective_tools = self._combine_tools(custom_tools, search_tools)
+        else:
+            effective_tools = self._combine_tools(None, search_tools)
 
         cache_name, cache_expiration = self._resolve_gemini_cache(
             model_name, system_instruction, effective_tools, use_cache
