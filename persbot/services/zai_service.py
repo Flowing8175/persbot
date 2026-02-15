@@ -8,6 +8,7 @@ Enable Coding Plan API by setting ZAI_CODING_PLAN=true in environment.
 """
 
 import asyncio
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
@@ -369,58 +370,118 @@ class ZAIService(BaseLLMServiceCore):
         # Convert tools to Z.AI format if provided
         converted_tools = ZAIToolAdapter.convert_tools(tools) if tools else None
 
-        # Start streaming
-        stream, user_msg = await asyncio.to_thread(
-            chat_session.send_message_stream,
-            user_message,
-            author_id,
-            author_name=author_name,
-            message_ids=message_ids,
-            images=images,
-            tools=converted_tools,
-        )
+        # Start streaming - handle both sync and async send_message_stream methods
+        # Gemini sessions have async send_message_stream, ZAI sessions have sync
+        is_async_stream = inspect.iscoroutinefunction(chat_session.send_message_stream)
+        if is_async_stream:
+            # Async method (e.g., GeminiChatSession) - returns (user_msg, stream)
+            user_msg, stream = await chat_session.send_message_stream(
+                user_message,
+                author_id,
+                author_name=author_name,
+                message_ids=message_ids,
+                images=images,
+                tools=converted_tools,
+            )
+        else:
+            # Sync method (e.g., ZAIChatSession) - returns (stream, user_msg)
+            stream, user_msg = await asyncio.to_thread(
+                chat_session.send_message_stream,
+                user_message,
+                author_id,
+                author_name=author_name,
+                message_ids=message_ids,
+                images=images,
+                tools=converted_tools,
+            )
 
         # Buffer for streaming - yield on newline for natural line breaks
         buffer = ""
         full_content = ""
 
         try:
-            for chunk in stream:
-                # Check for cancellation
-                if cancel_event and cancel_event.is_set():
-                    logger.debug("Streaming aborted")
-                    stream.close()
-                    raise asyncio.CancelledError("LLM streaming aborted by user")
+            if is_async_stream:
+                # Async iterator (Gemini)
+                async for chunk in stream:
+                    # Check for cancellation
+                    if cancel_event and cancel_event.is_set():
+                        logger.debug("Streaming aborted")
+                        raise asyncio.CancelledError("LLM streaming aborted by user")
 
-                # Extract text delta from chunk
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    if delta and delta.content:
-                        text = delta.content
+                    # Extract text from Gemini chunk format
+                    text = self._extract_text_from_stream_chunk(chunk)
+                    if text:
                         buffer += text
                         full_content += text
 
                         # Yield when we see a line break
                         if "\n" in buffer:
                             lines = buffer.split("\n")
-                            # Yield all complete lines
                             for line in lines[:-1]:
-                                if line:  # Skip empty lines
+                                if line:
                                     yield line + "\n"
-                            # Keep the last incomplete line in buffer
                             buffer = lines[-1]
+            else:
+                # Sync iterator (ZAI/OpenAI)
+                for chunk in stream:
+                    # Check for cancellation
+                    if cancel_event and cancel_event.is_set():
+                        logger.debug("Streaming aborted")
+                        stream.close()
+                        raise asyncio.CancelledError("LLM streaming aborted by user")
+
+                    # Extract text delta from OpenAI chunk format
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        if delta and delta.content:
+                            text = delta.content
+                            buffer += text
+                            full_content += text
+
+                            # Yield when we see a line break
+                            if "\n" in buffer:
+                                lines = buffer.split("\n")
+                                for line in lines[:-1]:
+                                    if line:
+                                        yield line + "\n"
+                                buffer = lines[-1]
 
             # Yield any remaining content in buffer
             if buffer:
                 yield buffer
 
+        except asyncio.CancelledError:
+            logger.debug("Streaming response cancelled")
+            raise
         finally:
-            stream.close()
+            if not is_async_stream:
+                stream.close()
 
         # Update history with the full conversation
         model_msg = ChatMessage(role="assistant", content=full_content)
         chat_session._history.append(user_msg)
         chat_session._history.append(model_msg)
+
+    def _extract_text_from_stream_chunk(self, chunk: Any) -> str:
+        """Extract text from a Gemini streaming chunk, filtering out thoughts.
+
+        This method handles Gemini-style chunks when a Gemini session
+        is accidentally routed to this service.
+        """
+        try:
+            if hasattr(chunk, "candidates") and chunk.candidates:
+                for candidate in chunk.candidates:
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        for part in candidate.content.parts:
+                            # Skip parts that are marked as thoughts
+                            if getattr(part, "thought", False):
+                                continue
+
+                            if hasattr(part, "text") and part.text:
+                                return part.text
+        except Exception as e:
+            logger.debug(f"Error extracting text from stream chunk: {e}")
+        return ""
 
     async def send_tool_results(
         self,
