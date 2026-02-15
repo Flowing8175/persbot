@@ -3,6 +3,7 @@
 import asyncio
 import inspect
 import logging
+import threading
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
@@ -461,11 +462,18 @@ class OpenAIService(BaseLLMServiceCore):
                 # Sync stream - iterate in thread to avoid blocking
                 queue: asyncio.Queue = asyncio.Queue()
                 sentinel = object()  # Sentinel to signal end of stream
+                # Thread-safe flag for cancellation (accessible from sync thread)
+                cancel_flag = threading.Event()
 
                 def _sync_iterate():
                     """Run in thread: iterate stream and put chunks in queue."""
                     try:
                         for chunk in stream:
+                            # Check for cancellation from within the thread
+                            # This ensures we stop reading from httpx immediately
+                            if cancel_flag.is_set():
+                                logger.debug("Sync stream iteration aborted in thread")
+                                break
                             # Put chunk in queue for async consumption
                             # Use put_nowait since queue is unbounded (no maxsize)
                             queue.put_nowait(chunk)
@@ -488,6 +496,7 @@ class OpenAIService(BaseLLMServiceCore):
                         # Check for cancellation
                         if cancel_event and cancel_event.is_set():
                             logger.debug("Streaming aborted")
+                            cancel_flag.set()  # Signal thread to stop
                             stream.close()
                             raise asyncio.CancelledError("LLM streaming aborted by user")
 
@@ -504,7 +513,8 @@ class OpenAIService(BaseLLMServiceCore):
 
                         yield chunk
                 finally:
-                    # Ensure thread is done
+                    # Ensure thread is done - set cancel flag first to accelerate cleanup
+                    cancel_flag.set()
                     try:
                         await asyncio.wait_for(future, timeout=1.0)
                     except (asyncio.TimeoutError, Exception):
