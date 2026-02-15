@@ -458,11 +458,22 @@ class OpenAIService(BaseLLMServiceCore):
                     async for chunk in stream:
                         # Check for cancellation
                         if cancel_event and cancel_event.is_set():
-                            logger.debug("Streaming aborted")
+                            logger.debug("Streaming aborted - closing async stream")
+                            # Close the stream to stop server-side generation
+                            if hasattr(stream, 'close'):
+                                stream.close()
                             raise asyncio.CancelledError("LLM streaming aborted by user")
                         yield chunk
                 except asyncio.CancelledError:
-                    logger.debug("Streaming response cancelled")
+                    logger.debug("Streaming response cancelled - ensuring stream is closed")
+                    # Ensure stream is closed on cancellation
+                    if hasattr(stream, 'close'):
+                        stream.close()
+                    raise
+                except Exception:
+                    # Close stream on any exception to prevent resource leaks
+                    if hasattr(stream, 'close'):
+                        stream.close()
                     raise
             else:
                 # Sync stream - iterate in thread to avoid blocking
@@ -491,7 +502,11 @@ class OpenAIService(BaseLLMServiceCore):
                             queue.put_nowait(sentinel)
                         except Exception:
                             pass
-                        stream.close()
+                        # ALWAYS close the stream to stop server-side generation
+                        try:
+                            stream.close()
+                        except Exception:
+                            pass
 
                 # Start sync iteration in thread
                 loop = asyncio.get_event_loop()
@@ -501,9 +516,13 @@ class OpenAIService(BaseLLMServiceCore):
                     while True:
                         # Check for cancellation
                         if cancel_event and cancel_event.is_set():
-                            logger.debug("Streaming aborted")
+                            logger.debug("Streaming aborted - closing sync stream")
                             cancel_flag.set()  # Signal thread to stop
-                            stream.close()
+                            # Close stream immediately to stop server-side generation
+                            try:
+                                stream.close()
+                            except Exception:
+                                pass
                             raise asyncio.CancelledError("LLM streaming aborted by user")
 
                         # Get chunk from queue with timeout
@@ -518,6 +537,14 @@ class OpenAIService(BaseLLMServiceCore):
                             break
 
                         yield chunk
+                except asyncio.CancelledError:
+                    # Ensure stream is closed on cancellation
+                    cancel_flag.set()
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+                    raise
                 finally:
                     # Ensure thread is done - set cancel flag first to accelerate cleanup
                     cancel_flag.set()

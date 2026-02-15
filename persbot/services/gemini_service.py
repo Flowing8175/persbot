@@ -981,7 +981,10 @@ class GeminiService(BaseLLMServiceCore):
             async for chunk in stream:
                 # Check for cancellation
                 if cancel_event and cancel_event.is_set():
-                    logger.debug("Streaming aborted")
+                    logger.debug("Streaming aborted - closing Gemini stream")
+                    # Close the stream to stop server-side generation
+                    if hasattr(stream, 'close'):
+                        stream.close()
                     raise asyncio.CancelledError("LLM streaming aborted by user")
 
                 # Save reference to final chunk for metadata extraction
@@ -1012,7 +1015,21 @@ class GeminiService(BaseLLMServiceCore):
                 self._log_raw_response(final_chunk, 1)
 
         except asyncio.CancelledError:
-            logger.debug("Streaming response cancelled")
+            logger.debug("Streaming response cancelled - ensuring Gemini stream is closed")
+            # Ensure stream is closed on cancellation to stop server-side generation
+            if hasattr(stream, 'close'):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            raise
+        except Exception:
+            # Close stream on any exception to prevent resource leaks and stop server generation
+            if hasattr(stream, 'close'):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
             raise
 
         # Update history with the full conversation
