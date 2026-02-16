@@ -308,13 +308,23 @@ class SessionManager:
     def link_message_to_session(self, message_id: str, session_key: str) -> None:
         """Links a Discord message ID to the last message in the session history by appending to message_ids."""
         session = self.sessions.get(session_key)
-        # Access _history directly instead of through the history property,
-        # since the property returns a copy and modifications wouldn't persist
-        if session and hasattr(session.chat, "_history") and session.chat._history:
-            last_msg = session.chat._history[-1]
-            if not hasattr(last_msg, "message_ids"):
-                last_msg.message_ids = []
-            last_msg.message_ids.append(message_id)
+        if not session:
+            return
+
+        # Get the history container - handle both OpenAI/ZAI (_history) and Gemini (history)
+        # OpenAI/ZAI use _history internally with a history property that returns a copy
+        # Gemini uses history directly as a deque
+        if hasattr(session.chat, "_history") and session.chat._history:
+            history_container = session.chat._history
+        elif hasattr(session.chat, "history") and session.chat.history:
+            history_container = session.chat.history
+        else:
+            return
+
+        last_msg = history_container[-1]
+        if not hasattr(last_msg, "message_ids"):
+            last_msg.message_ids = []
+        last_msg.message_ids.append(message_id)
 
     def undo_last_exchanges(self, session_key: str, num_to_undo: int) -> list:
         """Remove the last N user/assistant exchanges from a session's history."""

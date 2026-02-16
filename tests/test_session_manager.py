@@ -647,6 +647,7 @@ class TestLinkMessageToSession:
         """link_message_to_session does nothing when chat has no history."""
         mock_chat = Mock()
         mock_chat._history = []
+        mock_chat.history = []  # Also set history for Gemini-style sessions
 
         manager.sessions["channel:123"] = Mock(chat=mock_chat)
 
