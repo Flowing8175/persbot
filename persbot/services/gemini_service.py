@@ -308,8 +308,14 @@ class GeminiService(BaseLLMServiceCore):
         if not use_cache:
             return None, None
 
+        # Gemini's cached content doesn't support function calling.
+        # When tools are needed, skip caching and use standard context.
+        if tools:
+            logger.debug("Tools present - skipping Gemini cache (not compatible with function calling)")
+            return None, None
+
         cache_name, cache_expiration = self._get_gemini_cache(
-            model_name, system_instruction, tools=tools
+            model_name, system_instruction, tools=None
         )
 
         # Log cache status
