@@ -53,3 +53,21 @@ persbot/assets/
 boulder.json
 .omc/
 .coverage
+
+# Test screenshots and images
+*.png
+
+# Playwright MCP logs
+.playwright-mcp/console-*.log
+
+# Runtime logs
+bot.log
+*.log
+
+# Coverage reports
+htmlcov/
+
+# Cache directories
+.pytest_cache/
+.ruff_cache/
+__pycache__/
