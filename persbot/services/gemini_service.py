@@ -795,15 +795,40 @@ class GeminiService(BaseLLMServiceCore):
             )
             chat_session._factory = new_model
 
+        # Helper to refresh session on cache error
+        async def _refresh_streaming_session():
+            logger.warning("Refreshing streaming session due to 403 Cache Error...")
+            self._model_cache.clear()
+            self._cache_name_cache.clear()
+
+            system_instruction = (
+                getattr(chat_session, "_system_instruction", None)
+                or self.prompt_service.get_active_assistant_prompt()
+            )
+            target_model = effective_model
+            fresh_model = self._get_or_create_model(target_model, system_instruction)
+            chat_session._factory = fresh_model
+
         # Start streaming - get user message and stream iterator
-        user_msg, stream = await chat_session.send_message_stream(
-            user_message,
-            author_id=author_id,
-            author_name=author_name,
-            message_ids=message_ids,
-            images=images,
-            tools=final_tools,
-        )
+        # This may fail with cache error, so we wrap in try-except for retry
+        max_retries = 1  # Only retry once for cache errors
+
+        for attempt in range(max_retries + 1):
+            try:
+                user_msg, stream = await chat_session.send_message_stream(
+                    user_message,
+                    author_id=author_id,
+                    author_name=author_name,
+                    message_ids=message_ids,
+                    images=images,
+                    tools=final_tools,
+                )
+                break  # Success, exit retry loop
+            except Exception as e:
+                if self._is_cache_error(e) and attempt < max_retries:
+                    await _refresh_streaming_session()
+                    continue
+                raise  # Re-raise non-cache errors or final retry failure
 
         # Buffer for streaming - yield on newline for natural line breaks
         buffer = ""
