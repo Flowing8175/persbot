@@ -68,12 +68,6 @@ class GeminiService(BaseLLMServiceCore):
         self._models_initialized = False
         self._cache_warmup_task: Optional[asyncio.Task] = None
 
-        logger.debug(
-            "Gemini service initialized with assistant='%s', summary='%s' (lazy loading)",
-            self._assistant_model_name,
-            self._summary_model_name,
-        )
-
         # Start periodic cache cleanup task
         if config.gemini_cache_ttl_minutes > 0:
             asyncio.create_task(self._periodic_cache_cleanup())
@@ -115,8 +109,6 @@ class GeminiService(BaseLLMServiceCore):
             return
 
         try:
-            logger.debug("Starting cache warmup in background...")
-
             # Create models with caching enabled (async to avoid blocking)
             async def _create_model_async(model_name: str, system_prompt: str) -> GeminiCachedModel:
                 return await asyncio.to_thread(
@@ -136,11 +128,6 @@ class GeminiService(BaseLLMServiceCore):
             )
 
             self._models_initialized = True
-            logger.debug(
-                "Cache warmup complete: assistant='%s', summary='%s'",
-                self._assistant_model_name,
-                self._summary_model_name,
-            )
         except Exception as e:
             logger.warning("Cache warmup failed (will use lazy loading): %s", e)
             # Models will be created lazily on first use
@@ -149,7 +136,6 @@ class GeminiService(BaseLLMServiceCore):
         """Start cache warmup as a background task (non-blocking)."""
         if self._cache_warmup_task is None or self._cache_warmup_task.done():
             self._cache_warmup_task = asyncio.create_task(self.warmup_caches())
-            logger.debug("Background cache warmup task started")
 
     def _get_or_create_model(
         self,
@@ -222,7 +208,6 @@ class GeminiService(BaseLLMServiceCore):
 
         model, expires_at = self._model_cache[cache_key]
         if expires_at and now >= expires_at:
-            logger.debug("Cached model expired (TTL reached). Refreshing...")
             del self._model_cache[cache_key]
             return None
 
@@ -256,7 +241,6 @@ class GeminiService(BaseLLMServiceCore):
         """
         # Check if this model supports tools
         if not self._model_supports_tools(model_name):
-            logger.debug("Model %s does not support tools, skipping search tools", model_name)
             return None
 
         return [genai_types.Tool(google_search=genai_types.GoogleSearch())]
@@ -311,18 +295,11 @@ class GeminiService(BaseLLMServiceCore):
         # Gemini's cached content doesn't support function calling.
         # When tools are needed, skip caching and use standard context.
         if tools:
-            logger.debug("Tools present - skipping Gemini cache (not compatible with function calling)")
             return None, None
 
         cache_name, cache_expiration = self._get_gemini_cache(
             model_name, system_instruction, tools=None
         )
-
-        # Log cache status
-        if cache_name:
-            logger.debug("Gemini Model initialized with CachedContent: %s", cache_name)
-        else:
-            logger.debug("Gemini Model will use standard context (no cache).")
 
         return cache_name, cache_expiration
 
@@ -366,7 +343,6 @@ class GeminiService(BaseLLMServiceCore):
         self._assistant_model_instance = None
         self._summary_model_instance = None
         self._models_initialized = False
-        logger.debug("Gemini model cache cleared to apply new parameters.")
 
     def _create_retry_handler(self) -> RetryHandler:
         """Create Gemini-specific retry handler."""
@@ -411,118 +387,11 @@ class GeminiService(BaseLLMServiceCore):
 
     def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
         """Log raw API request data being sent."""
-        try:
-            # Always log the request at INFO level for visibility
-            if chat_session and hasattr(chat_session, "history"):
-                history = chat_session.history
-                history_len = len(history)
-                logger.info(
-                    "📤 API request: history=%d messages, new_msg='%s'",
-                    history_len,
-                    user_message[:50].replace("\n", " ") + ("..." if len(user_message) > 50 else ""),
-                )
-            else:
-                logger.info(
-                    "📤 API request (no session): new_msg='%s'",
-                    user_message[:50].replace("\n", " ") + ("..." if len(user_message) > 50 else ""),
-                )
-
-            if not logger.isEnabledFor(logging.DEBUG):
-                return
-
-            logger.debug(
-                f"[RAW API REQUEST] User message preview: {user_message[: DisplayConfig.REQUEST_PREVIEW_LENGTH]!r}"
-            )
-
-            if chat_session and hasattr(chat_session, "history"):
-                history = chat_session.history
-                formatted_history = []
-                for msg in history[-DisplayConfig.HISTORY_DISPLAY_LIMIT :]:
-                    role = msg.role
-                    texts = [part.get("text", "") for part in msg.parts]
-                    content = " ".join(texts)
-
-                    # Clean up content display if it starts with "Name: "
-                    author_label = str(msg.author_name or msg.author_id or "bot")
-                    display_content = content
-                    if msg.author_name and content.startswith(f"{msg.author_name}:"):
-                        display_content = content[len(msg.author_name) + 1 :].strip()
-
-                    formatted_history.append(f"{role} (author:{author_label}) {display_content}")
-                if formatted_history:
-                    logger.debug(
-                        "[RAW API REQUEST] Recent history:\n" + "\n".join(formatted_history)
-                    )
-        except Exception as e:
-            logger.error(f"[RAW API REQUEST] Error logging raw request: {e}", exc_info=True)
+        pass  # Request logging removed
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw API response data for debugging."""
-        # Unpack if tuple (from chat session: user_msg, model_msg, response)
-        actual_response = response_obj
-        if isinstance(response_obj, tuple) and len(response_obj) >= 3:
-            actual_response = response_obj[2]
-        try:
-            metadata = getattr(actual_response, "usage_metadata", None)
-            if metadata:
-                prompt_tokens = getattr(metadata, "prompt_token_count", "unknown")
-                response_tokens = getattr(metadata, "candidates_token_count", "unknown")
-                cached_tokens = getattr(metadata, "cached_content_token_count", 0)
-                total_tokens = getattr(metadata, "total_token_count", "unknown")
-
-                # Log cache hits at INFO level for visibility
-                if cached_tokens and cached_tokens > 0:
-                    savings_percent = (cached_tokens / prompt_tokens * 100) if isinstance(prompt_tokens, int) else 0
-                    logger.info(
-                        "💰 Cache hit! %d/%d tokens cached (%.1f%% savings)",
-                        cached_tokens,
-                        prompt_tokens,
-                        savings_percent,
-                    )
-                else:
-                    logger.info(
-                        "📊 Token usage: prompt=%s, response=%s, total=%s",
-                        prompt_tokens,
-                        response_tokens,
-                        total_tokens,
-                    )
-
-                logger.debug(
-                    f"(prompt={prompt_tokens}, cached={cached_tokens}, response={response_tokens}, total={total_tokens})"
-                )
-        except Exception as e:
-            logger.error(
-                f"[RAW API RESPONSE {attempt}] Error logging token counts: {e}",
-                exc_info=True,
-            )
-
-        if not logger.isEnabledFor(logging.DEBUG):
-            return
-
-        try:
-            if hasattr(actual_response, "candidates") and actual_response.candidates:
-                for idx, candidate in enumerate(actual_response.candidates):
-                    finish_reason = getattr(candidate, "finish_reason", "unknown")
-                    logger.debug(
-                        f"[RAW API RESPONSE {attempt}] Candidate {idx} finish_reason={finish_reason}"
-                    )
-                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                        texts = []
-                        for part in candidate.content.parts:
-                            text = getattr(part, "text", "")
-                            if text:
-                                texts.append(
-                                    text[: DisplayConfig.RESPONSE_PREVIEW_LENGTH].replace("\n", " ")
-                                )
-                        if texts:
-                            logger.debug(
-                                f"[RAW API RESPONSE {attempt}] Candidate {idx} text: {' '.join(texts)}"
-                            )
-        except Exception as e:
-            logger.error(
-                f"[RAW API RESPONSE {attempt}] Error logging raw response: {e}",
-                exc_info=True,
-            )
+        pass  # Response logging removed
 
     def _get_cache_key(self, model_name: str, content: str, tools: Optional[list] = None) -> str:
         """Generate a consistent cache key/name based on model and content hash."""
@@ -581,7 +450,6 @@ class GeminiService(BaseLLMServiceCore):
             cached_name, cached_expiration = self._cache_name_cache[cache_display_name]
             # Check if cached entry is still valid
             if cached_expiration and now < cached_expiration:
-                logger.debug("Using in-memory cached Gemini cache name: %s", cached_name)
                 return cached_name, cached_expiration
             else:
                 # Expired, remove from cache
@@ -604,32 +472,18 @@ class GeminiService(BaseLLMServiceCore):
 
         min_tokens = getattr(self.config, "gemini_cache_min_tokens", CacheConfig.MIN_TOKENS)
         if token_count < min_tokens:
-            logger.debug(
-                "Gemini Context Caching skipped: Token count (%d) < min_tokens (%d). Using standard context.",
-                token_count,
-                min_tokens,
-            )
             return None, None
-
-        logger.info("Token count (%d) meets requirement for Gemini caching.", token_count)
 
         # Search for existing cache
         try:
             # We iterate to find a cache with our unique display name
             for cache in self.client.caches.list():
                 if cache.display_name == cache_display_name:
-                    logger.debug("Found existing Gemini context cache: %s", cache.name)
-
                     # Refresh TTL to prevent expiration
                     try:
                         self.client.caches.update(
                             name=cache.name,
                             config=genai_types.UpdateCachedContentConfig(ttl=f"{ttl_seconds}s"),
-                        )
-                        logger.debug(
-                            "Refreshed TTL for %s to %ds.",
-                            cache.name,
-                            ttl_seconds,
                         )
                         # Cache the result in memory for future lookups
                         self._cache_name_cache[cache_display_name] = (cache.name, local_expiration)
@@ -648,12 +502,6 @@ class GeminiService(BaseLLMServiceCore):
 
         # Create new cache
         try:
-            logger.debug(
-                "Creating new Gemini cache '%s' (TTL: %ds)...",
-                cache_display_name,
-                ttl_seconds,
-            )
-
             cache = self.client.caches.create(
                 model=model_name,
                 config=genai_types.CreateCachedContentConfig(
@@ -664,7 +512,6 @@ class GeminiService(BaseLLMServiceCore):
                 ),
             )
 
-            logger.info("Created Gemini cache: %s", cache.name)
             # Cache the result in memory for future lookups
             self._cache_name_cache[cache_display_name] = (cache.name, local_expiration)
             return cache.name, local_expiration
@@ -686,7 +533,6 @@ class GeminiService(BaseLLMServiceCore):
     async def summarize_text(self, text: str) -> Optional[str]:
         if not text.strip():
             return "요약할 메시지가 없습니다."
-        logger.debug(f"Summarizing text ({len(text)} characters)...")
         prompt = f"Discord 대화 내용:\n{text}"
 
         async def _refresh_summary_model():
@@ -694,7 +540,6 @@ class GeminiService(BaseLLMServiceCore):
             self.summary_model = self._get_or_create_model(
                 self._summary_model_name, self.prompt_service.get_summary_prompt()
             )
-            logger.debug("Refreshed summary model after cache invalidation.")
 
         # Use _gemini_retry to handle cache errors
         response = await self._gemini_retry(
@@ -715,7 +560,6 @@ class GeminiService(BaseLLMServiceCore):
         """Generate chat response."""
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -753,8 +597,6 @@ class GeminiService(BaseLLMServiceCore):
             # Update the wrapper's factory reference
             chat_session._factory = fresh_model
 
-            logger.debug("Chat session refreshed with new model/cache.")
-
         try:
             effective_model = model_name or self._assistant_model_name
 
@@ -767,17 +609,11 @@ class GeminiService(BaseLLMServiceCore):
                 search_tools = self._get_search_tools(effective_model)
                 final_tools = self._combine_tools(custom_tools, search_tools)
             else:
-                logger.debug("Model %s does not support tools, skipping all tool processing", effective_model)
                 final_tools = None
 
             # Check if we need to switch model for this session
             current_model_name = getattr(chat_session._factory, "_model_name", None)
             if model_name and current_model_name != model_name:
-                logger.debug(
-                    "Switching chat session model: %s -> %s",
-                    current_model_name,
-                    model_name,
-                )
                 system_instr = (
                     getattr(chat_session, "_system_instruction", None)
                     or self.prompt_service.get_active_assistant_prompt()
@@ -797,7 +633,6 @@ class GeminiService(BaseLLMServiceCore):
                     tools=final_tools
                 )
                 chat_session._factory = new_model
-                logger.debug(f"Recreated model with {len(final_tools)} tools for cached content compatibility")
 
             # First attempt: normal flow with retry for cache errors
             result = await self._gemini_retry(
@@ -907,7 +742,6 @@ class GeminiService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("Streaming API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -936,17 +770,11 @@ class GeminiService(BaseLLMServiceCore):
             search_tools = self._get_search_tools(effective_model)
             final_tools = self._combine_tools(custom_tools, search_tools)
         else:
-            logger.debug("Model %s does not support tools, skipping all tool processing", effective_model)
             final_tools = None
 
         # Check if we need to switch model for this session
         current_model_name = getattr(chat_session._factory, "_model_name", None)
         if model_name and current_model_name != model_name:
-            logger.debug(
-                "Switching chat session model: %s -> %s",
-                current_model_name,
-                model_name,
-            )
             system_instr = (
                 getattr(chat_session, "_system_instruction", None)
                 or self.prompt_service.get_active_assistant_prompt()
@@ -966,7 +794,6 @@ class GeminiService(BaseLLMServiceCore):
                 tools=final_tools
             )
             chat_session._factory = new_model
-            logger.debug(f"Recreated model with {len(final_tools)} tools for cached content compatibility")
 
         # Start streaming - get user message and stream iterator
         user_msg, stream = await chat_session.send_message_stream(
@@ -987,7 +814,6 @@ class GeminiService(BaseLLMServiceCore):
             async for chunk in stream:
                 # Check for cancellation
                 if cancel_event and cancel_event.is_set():
-                    logger.debug("Streaming aborted - closing Gemini stream")
                     # Close the stream to stop server-side generation
                     if hasattr(stream, 'aclose'):
                         await stream.aclose()
@@ -1023,7 +849,6 @@ class GeminiService(BaseLLMServiceCore):
                 self._log_raw_response(final_chunk, 1)
 
         except asyncio.CancelledError:
-            logger.debug("Streaming response cancelled - ensuring Gemini stream is closed")
             # Ensure stream is closed on cancellation to stop server-side generation
             try:
                 if hasattr(stream, 'aclose'):
@@ -1066,8 +891,8 @@ class GeminiService(BaseLLMServiceCore):
 
                             if hasattr(part, "text") and part.text:
                                 return part.text
-        except Exception as e:
-            logger.debug(f"Error extracting text from stream chunk: {e}")
+        except Exception:
+            pass
         return ""
 
     async def send_tool_results(
@@ -1092,7 +917,6 @@ class GeminiService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         model_name = getattr(chat_session._factory, "_model_name", self._assistant_model_name)
@@ -1140,7 +964,6 @@ class GeminiService(BaseLLMServiceCore):
             try:
                 # Check for cancellation before attempting API call
                 if cancel_event and cancel_event.is_set():
-                    logger.debug("API call aborted")
                     raise asyncio.CancelledError("LLM API call aborted by user")
 
                 response = await asyncio.wait_for(
@@ -1150,7 +973,6 @@ class GeminiService(BaseLLMServiceCore):
                 # Check for cancellation AFTER API call returns
                 # The underlying thread can't be cancelled mid-flight, so we check here
                 if cancel_event and cancel_event.is_set():
-                    logger.debug("API call completed but cancelled - discarding response")
                     raise asyncio.CancelledError("LLM API call aborted by user")
                 self._log_raw_response(response, attempt)
                 return response
@@ -1192,7 +1014,6 @@ class GeminiService(BaseLLMServiceCore):
 
         # Check for cancellation before backoff sleep
         if cancel_event and cancel_event.is_set():
-            logger.debug("Retry loop aborted during backoff")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         await asyncio.sleep(self._calculate_backoff(attempt))
@@ -1293,7 +1114,6 @@ class GeminiService(BaseLLMServiceCore):
                 # Refresh expired cache entries to prevent expiration
                 await self._refresh_expired_cache()
             except asyncio.CancelledError:
-                logger.debug("Cache cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error during cache cleanup: {e}", exc_info=True)
@@ -1341,8 +1161,8 @@ class GeminiService(BaseLLMServiceCore):
                 except Exception as e:
                     # Log but don't fail on individual cache refresh
                     if "403 PERMISSION_DENIED" not in str(e):
-                        logger.debug(f"Failed to refresh cache {cache.name}: {e}")
+                        pass
         except asyncio.TimeoutError:
-            logger.debug("Cache list operation timed out")
+            pass
         except Exception as e:
             logger.error(f"Cache cleanup task error: {e}", exc_info=True)

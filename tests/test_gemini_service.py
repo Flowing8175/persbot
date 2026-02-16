@@ -698,15 +698,15 @@ class TestGeminiServiceLogRawRequest:
     """Tests for GeminiService._log_raw_request()."""
 
     def test_logs_user_message_preview(self, service):
-        """_log_raw_request logs user message preview."""
+        """_log_raw_request does nothing (debug logging removed)."""
         with patch("persbot.services.gemini_service.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             mock_logger.debug = Mock()
 
             service._log_raw_request("This is a test message", None)
 
-            # Should have logged
-            assert mock_logger.debug.called
+            # Debug logging has been removed, so debug should not be called
+            mock_logger.debug.assert_not_called()
 
     def test_skips_when_debug_disabled(self, service):
         """_log_raw_request skips when debug logging disabled."""
@@ -724,7 +724,7 @@ class TestGeminiServiceLogRawResponse:
     """Tests for GeminiService._log_raw_response()."""
 
     def test_logs_token_metadata(self, service):
-        """_log_raw_response logs token metadata."""
+        """_log_raw_response does nothing (debug logging removed)."""
         mock_response = Mock()
         mock_response.usage_metadata = Mock(
             prompt_token_count=100,
@@ -739,11 +739,11 @@ class TestGeminiServiceLogRawResponse:
 
             service._log_raw_response(mock_response, 1)
 
-            # Should have logged token counts
-            assert mock_logger.debug.called
+            # Debug logging has been removed, so debug should not be called
+            mock_logger.debug.assert_not_called()
 
     def test_handles_tuple_response(self, service):
-        """_log_raw_response handles tuple response from chat session."""
+        """_log_raw_response handles tuple response from chat session (debug logging removed)."""
         mock_response = (Mock(), Mock(), Mock())
         mock_response[2].usage_metadata = Mock(
             prompt_token_count=100,
@@ -758,5 +758,5 @@ class TestGeminiServiceLogRawResponse:
 
             service._log_raw_response(mock_response, 1)
 
-            # Should have extracted response from tuple
-            assert mock_logger.debug.called
+            # Debug logging has been removed, so debug should not be called
+            mock_logger.debug.assert_not_called()
