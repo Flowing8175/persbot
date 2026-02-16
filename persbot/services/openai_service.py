@@ -456,8 +456,7 @@ class OpenAIService(BaseLLMServiceCore):
                 tools=converted_tools,
             )
 
-        # Buffer for streaming - yield chunks immediately for faster first response
-        buffer = ""
+        # Accumulate full content for history
         full_content = ""
 
         async def _iterate_stream():
@@ -601,27 +600,8 @@ class OpenAIService(BaseLLMServiceCore):
                     text = chunk
 
                 if text:
-                    buffer += text
                     full_content += text
-
-                    # Yield immediately when we have content with line break,
-                    # OR yield after accumulating reasonable content for faster first response
-                    if "\n" in buffer:
-                        lines = buffer.split("\n")
-                        # Yield all complete lines
-                        for line in lines[:-1]:
-                            if line:  # Skip empty lines
-                                yield line + "\n"
-                        # Keep the last incomplete line in buffer
-                        buffer = lines[-1]
-                    elif len(buffer) > 50:
-                        # Yield partial content for faster first response
-                        yield buffer
-                        buffer = ""
-
-            # Yield any remaining content in buffer
-            if buffer:
-                yield buffer
+                    yield text
 
         except asyncio.CancelledError:
             logger.debug("Streaming response cancelled")
