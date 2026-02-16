@@ -7,7 +7,6 @@ formatting, splitting, and session tracking.
 import asyncio
 import io
 import logging
-from typing import AsyncIterator, List
 
 import discord
 
@@ -148,86 +147,5 @@ async def send_with_images(
             img_msg = await channel.send(file=img_file)
             session_manager.link_message_to_session(str(img_msg.id), session_key)
             sent_messages.append(img_msg)
-
-    return sent_messages
-
-
-async def send_streaming_response(
-    channel: discord.abc.Messageable,
-    stream: AsyncIterator[str],
-    session_key: str,
-    session_manager: SessionManager,
-) -> List[discord.Message]:
-    """Send a streaming response to Discord channel.
-
-    This function consumes the stream and sends text chunks as they arrive.
-    Chunks are sent immediately after receiving them (the stream already
-    buffers until line breaks for optimal latency).
-
-    Args:
-        channel: The Discord channel to send to.
-        stream: Async iterator yielding text chunks.
-        session_key: The session key for linking messages.
-        session_manager: The session manager for linking.
-
-    Returns:
-        List of sent Discord messages.
-
-    Raises:
-        asyncio.CancelledError: If sending is interrupted.
-    """
-    sent_messages: List[discord.Message] = []
-    accumulated_text = ""
-
-    try:
-        async for chunk in stream:
-            # Check if we have content to send
-            if not chunk.strip():
-                continue
-
-            accumulated_text += chunk
-
-            # Split chunk into lines for Discord (respect max message length)
-            lines_to_send = []
-            for line in chunk.split("\n"):
-                if not line.strip():
-                    continue
-
-                # If line is too long, split it
-                if len(line) > MessageConfig.MAX_SPLIT_LENGTH:
-                    lines_to_send.extend(smart_split(line))
-                else:
-                    lines_to_send.append(line)
-
-            # Send each line immediately (no artificial delay for streaming)
-            for line in lines_to_send:
-                if not line.strip():
-                    continue
-
-                # Show typing indicator briefly, but send immediately
-                async with channel.typing():
-                    sent_msg = await channel.send(line)
-                    session_manager.link_message_to_session(str(sent_msg.id), session_key)
-                    sent_messages.append(sent_msg)
-
-        logger.debug(
-            "Streaming response complete: %d messages sent, %d chars total",
-            len(sent_messages),
-            len(accumulated_text),
-        )
-
-    except asyncio.CancelledError:
-        logger.debug("Streaming response interrupted for channel %s - closing stream", channel.id)
-        # Close the stream to stop LLM server-side generation and save costs
-        # Use aclose() for async generators (which don't have close()),
-        # fall back to close() for sync streams
-        try:
-            if hasattr(stream, 'aclose'):
-                await stream.aclose()
-            elif hasattr(stream, 'close'):
-                stream.close()
-        except BaseException:
-            pass
-        raise
 
     return sent_messages
