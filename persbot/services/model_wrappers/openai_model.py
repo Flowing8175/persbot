@@ -75,6 +75,8 @@ class OpenAIChatCompletionModel:
 
     def create_response_session(self) -> ResponseSession:
         """Create a low-latency responses session (no history)."""
+        # Note: Responses API doesn't support service_tier="flex" with streaming
+        # Using "default" to avoid APIError during streaming
         return ResponseSession(
             client=self._client,
             model_name=self._model_name,
@@ -82,7 +84,7 @@ class OpenAIChatCompletionModel:
             temperature=self._temperature,
             top_p=self._top_p,
             max_messages=0,  # Responses API doesn't maintain history
-            service_tier=self._service_tier,
+            service_tier="default",  # "flex" causes streaming errors with Responses API
             text_extractor=self._text_extractor,
         )
 
