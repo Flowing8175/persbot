@@ -27,7 +27,6 @@ async def get_discord_cache() -> CacheManager:
                 cleanup_interval_minutes=5,
             )
             await _discord_cache.start_cleanup_task()
-            logger.debug("Initialized Discord API cache")
         return _discord_cache
 
 
@@ -88,4 +87,3 @@ async def cleanup_discord_cache() -> None:
             await _discord_cache.stop_cleanup_task()
             await _discord_cache.clear()
             _discord_cache = None
-            logger.debug("Cleaned up Discord API cache")

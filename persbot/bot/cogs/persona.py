@@ -46,7 +46,6 @@ class PromptModeSelectView(discord.ui.View):
     @discord.ui.button(label="기본 모드", style=discord.ButtonStyle.secondary, emoji="⚡", row=0)
     async def basic_mode(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Basic mode - quick generation without questions."""
-        logger.debug("basic_mode button clicked - use_questions=False")
         await interaction.response.send_modal(
             PromptCreateModal(self.parent_view, use_questions=False)
         )
@@ -55,7 +54,6 @@ class PromptModeSelectView(discord.ui.View):
     @discord.ui.button(label="AI 질문 모드", style=discord.ButtonStyle.primary, emoji="🧠", row=0)
     async def qa_mode(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """AI question mode - detailed generation with AI questions."""
-        logger.debug("qa_mode button clicked - use_questions=True")
         await interaction.response.send_modal(
             PromptCreateModal(self.parent_view, use_questions=True)
         )
@@ -88,9 +86,6 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
     async def on_submit(self, interaction: discord.Interaction) -> None:
         concept_str = self.concept.value
         use_qa = self.use_questions
-        logger.debug(
-            f"PromptCreateModal.on_submit: use_questions={use_qa}, concept={concept_str[:50]}..."
-        )
 
         if use_qa:
             # Defer and show loading, then send the questions modal

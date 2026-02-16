@@ -118,12 +118,6 @@ class CircuitBreaker:
         elif new_state == CircuitState.HALF_OPEN:
             self._half_open_calls = 0
 
-        logger.info(
-            "Circuit breaker '%s' transitioned: %s -> %s",
-            self.name,
-            old_state.value,
-            new_state.value,
-        )
 
     def _get_recovery_time(self) -> float:
         """Calculate time until recovery attempt."""

@@ -58,10 +58,6 @@ def _load_image_models():
                     except ValueError:
                         logger.warning(f"Invalid channel ID in preferences: {channel_id_str}")
 
-                logger.debug(
-                    f"Loaded {len(_image_models_cache)} image models, "
-                    f"default: {_default_image_model}"
-                )
         except Exception as e:
             logger.error(f"Failed to load image models: {e}")
             # Use fallback defaults
@@ -107,7 +103,6 @@ def _save_preferences():
         with open(MODELS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-        logger.debug("Saved image model preferences")
     except Exception as e:
         logger.error(f"Failed to save image model preferences: {e}")
 
@@ -152,7 +147,6 @@ def set_channel_image_model(channel_id: int, model_name: str) -> bool:
         True if successful.
     """
     _channel_image_preferences[channel_id] = model_name
-    logger.debug("Set image model for channel %d to %s", channel_id, model_name)
     _save_preferences()
     return True
 
@@ -179,7 +173,6 @@ def clear_channel_image_model(channel_id: int) -> None:
     """
     if channel_id in _channel_image_preferences:
         del _channel_image_preferences[channel_id]
-        logger.debug("Cleared image model preference for channel %d", channel_id)
         _save_preferences()
 
 
@@ -205,7 +198,6 @@ def set_default_image_model(model_name: str) -> bool:
         True if successful.
     """
     _default_image_model = model_name
-    logger.info("Set default image model to %s", model_name)
     _save_preferences()
     return True
 

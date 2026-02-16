@@ -193,7 +193,6 @@ class ImageUseCase:
             return None
 
         except asyncio.CancelledError:
-            logger.debug("Image generation cancelled")
             return None
         except Exception as e:
             logger.error(f"Image generation failed: {e}", exc_info=True)

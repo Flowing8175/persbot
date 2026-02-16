@@ -110,40 +110,26 @@ async def main(config) -> None:
         await bot.add_cog(
             auto_channel_cog_cls(bot, config, llm_service, session_manager, tool_manager)
         )
-    logger.info("Cogs 로드 완료.")
 
     tree_synced = False
 
     @bot.event
     async def on_ready() -> None:
         nonlocal tree_synced
-        if bot.user:
-            logger.info(f"로그인 완료: {bot.user.name} ({bot.user.id})")
-        logger.info(
-            f"봇이 준비되었습니다! '{config.command_prefix}' 또는 @mention으로 상호작용할 수 있습니다."
-        )
-
-        if config.auto_reply_channel_ids:
-            logger.info("channel registered to reply: %s", list(config.auto_reply_channel_ids))
-        else:
-            logger.info("channel registered to reply: []")
-
         # Sync Command Tree (only once, on_ready can fire multiple times on reconnect)
         if not tree_synced:
             try:
-                synced = await bot.tree.sync()
+                await bot.tree.sync()
                 tree_synced = True
-                logger.info(f"Command Tree Synced: {len(synced)} commands.")
             except Exception as e:
                 logger.error(f"Failed to sync command tree: {e}")
 
     @bot.event
     async def on_close() -> None:
         """Cleanup on bot close."""
-        logger.info("Services cleaned up successfully")
+        pass
 
     try:
-        logger.info("Discord 봇을 시작합니다...")
         await bot.start(config.discord_token)
     except discord.LoginFailure:
         logger.error("에러: 로그인 실패. Discord 봇 토큰을 확인하세요.")

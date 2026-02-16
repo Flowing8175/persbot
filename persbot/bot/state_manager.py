@@ -72,7 +72,6 @@ class ChannelStateManager:
 
         # Cancel active API call FIRST
         if self.active_api_call:
-            logger.debug(f"Cancelling API call for channel {self.channel_id}")
             messages_to_prepend = self.active_api_call.messages
             self.active_api_call.cancel()
             self.active_api_call = None

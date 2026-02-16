@@ -276,8 +276,7 @@ class HistoryPruner:
         current_tokens = self.estimate_tokens(messages)
 
         if current_tokens <= target:
-            logger.debug("No pruning needed: %d tokens <= %d target", current_tokens, target)
-            return messages, 0
+                return messages, 0
 
         total_messages = len(messages)
         keep_first = min(self.config.keep_first_n, total_messages)
@@ -333,14 +332,6 @@ class HistoryPruner:
         removed_count = len(removed_indices)
         new_tokens = self.estimate_tokens(pruned)
 
-        logger.info(
-            "Pruned history: %d -> %d messages, %d -> %d tokens (removed %d)",
-            total_messages,
-            len(pruned),
-            current_tokens,
-            new_tokens,
-            removed_count,
-        )
 
         return pruned, removed_count
 

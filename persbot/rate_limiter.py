@@ -99,22 +99,10 @@ class SlidingWindowRateLimiter:
             if len(window) < self.max_requests:
                 # Request allowed
                 window.append(current_time)
-                logger.debug(
-                    "Rate limit: request allowed for key=%s (count=%d/%d)",
-                    key,
-                    len(window),
-                    self.max_requests,
-                )
                 return True
 
             # Rate limited
             if not wait:
-                logger.debug(
-                    "Rate limit: request blocked for key=%s (count=%d/%d)",
-                    key,
-                    len(window),
-                    self.max_requests,
-                )
                 return False
 
             # Wait for a slot to become available
@@ -122,11 +110,6 @@ class SlidingWindowRateLimiter:
             wait_time = oldest_request + self.window_seconds - current_time
 
             if wait_time > 0:
-                logger.debug(
-                    "Rate limit: waiting %.2fs for key=%s",
-                    wait_time,
-                    key,
-                )
                 await asyncio.sleep(wait_time)
 
                 # Re-check after waiting (with lock released during sleep)
@@ -272,33 +255,15 @@ class TokenBucketRateLimiter:
             if token_count >= tokens:
                 # Enough tokens available
                 self._buckets[bucket_key] = (token_count - tokens, current_time)
-                logger.debug(
-                    "Token bucket: acquired %.1f tokens for key=%s (remaining=%.1f)",
-                    tokens,
-                    key,
-                    token_count - tokens,
-                )
                 return True
 
             if not wait:
-                logger.debug(
-                    "Token bucket: insufficient tokens for key=%s (need=%.1f, have=%.1f)",
-                    key,
-                    tokens,
-                    token_count,
-                )
                 return False
 
             # Calculate wait time and wait
             tokens_needed = tokens - token_count
             wait_time = tokens_needed / self.refill_rate
 
-            logger.debug(
-                "Token bucket: waiting %.2fs for key=%s (need %.1f more tokens)",
-                wait_time,
-                key,
-                tokens_needed,
-            )
             await asyncio.sleep(wait_time)
 
             # Re-check after waiting

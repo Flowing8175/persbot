@@ -207,7 +207,6 @@ class AssistantCog(BaseChatCog):
         # Send appropriate response
         if aborted:
             await utils.send_abort_success(ctx)
-            logger.debug("🛑 %s stopped the bot in #%s", ctx.author.name, ctx.channel.name)
         else:
             await utils.send_abort_no_tasks(ctx)
 
@@ -418,7 +417,6 @@ class AssistantCog(BaseChatCog):
             auto_cog = self.bot.get_cog("AutoChannelCog")
             if auto_cog and hasattr(auto_cog, "message_buffer"):
                 auto_cog.message_buffer.update_delay(value)
-                logger.debug("Updated AutoChannelCog buffer delay to %s", value)
 
             if ctx.interaction:
                 await ctx.reply(f"✅ 버퍼 대기 시간이 {value}초로 설정되었습니다.", ephemeral=False)

@@ -146,7 +146,6 @@ async def get_message(
         # Try cache first
         cached_data = await get_cached_message(channel_id, message_id)
         if cached_data:
-            logger.debug("Cache hit for message %s in channel %s", message_id, channel_id)
             return ToolResult(success=True, data=cached_data)
 
         channel = discord_context.guild.get_channel(channel_id)
@@ -191,7 +190,6 @@ async def get_message(
 
         # Cache the result
         await cache_message(channel_id, message_id, message_data)
-        logger.debug("Cached message %s in channel %s", message_id, channel_id)
 
         return ToolResult(success=True, data=message_data)
 

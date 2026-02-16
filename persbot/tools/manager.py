@@ -32,26 +32,21 @@ class ToolManager:
     def _register_tools(self) -> None:
         """Register all enabled tools."""
         if not getattr(self.config, "enable_tools", True):
-            logger.debug("Tools are disabled in configuration")
             return
 
         # Register Discord tools
         if getattr(self.config, "enable_discord_tools", True):
             register_all_discord_tools(self.registry)
-            logger.debug("Registered Discord read-only tools")
 
         # Register API tools
         if getattr(self.config, "enable_api_tools", True):
             # Register with API keys if available
             register_all_api_tools(self.registry)
-            logger.debug("Registered external API tools")
 
         # Register Persona tools (for Zeta.ai-style high-immersion persona bot)
         if getattr(self.config, "enable_persona_tools", True):
             register_all_persona_tools(self.registry)
-            logger.debug("Registered persona immersion tools")
 
-        logger.debug("Total tools registered: %d", len(self.registry))
 
     def get_enabled_tools(self) -> Dict[str, ToolDefinition]:
         """Get all enabled tools.
@@ -131,7 +126,6 @@ class ToolManager:
         """
         # Check for cancellation before starting tool execution
         if cancel_event and cancel_event.is_set():
-            logger.debug("Tool execution aborted")
             raise asyncio.CancelledError("Tool execution aborted by user")
 
         # Execute all tools in parallel using asyncio.gather

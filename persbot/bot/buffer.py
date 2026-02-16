@@ -58,9 +58,6 @@ class MessageBuffer:
             self.buffers[channel_id].popleft()
 
         self.buffers[channel_id].append(message)
-        logger.debug(
-            f"Message added to buffer for channel {channel_id}. Current count: {len(self.buffers[channel_id])}"
-        )
 
         # If a task is already running, cancel it to reset the timer
         if channel_id in self.tasks:
@@ -84,9 +81,6 @@ class MessageBuffer:
         # If we are already waiting, cancel the current timer
         if channel_id in self.tasks:
             self.tasks[channel_id].cancel()
-            logger.debug(
-                f"Typing detected in channel {channel_id}. Extending wait to {self.typing_timeout}s."
-            )
 
         # Restart the timer with the extended timeout
         task = asyncio.create_task(self._process_buffer(channel_id, self.typing_timeout, callback))
@@ -100,7 +94,6 @@ class MessageBuffer:
         if delay < 0:
             raise ValueError("Delay must be non-negative")
         self.default_delay = delay
-        logger.debug(f"Buffer delay updated to {delay}s")
 
     async def _process_buffer(
         self,
@@ -119,9 +112,6 @@ class MessageBuffer:
             self.tasks.pop(channel_id, None)
 
             if messages:
-                logger.debug(
-                    f"Processing batch of {len(messages)} messages for channel {channel_id} (waited {delay:.1f}s)"
-                )
                 await callback(messages)
         except asyncio.CancelledError:
             # Task was cancelled (new message arrived or typing detected).

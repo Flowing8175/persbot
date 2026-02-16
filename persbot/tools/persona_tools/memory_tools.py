@@ -345,7 +345,6 @@ async def _create_sample_memory_file(path: str) -> None:
     async with aiofiles.open(path, "w", encoding="utf-8") as f:
         await f.write(json.dumps(sample_data, ensure_ascii=False, indent=2))
 
-    logger.info("Created sample memory file at %s", path)
 
 
 async def _save_memory_vector(memories: List[Dict[str, Any]]) -> None:
@@ -364,7 +363,6 @@ async def _save_memory_vector(memories: List[Dict[str, Any]]) -> None:
         async with aiofiles.open(memory_path, "w", encoding="utf-8") as f:
             await f.write(json.dumps(data, ensure_ascii=False, indent=2))
 
-        logger.debug("Saved %d memory entries to %s", len(memories), memory_path)
     except Exception as e:
         logger.error("Error saving memory file: %s", e)
         raise

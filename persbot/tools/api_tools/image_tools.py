@@ -182,7 +182,6 @@ async def generate_image(
 
     # Check for cancellation before starting
     if cancel_event and cancel_event.is_set():
-        logger.debug("Image generation aborted before API call")
         return ToolResult(success=False, error="Image generation aborted by user")
 
     # Process image reference with priority:
@@ -195,9 +194,7 @@ async def generate_image(
         try:
             image_input = await _download_and_convert_image(image_url)
             if image_input:
-                logger.info(
-                    "Successfully downloaded and converted image from URL for image generation"
-                )
+                pass
         except Exception as e:
             logger.warning(
                 "Failed to download/convert image from URL %s: %s",
@@ -219,7 +216,6 @@ async def generate_image(
                     b64_str = base64.b64encode(img_bytes_processed).decode("utf-8")
                     mime_type = get_mime_type(img_bytes_processed)
                     image_input = f"data:{mime_type};base64,{b64_str}"
-                    logger.info("Using attached image as input for image generation")
                     break
                 except Exception as e:
                     logger.warning(
@@ -255,7 +251,6 @@ async def generate_image(
         )
 
     except asyncio.CancelledError:
-        logger.debug("Image generation cancelled")
         return ToolResult(success=False, error="Image generation aborted by user")
     except ImageGenerationError as e:
         logger.error("Image generation error: %s", e)
@@ -339,7 +334,6 @@ async def send_image(
 
         await channel.send(file=img_file)
 
-        logger.info("Successfully sent image from URL to channel %s", channel.id)
 
         return ToolResult(
             success=True,

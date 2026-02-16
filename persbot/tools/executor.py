@@ -150,7 +150,6 @@ class ToolExecutor:
         try:
             # Check for cancellation before executing tool
             if cancel_event and cancel_event.is_set():
-                logger.debug("Tool execution aborted")
                 return ToolResult(
                     success=False,
                     error=f"Tool '{tool.name}' execution aborted by user",
@@ -167,7 +166,6 @@ class ToolExecutor:
 
             if result.success:
                 self._metrics[tool.name].record_success()
-                logger.debug("Tool %s executed successfully", tool.name)
             else:
                 self._metrics[tool.name].record_failure()
                 logger.warning("Tool %s execution failed: %s", tool.name, result.error)

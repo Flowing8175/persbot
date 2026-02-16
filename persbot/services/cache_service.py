@@ -289,7 +289,6 @@ class GeminiCacheStrategy(CacheStrategy):
             token_count = count_result.total_tokens
 
             if token_count < min_tokens:
-                logger.debug(f"Cache skipped: tokens ({token_count}) < min_tokens ({min_tokens})")
                 return CacheResult(success=False, error="Token count below minimum")
 
             # Search for existing cache
@@ -303,7 +302,6 @@ class GeminiCacheStrategy(CacheStrategy):
                             name=cache.name,
                             config={"ttl": f"{ttl_seconds}s"},
                         )
-                        logger.debug(f"Refreshed existing cache: {cache.name}")
                         entry = CacheEntry(
                             name=cache.name,
                             display_name=display_name,
@@ -326,7 +324,6 @@ class GeminiCacheStrategy(CacheStrategy):
                         # Continue to create new cache
 
             # Create new cache
-            logger.debug(f"Creating new cache '{display_name}'...")
             cache = await asyncio.to_thread(
                 self.client.caches.create,
                 model=model,
@@ -505,15 +502,13 @@ class CacheService:
                     if self._running:
                         removed = await self.cleanup_expired()
                         if removed > 0:
-                            logger.info(f"Periodic cleanup: removed {removed} expired entries")
+                            pass  # Logging removed
                 except asyncio.CancelledError:
-                    logger.debug("Periodic cleanup task cancelled")
                     break
                 except Exception as e:
                     logger.error(f"Error in periodic cleanup: {e}", exc_info=True)
 
         self._cleanup_task = asyncio.create_task(_cleanup_loop())
-        logger.info(f"Started periodic cache cleanup (interval: {interval}s)")
 
     async def stop_periodic_cleanup(self) -> None:
         """Stop periodic cleanup."""
@@ -524,7 +519,6 @@ class CacheService:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
-        logger.info("Stopped periodic cache cleanup")
 
     async def __aenter__(self):
         """Context manager entry."""

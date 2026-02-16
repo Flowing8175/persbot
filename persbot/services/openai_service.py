@@ -68,7 +68,6 @@ class OpenAIService(BaseLLMServiceCore):
             self._assistant_model_name,
             self.prompt_service.get_active_assistant_prompt(),
         )
-        logger.debug("OpenAI 모델 '%s' 준비 완료.", self._assistant_model_name)
 
     def _create_retry_handler(self) -> OpenAIRetryHandler:
         """Create retry handler for OpenAI API."""
@@ -89,7 +88,6 @@ class OpenAIService(BaseLLMServiceCore):
         # Evict oldest entry if at capacity
         if len(self._assistant_cache) >= self._cache_max_size:
             evicted_key, _ = self._assistant_cache.popitem(last=False)
-            logger.debug("Evicted assistant cache entry %s (LRU)", evicted_key)
 
         # Select model wrapper based on configuration (Fine-tuned models use Chat Completions)
         use_finetuned_logic = (
@@ -120,7 +118,6 @@ class OpenAIService(BaseLLMServiceCore):
     def reload_parameters(self) -> None:
         """Reload parameters by clearing the assistant cache."""
         self._assistant_cache.clear()
-        logger.debug("OpenAI assistant cache cleared to apply new parameters.")
 
     def get_user_role_name(self) -> str:
         """Return the role name for user messages."""
@@ -139,57 +136,25 @@ class OpenAIService(BaseLLMServiceCore):
 
     def _log_raw_request(self, user_message: str, chat_session: Any = None) -> None:
         """Log raw request details for debugging."""
-        if not logger.isEnabledFor(logging.DEBUG):
-            return
-
-        try:
-            logger.debug("[RAW REQUEST] User message preview: %r", user_message[:200])
-            if chat_session and hasattr(chat_session, "history"):
-                history = chat_session.history
-                formatted = []
-                for msg in history[-5:]:
-                    role = msg.role
-                    content = str(msg.content)
-
-                    # Clean up content display if it starts with "Name: "
-                    author_label = str(msg.author_name or msg.author_id or "bot")
-                    display_content = content
-                    if msg.author_name and content.startswith(f"{msg.author_name}:"):
-                        display_content = content[len(msg.author_name) + 1 :].strip()
-
-                    truncated = display_content[:100].replace("\n", " ")
-                    formatted.append(f"{role} (author:{author_label}) {truncated}")
-                if formatted:
-                    logger.debug("[RAW REQUEST] Recent history:\n%s", "\n".join(formatted))
-        except Exception:
-            logger.exception("[RAW REQUEST] Error logging raw request")
+        pass
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw response details for debugging."""
-        if not logger.isEnabledFor(logging.DEBUG):
-            return
-
-        try:
-            logger.debug("[RAW RESPONSE %s] %s", attempt, response_obj)
-        except Exception:
-            logger.exception("[RAW RESPONSE %s] Error logging raw response", attempt)
+        pass
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text content from OpenAI chat completion response."""
-        logger.info("Extracting text from response type: %s", type(response_obj).__name__)
         try:
             choices = getattr(response_obj, "choices", []) or []
             for choice in choices:
                 message = getattr(choice, "message", None)
                 if message and getattr(message, "content", None):
                     content = str(message.content).strip()
-                    logger.info("Extracted from choices: %s", content[:100] if content else "(empty)")
                     return content
         except Exception:
             logger.exception("Failed to extract text from OpenAI response")
 
         result = self._extract_text_from_response_output(response_obj)
-        logger.info("Extracted from Responses API: %s", result[:100] if result else "(empty)")
         return result
 
     def _extract_text_from_response_output(self, response_obj: Any) -> str:
@@ -251,7 +216,6 @@ class OpenAIService(BaseLLMServiceCore):
 
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("Summary API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         prompt = f"Discord 대화 내용:\n{text}"
@@ -293,7 +257,6 @@ class OpenAIService(BaseLLMServiceCore):
         """Generate a chat response."""
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -311,7 +274,6 @@ class OpenAIService(BaseLLMServiceCore):
         # Check for model switch
         current_model_name = getattr(chat_session, "_model_name", None)
         if model_name and current_model_name != model_name:
-            logger.debug("Model: %s → %s", current_model_name, model_name)
             chat_session._model_name = model_name
 
         # Extract images from message(s) - supports both single and list of messages
@@ -380,7 +342,6 @@ class OpenAIService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("Streaming API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         self._log_raw_request(user_message, chat_session)
@@ -398,19 +359,12 @@ class OpenAIService(BaseLLMServiceCore):
         # Check for model switch
         current_model_name = getattr(chat_session, "_model_name", None)
         if model_name and current_model_name != model_name:
-            logger.debug("Model: %s → %s", current_model_name, model_name)
             chat_session._model_name = model_name
 
         # Extract images from message(s) - supports both single and list of messages
         images = await self._extract_images_from_messages(discord_message)
 
         # Convert tools to appropriate format based on session type
-        logger.info(
-            "generate_chat_response_stream: session_type=%s, is_response_session=%s, tools_count=%s",
-            type(chat_session).__name__,
-            isinstance(chat_session, ResponseSession),
-            len(tools) if tools else 0
-        )
         if tools:
             # ResponseSession uses Responses API which expects flatter format
             if isinstance(chat_session, ResponseSession):
@@ -419,13 +373,9 @@ class OpenAIService(BaseLLMServiceCore):
                 # TODO: Re-enable once tool format is validated
                 converted_tools = None
                 logger.warning("Tools temporarily DISABLED for Responses API - pending format investigation")
-                # Original code:
-                # converted_tools = OpenAIToolAdapter.convert_tools_for_responses_api(tools)
-                # logger.info("Converted tools for Responses API: %s", converted_tools[:1] if converted_tools else [])
             else:
                 # ChatCompletionSession uses Chat Completions API
                 converted_tools = OpenAIToolAdapter.convert_tools(tools)
-                logger.info("Converted tools for Chat Completions API: %s", converted_tools[:1] if converted_tools else [])
         else:
             converted_tools = None
 
@@ -471,7 +421,6 @@ class OpenAIService(BaseLLMServiceCore):
                     async for chunk in stream:
                         # Check for cancellation
                         if cancel_event and cancel_event.is_set():
-                            logger.debug("Streaming aborted - closing async stream")
                             # Close the stream to stop server-side generation
                             if hasattr(stream, 'aclose'):
                                 await stream.aclose()
@@ -480,7 +429,6 @@ class OpenAIService(BaseLLMServiceCore):
                             raise asyncio.CancelledError("LLM streaming aborted by user")
                         yield chunk
                 except asyncio.CancelledError:
-                    logger.debug("Streaming response cancelled - ensuring stream is closed")
                     # Ensure stream is closed on cancellation
                     try:
                         if hasattr(stream, 'aclose'):
@@ -510,23 +458,19 @@ class OpenAIService(BaseLLMServiceCore):
                 def _sync_iterate():
                     """Run in thread: iterate stream and put chunks in queue."""
                     chunk_count = 0
-                    logger.info("_sync_iterate: Starting iteration, stream type=%s", type(stream).__name__)
                     try:
                         for chunk in stream:
                             # Check for cancellation from within the thread
                             # This ensures we stop reading from httpx immediately
                             if cancel_flag.is_set():
-                                logger.debug("Sync stream iteration aborted in thread")
                                 break
                             chunk_count += 1
-                            logger.info("_sync_iterate: Got chunk #%d, type=%s", chunk_count, type(chunk).__name__)
                             # Put chunk in queue for async consumption
                             # Use put_nowait since queue is unbounded (no maxsize)
                             queue.put_nowait(chunk)
                     except Exception as e:
                         logger.error("_sync_iterate: Stream iteration error: %s", e, exc_info=True)
                     finally:
-                        logger.info("_sync_iterate: Finished after %d chunks", chunk_count)
                         # Signal end of stream
                         try:
                             queue.put_nowait(sentinel)
@@ -546,7 +490,6 @@ class OpenAIService(BaseLLMServiceCore):
                     while True:
                         # Check for cancellation
                         if cancel_event and cancel_event.is_set():
-                            logger.debug("Streaming aborted - closing sync stream")
                             cancel_flag.set()  # Signal thread to stop
                             # Close stream immediately to stop server-side generation
                             try:
@@ -604,7 +547,6 @@ class OpenAIService(BaseLLMServiceCore):
                     yield text
 
         except asyncio.CancelledError:
-            logger.debug("Streaming response cancelled")
             raise
 
         # Update history with the full conversation
@@ -634,7 +576,6 @@ class OpenAIService(BaseLLMServiceCore):
         """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("Tool results API call aborted")
             raise asyncio.CancelledError("LLM API call aborted by user")
 
         # Convert tools to appropriate format based on session type

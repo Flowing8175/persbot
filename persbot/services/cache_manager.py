@@ -133,7 +133,6 @@ class CacheManager:
 
             if self._is_expired(item):
                 del self._cache[key]
-                logger.debug("Cache entry expired: %s", key)
                 return default
 
             # Update last accessed time for LRU tracking
@@ -174,7 +173,6 @@ class CacheManager:
                 last_accessed_at=now,
             )
             self._cache[key] = item
-            logger.debug("Cached value with key: %s (TTL: %s min)", key, ttl)
 
         return key
 
@@ -193,7 +191,6 @@ class CacheManager:
         async with self._lock:
             if key in self._cache:
                 del self._cache[key]
-                logger.debug("Deleted cache entry: %s", key)
                 return True
             return False
 
@@ -201,7 +198,6 @@ class CacheManager:
         """Clear all entries from the cache."""
         async with self._lock:
             self._cache.clear()
-            logger.debug("Cache cleared")
 
     async def get_or_create(
         self,
@@ -241,7 +237,6 @@ class CacheManager:
             key=lambda k: self._cache[k].last_accessed_at,
         )
         del self._cache[lru_key]
-        logger.debug("Evicted LRU cache entry: %s", lru_key)
 
     async def cleanup_expired(self) -> int:
         """
@@ -259,9 +254,6 @@ class CacheManager:
                 del self._cache[key]
                 removed += 1
 
-        if removed > 0:
-            logger.debug("Cleaned up %d expired cache entries", removed)
-
         return removed
 
     async def start_cleanup_task(self) -> None:
@@ -271,7 +263,6 @@ class CacheManager:
             return
 
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-        logger.debug("Started cache cleanup task")
 
     async def stop_cleanup_task(self) -> None:
         """Stop the background cleanup task."""
@@ -280,7 +271,7 @@ class CacheManager:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                logger.debug("Cache cleanup task cancelled")
+                pass
             self._cleanup_task = None
 
     async def _cleanup_loop(self) -> None:
@@ -292,7 +283,6 @@ class CacheManager:
                 await asyncio.sleep(interval_seconds)
                 await self.cleanup_expired()
             except asyncio.CancelledError:
-                logger.debug("Cache cleanup loop cancelled")
                 break
             except Exception as e:
                 logger.error("Error in cache cleanup loop: %s", e, exc_info=True)

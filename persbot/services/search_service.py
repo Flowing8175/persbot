@@ -74,7 +74,6 @@ class SearchService:
         """
         # Check cancellation event before starting
         if cancel_event and cancel_event.is_set():
-            logger.debug("Web search aborted before API call")
             raise asyncio.CancelledError("Web search aborted by user")
 
         if not query or not query.strip():
@@ -84,14 +83,8 @@ class SearchService:
 
         # Check for cancellation before API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("Web search aborted before API call")
             raise asyncio.CancelledError("Web search aborted by user")
 
-        logger.debug(
-            "Performing web search: query='%s' (num_results=%d)",
-            query[:100] if len(query) > 100 else query,
-            num_results,
-        )
 
         # Execute with retry logic
         result = await self._execute_with_retry(
@@ -102,11 +95,6 @@ class SearchService:
         if result is None:
             return None
 
-        logger.info(
-            "Web search completed successfully: %d results for query='%s'",
-            len(result),
-            query[:50] if len(query) > 50 else query,
-        )
 
         return result
 
@@ -133,7 +121,6 @@ class SearchService:
         for attempt in range(1, self._max_retries + 1):
             # Check for cancellation at the start of each retry iteration
             if cancel_event and cancel_event.is_set():
-                logger.debug("Search retry loop aborted")
                 raise asyncio.CancelledError("Search aborted by user")
 
             try:
@@ -156,7 +143,6 @@ class SearchService:
                     delay = self._calculate_backoff(attempt)
                     # Check for cancellation before backoff sleep
                     if cancel_event and cancel_event.is_set():
-                        logger.debug("Search retry aborted during backoff")
                         raise asyncio.CancelledError("Search aborted by user")
                     await asyncio.sleep(delay)
                     continue
@@ -173,7 +159,6 @@ class SearchService:
                     delay = 5.0  # Fixed delay for rate limit
                     # Check for cancellation before backoff sleep
                     if cancel_event and cancel_event.is_set():
-                        logger.debug("Search retry aborted during backoff")
                         raise asyncio.CancelledError("Search aborted by user")
                     await asyncio.sleep(delay)
                     continue
@@ -194,13 +179,11 @@ class SearchService:
                     delay = self._calculate_backoff(attempt)
                     # Check for cancellation before backoff sleep
                     if cancel_event and cancel_event.is_set():
-                        logger.debug("Search retry aborted during backoff")
                         raise asyncio.CancelledError("Search aborted by user")
                     await asyncio.sleep(delay)
                     continue
 
             except asyncio.CancelledError:
-                logger.debug("Search cancelled during execution")
                 raise
 
             except Exception as e:
@@ -217,7 +200,6 @@ class SearchService:
                     delay = self._calculate_backoff(attempt)
                     # Check for cancellation before backoff sleep
                     if cancel_event and cancel_event.is_set():
-                        logger.debug("Search retry aborted during backoff")
                         raise asyncio.CancelledError("Search aborted by user")
                     await asyncio.sleep(delay)
                     continue

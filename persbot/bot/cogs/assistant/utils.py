@@ -88,7 +88,6 @@ async def send_response(
 ) -> None:
     """Send the generated reply to Discord, handling break-cut mode if enabled."""
     if not reply.text and not reply.images:
-        logger.debug("LLM returned no text response or images for the mention.")
         return
 
     # Use cog's _send_response method (handles streaming/non-streaming based on break_cut_mode)
@@ -190,20 +189,17 @@ def cancel_channel_tasks(
 
     # Trigger cancellation signal to abort LLM API calls
     if cancellation_signals and channel_id in cancellation_signals:
-        logger.debug("%s triggered abort signal for channel #%s", reason, channel_name)
         cancellation_signals[channel_id].set()
 
     if channel_id in processing_tasks:
         task = processing_tasks[channel_id]
         if not task.done():
-            logger.debug("%s interrupted active processing in #%s", reason, channel_name)
             task.cancel()
             cancelled = True
 
     if channel_id in sending_tasks:
         task = sending_tasks[channel_id]
         if not task.done():
-            logger.debug("%s interrupted active sending in #%s", reason, channel_name)
             task.cancel()
             cancelled = True
 

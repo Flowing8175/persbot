@@ -129,7 +129,6 @@ async def _send_to_message(
             return await target.reply(chunk, mention_author=mention_author, **current_kwargs)
         except (discord.NotFound, discord.HTTPException) as reply_error:
             if "Unknown message" in str(reply_error):
-                logger.debug(f"Original message not found, sending to channel instead")
                 return await target.channel.send(chunk, **current_kwargs)
             raise
     return await target.channel.send(chunk, **current_kwargs)
@@ -327,15 +326,6 @@ def process_image_sync(image_data: bytes, filename: str) -> bytes:
                 ratio = (target_pixels / pixels) ** 0.5
                 new_width = int(width * ratio)
                 new_height = int(height * ratio)
-
-                logger.debug(
-                    "Downscaling image %s from %dx%d to %dx%d",
-                    filename,
-                    width,
-                    height,
-                    new_width,
-                    new_height,
-                )
 
                 img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 

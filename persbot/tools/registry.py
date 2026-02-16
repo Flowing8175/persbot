@@ -32,7 +32,6 @@ class ToolRegistry:
 
         self._tools[tool.name] = tool
         self._by_category[tool.category].append(tool.name)
-        logger.debug("Registered tool: %s (category: %s)", tool.name, tool.category.value)
 
     def unregister(self, tool_name: str) -> bool:
         """Unregister a tool from the registry.
@@ -49,7 +48,6 @@ class ToolRegistry:
         tool = self._tools[tool_name]
         self._by_category[tool.category].remove(tool_name)
         del self._tools[tool_name]
-        logger.debug("Unregistered tool: %s", tool_name)
         return True
 
     def get(self, tool_name: str) -> Optional[ToolDefinition]:
@@ -115,7 +113,6 @@ class ToolRegistry:
         tool = self._tools.get(tool_name)
         if tool:
             tool.enabled = enabled
-            logger.debug("Tool %s %s", tool_name, "enabled" if enabled else "disabled")
             return True
         return False
 

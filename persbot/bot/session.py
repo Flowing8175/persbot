@@ -78,10 +78,8 @@ class SessionManager:
         """Ensure the session cache does not grow without bounds."""
         while len(self.sessions) > self.config.session_cache_limit:
             evicted_key, _ = self.sessions.popitem(last=False)
-            logger.debug("Evicted chat session %s due to cache limit", evicted_key)
         while len(self.session_contexts) > self.config.session_cache_limit:
             evicted_key, _ = self.session_contexts.popitem(last=False)
-            logger.debug("Evicted session context %s due to cache limit", evicted_key)
 
     def _record_session_context(
         self,
@@ -124,14 +122,12 @@ class SessionManager:
 
         # Store preference permanently for this runtime (handles cases where session doesn't exist yet)
         self.channel_model_preferences[channel_id] = model_alias
-        logger.debug(f"Updated channel {channel_id} model preference to {model_alias}")
 
         # We only update the context. This forces get_or_create to detect a mismatch
         # with the active session (if any) and trigger a recreation/model switch
         # on the next interaction.
         if session_key in self.session_contexts:
             self.session_contexts[session_key].model_alias = model_alias
-            logger.debug(f"Updated session context {session_key} preference to {model_alias}")
 
     async def get_or_create(
         self,
@@ -192,9 +188,6 @@ class SessionManager:
         config_model = self.config.assistant_model_name
         for alias, definition in self.llm_service.model_usage_service.MODEL_DEFINITIONS.items():
             if definition.api_model_name == config_model:
-                logger.debug(
-                    f"Derived default model alias '{alias}' from config model '{config_model}'"
-                )
                 return alias
 
         # Fallback to class default if no match found
@@ -205,9 +198,6 @@ class SessionManager:
     ) -> bool:
         """Check if existing session is compatible with target model. Returns False if needs reset."""
         if session.model_alias != target_alias:
-            logger.debug(
-                f"Session {session_key} model alias changed from {session.model_alias} to {target_alias}. Resetting session."
-            )
             return False
         return True
 
@@ -242,10 +232,6 @@ class SessionManager:
         model_alias: str,
     ) -> Tuple[object, str]:
         """Create a new chat session."""
-        logger.debug(
-            f"Creating new session {session_key} for user {user_id} with model {model_alias}"
-        )
-
         system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
         chat = self.llm_service.create_chat_session_for_alias(model_alias, system_prompt)
         chat.model_alias = model_alias
@@ -294,9 +280,6 @@ class SessionManager:
         if session_key in self.session_contexts:
             del self.session_contexts[session_key]
             removed = True
-
-        if removed:
-            logger.debug("Session %s reset for channel %s", session_key, channel_id)
 
         return removed
 
@@ -353,12 +336,6 @@ class SessionManager:
             new_history, removed = self._split_history_by_indices(history, indices_to_remove)
             session.chat.history = new_history
 
-            logger.info(
-                "Undid last %d exchanges from session %s. New history length: %d",
-                num_to_undo,
-                session_key,
-                len(new_history),
-            )
             return removed
 
         except Exception as e:
@@ -423,7 +400,6 @@ class SessionManager:
                 await asyncio.sleep(cleanup_interval)
                 await self._cleanup_inactive_sessions()
             except asyncio.CancelledError:
-                logger.debug("Session cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error during session cleanup: {e}", exc_info=True)
@@ -446,7 +422,6 @@ class SessionManager:
                 del self.session_contexts[key]
                 cleaned_count += 1
 
-            logger.debug(f"Cleaned up {cleaned_count} inactive session contexts")
         except Exception as e:
             logger.error(f"Error during session cleanup: {e}", exc_info=True)
 
@@ -457,6 +432,6 @@ class SessionManager:
             try:
                 await self._cleanup_task
             except asyncio.CancelledError:
-                logger.debug("Session cleanup task cancelled during shutdown")
+                pass
         self.sessions.clear()
         self.session_contexts.clear()

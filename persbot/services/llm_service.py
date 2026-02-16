@@ -195,11 +195,6 @@ class LLMService:
 
         # Provider label for display
         self.provider_label = self._get_provider_label(assistant_provider)
-        logger.info(
-            "LLM provider 설정: assistant=%s, summarizer=%s",
-            assistant_provider,
-            summarizer_provider,
-        )
 
     def _get_provider_label(self, provider: str) -> str:
         """Get display label for a provider.
@@ -495,10 +490,6 @@ class LLMService:
 
             if original_provider != final_provider:
                 # Provider changed - create new session for the new provider
-                logger.info(
-                    "Provider changed from %s to %s, creating new session",
-                    original_provider, final_provider
-                )
                 system_instruction = getattr(chat_session, '_system_instruction', '')
                 if not system_instruction and hasattr(chat_session, '_history'):
                     # Try to extract from first system message in history
@@ -589,10 +580,6 @@ class LLMService:
 
             if original_provider != final_provider:
                 # Provider changed - create new session for the new provider
-                logger.info(
-                    "Provider changed from %s to %s, creating new session",
-                    original_provider, final_provider
-                )
                 system_instruction = getattr(chat_session, '_system_instruction', '')
                 if not system_instruction and hasattr(chat_session, '_history'):
                     # Try to extract from first system message in history
@@ -624,11 +611,6 @@ class LLMService:
         if not active_backend:
             yield "❌ 선택한 모델을 사용할 수 없습니다."
             return
-
-        logger.info(
-            "generate_chat_response_stream: model_alias=%s, final_alias=%s, api_model_name=%s, backend_type=%s",
-            model_alias, final_alias, api_model_name, type(active_backend).__name__
-        )
 
         # Check if backend supports streaming
         if not hasattr(active_backend, "generate_chat_response_stream"):
@@ -797,12 +779,6 @@ class LLMService:
             if hasattr(backend, "reload_parameters"):
                 backend.reload_parameters()
 
-        logger.debug(
-            "Updated parameters: temperature=%s, top_p=%s, thinking_budget=%s",
-            self.config.temperature,
-            self.config.top_p,
-            self.config.thinking_budget,
-        )
 
     def start_background_cache_warmup(self) -> None:
         """Start background cache warmup for Gemini backends to reduce first-message latency.
@@ -812,7 +788,6 @@ class LLMService:
         # Warm up assistant backend if it's a Gemini service
         if hasattr(self.assistant_backend, "start_background_warmup"):
             self.assistant_backend.start_background_warmup()
-            logger.debug("Started background cache warmup for assistant backend")
 
         # Warm up summarizer backend if it's different and is a Gemini service
         if (
@@ -820,4 +795,3 @@ class LLMService:
             and hasattr(self.summarizer_backend, "start_background_warmup")
         ):
             self.summarizer_backend.start_background_warmup()
-            logger.debug("Started background cache warmup for summarizer backend")

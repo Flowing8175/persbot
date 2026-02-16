@@ -195,7 +195,6 @@ async def _create_sample_schedule_file(path: str) -> None:
     async with aiofiles.open(path, "w", encoding="utf-8") as f:
         await f.write(json.dumps(sample_schedule, ensure_ascii=False, indent=2))
 
-    logger.info("Created sample schedule file at %s", path)
 
 
 def _get_default_schedule() -> Dict[str, Any]:

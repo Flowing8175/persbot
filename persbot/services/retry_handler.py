@@ -91,7 +91,6 @@ class RetryHandler(ABC):
         if delay <= 0:
             return
 
-        logger.debug("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
         sent_message: Optional[discord.Message] = None
 
         remaining = int(delay)
@@ -112,11 +111,9 @@ class RetryHandler(ABC):
                         await sent_message.edit(content=countdown_message)
                     except discord.HTTPException:
                         pass
-                logger.debug(countdown_message)
 
             # Check for cancellation before sleep
             if cancel_event and cancel_event.is_set():
-                logger.debug("Rate limit wait aborted")
                 if sent_message:
                     try:
                         await sent_message.delete()
@@ -181,10 +178,6 @@ class RetryHandler(ABC):
             # Check for cancellation at the start of each retry iteration
             # This ensures immediate cancellation when new message arrives
             if cancel_event and cancel_event.is_set():
-                logger.debug(
-                    "API call aborted at start of retry iteration %d",
-                    attempt,
-                )
                 raise asyncio.CancelledError("LLM API call aborted by user")
 
             try:
@@ -206,9 +199,6 @@ class RetryHandler(ABC):
 
             except asyncio.CancelledError:
                 # Re-raise cancellation immediately - don't retry
-                logger.debug(
-                    "API call cancelled via task cancellation (attempt %d)", attempt
-                )
                 raise
 
             except asyncio.TimeoutError:
@@ -220,7 +210,6 @@ class RetryHandler(ABC):
                 )
 
                 if attempt < self.config.max_retries:
-                    logger.debug("API 타임아웃, 재시도 중...")
                     continue
                 break
 
@@ -241,7 +230,6 @@ class RetryHandler(ABC):
                 if self._is_rate_limit_error(e):
                     # Try fallback call if provided
                     if fallback_call is not None:
-                        logger.debug("Rate limit detected, trying fallback API...")
                         try:
                             fallback_response = await asyncio.wait_for(
                                 self._execute_with_timeout(fallback_call),
@@ -266,12 +254,10 @@ class RetryHandler(ABC):
                     break
 
                 backoff = self._calculate_backoff(attempt)
-                logger.debug("에러 발생, %.1f초 후 재시도", backoff)
 
                 # Check for cancellation before backoff sleep
                 if cancel_event and cancel_event.is_set():
-                    logger.debug("Retry loop aborted during backoff")
-                    raise asyncio.CancelledError("LLM API call aborted by user")
+                        raise asyncio.CancelledError("LLM API call aborted by user")
 
                 await asyncio.sleep(backoff)
 

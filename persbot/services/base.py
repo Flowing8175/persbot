@@ -195,7 +195,6 @@ class BaseLLMService(ABC):
         if delay <= 0:
             return
 
-        logger.debug("⏳ 레이트 제한 감지. %s초 대기 중...", int(delay))
         sent_message: Optional[discord.Message] = None
 
         remaining = int(delay)
@@ -216,7 +215,6 @@ class BaseLLMService(ABC):
                         await sent_message.edit(content=countdown_message)
                     except discord.HTTPException:
                         pass  # Ignore edit errors
-                logger.debug(countdown_message)
             await asyncio.sleep(1)
             remaining -= 1
 
@@ -305,9 +303,6 @@ class BaseLLMServiceCore(BaseLLMService):
         try:
             from persbot.constants import DisplayConfig
 
-            logger.debug(
-                f"{prefix} User message preview: {user_message[: DisplayConfig.REQUEST_PREVIEW_LENGTH]!r}"
-            )
 
             if chat_session and hasattr(chat_session, "history"):
                 history = chat_session.history
@@ -327,8 +322,6 @@ class BaseLLMServiceCore(BaseLLMService):
                         display_content = content[len(msg.author_name) + 1 :].strip()
 
                     formatted_history.append(f"{role} (author:{author_label}) {display_content}")
-                if formatted_history:
-                    logger.debug(f"{prefix} Recent history:\n" + "\n".join(formatted_history))
         except Exception as e:
             logger.error(f"{prefix} Error logging raw request: {e}", exc_info=True)
 
@@ -346,7 +339,7 @@ class BaseLLMServiceCore(BaseLLMService):
             return
 
         try:
-            logger.debug(f"{prefix} {attempt} {response_obj}")
+            pass  # Response logging removed
         except Exception as e:
             logger.error(f"{prefix} {attempt} Error logging raw response: {e}", exc_info=True)
 

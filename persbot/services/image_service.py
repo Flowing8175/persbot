@@ -90,18 +90,12 @@ class ImageService(BaseLLMService):
             return
 
         prompt_hash = hashlib.sha256(user_message.encode()).hexdigest()[:16]
-        logger.debug(
-            "[IMAGE REQUEST] Generating image (prompt_hash=%s, length=%d)",
-            prompt_hash,
-            len(user_message),
-        )
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
         """Log raw response details for debugging."""
         if not logger.isEnabledFor(logging.DEBUG):
             return
 
-        logger.debug("[IMAGE RESPONSE %s] %s", attempt, response_obj)
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text content from response (not used for image generation)."""
@@ -142,7 +136,6 @@ class ImageService(BaseLLMService):
         """
         # Check cancellation event before starting
         if cancel_event and cancel_event.is_set():
-            logger.debug("Image generation aborted before API call")
             raise asyncio.CancelledError("Image generation aborted by user")
 
         if not prompt or not prompt.strip():
@@ -171,7 +164,6 @@ class ImageService(BaseLLMService):
 
         # Check for cancellation before API call
         if cancel_event and cancel_event.is_set():
-            logger.debug("Image generation aborted before API call")
             raise asyncio.CancelledError("Image generation aborted by user")
 
         # Build image config with aspect_ratio
@@ -184,10 +176,6 @@ class ImageService(BaseLLMService):
                 {"type": "text", "text": enhanced_prompt},
                 {"type": "image_url", "image_url": {"url": image_input}},
             ]
-            logger.info(
-                "Including input image in generation request (prompt_hash=%s)",
-                prompt_hash,
-            )
         else:
             # Text-to-image: only prompt
             user_content = enhanced_prompt
@@ -208,16 +196,10 @@ class ImageService(BaseLLMService):
 
             image_bytes, image_format = result
 
-            logger.info(
-                "Image generated successfully (prompt_hash=%s, response_time=%.2fs)",
-                prompt_hash,
-                time.time(),
-            )
 
             return (image_bytes, image_format)
 
         except asyncio.CancelledError:
-            logger.debug("Image generation cancelled (prompt_hash=%s)", prompt_hash)
             raise
         except Exception as e:
             logger.error(
@@ -377,7 +359,6 @@ class ImageService(BaseLLMService):
         """
         # Check for cancellation before fetching
         if cancel_event and cancel_event.is_set():
-            logger.debug("Image fetch aborted before fetch")
             raise asyncio.CancelledError("Image fetch aborted by user")
 
         try:
@@ -395,7 +376,6 @@ class ImageService(BaseLLMService):
                     return image_bytes
 
         except asyncio.CancelledError:
-            logger.debug("Image fetch cancelled")
             raise
         except Exception as e:
             logger.error("Failed to fetch image from URL: %s", e)

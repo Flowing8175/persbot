@@ -392,11 +392,6 @@ class ChatUseCase:
             if cancel_event and cancel_event.is_set():
                 raise CancellationException("Tool execution cancelled")
 
-            logger.info(
-                "Tool round %d: %d calls",
-                tool_rounds + 1,
-                len(function_calls),
-            )
 
             # Send progress notification
             progress_msg = await self._send_tool_progress(function_calls, primary_message.channel)

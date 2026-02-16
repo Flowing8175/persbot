@@ -64,9 +64,6 @@ class AutoChannelCog(BaseChatCog):
         # Merge environment config with dynamic config
         combined = self.env_channel_ids | self.dynamic_channel_ids
         self.config.auto_reply_channel_ids = tuple(combined)
-        logger.info(
-            f"Loaded auto-channels. Env: {len(self.env_channel_ids)}, Dynamic: {len(self.dynamic_channel_ids)}, Total: {len(self.config.auto_reply_channel_ids)}"
-        )
 
     async def _save_dynamic_channels(self) -> None:
         """Saves dynamic auto-channels to JSON and updates config."""
@@ -134,7 +131,6 @@ class AutoChannelCog(BaseChatCog):
 
     async def _send_response(self, message: discord.Message, reply: ChatReply) -> None:
         if not reply.text:
-            logger.debug("LLM returned no text response for the auto-reply message.")
             return
 
         # Use base class method (handles streaming/non-streaming based on break_cut_mode)
@@ -253,7 +249,6 @@ class AutoChannelCog(BaseChatCog):
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.debug("Undo interrupted processing in #%s", ctx.channel.name)
                 task.cancel()
 
                 # Delete pending messages
@@ -270,7 +265,6 @@ class AutoChannelCog(BaseChatCog):
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
-                logger.debug("Undo interrupted sending in #%s", ctx.channel.name)
                 task.cancel()
 
         return undo_performed, num_to_undo
@@ -325,7 +319,7 @@ class AutoChannelCog(BaseChatCog):
         except asyncio.CancelledError:
             pass
         except discord.NotFound:
-            logger.debug("Message %s not found for deletion", message_id)
+            pass  # Logging removed
         except discord.Forbidden:
             logger.warning("No permission to delete message %s", message_id)
         except Exception as e:

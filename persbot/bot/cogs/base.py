@@ -257,11 +257,6 @@ class BaseChatCog(commands.Cog):
                     session_key=f"channel:{channel_id}",
                     session_manager=self.session_manager,
                 )
-                logger.debug(
-                    "Streaming response sent: %d messages to channel %s",
-                    len(sent_messages),
-                    channel_id,
-                )
             except Exception as e:
                 logger.error("Error sending streaming response: %s", e, exc_info=True)
 
@@ -274,7 +269,6 @@ class BaseChatCog(commands.Cog):
             # Also clean up active_batches if still present (handles stacking during send)
             if channel_id in self.active_batches:
                 self.active_batches.pop(channel_id, None)
-                logger.debug(f"Cleaned up active_batches for channel {channel_id} after send completed")
 
         task.add_done_callback(_cleanup)
 
@@ -304,12 +298,6 @@ class BaseChatCog(commands.Cog):
             if not full_text:
                 return
 
-            logger.info(
-                "Processing batch of %d messages from %s: %s",
-                len(messages),
-                primary_message.author.name,
-                full_text[:100],
-            )
 
             # Choose streaming or non-streaming path based on break_cut_mode
             use_streaming = self._should_use_streaming()
@@ -324,7 +312,6 @@ class BaseChatCog(commands.Cog):
                 await self._process_with_reply(messages, primary_message, channel_id, cancel_event)
 
         except asyncio.CancelledError:
-            logger.debug("Batch processing cancelled for #%s", primary_message.channel.name)
             raise
 
         except Exception as e:
@@ -408,18 +395,12 @@ class BaseChatCog(commands.Cog):
         # This is the most important step - it cancels the actual HTTP request
         if channel_id in self.active_api_calls:
             active_api = self.active_api_calls[channel_id]
-            logger.debug(
-                f"{message_type} from {author_name} cancelling API call in #{channel_id}"
-            )
             active_api.cancel()
             # Get messages from the cancelled batch to prepend to new request
             messages_to_prepend = self.active_batches.get(channel_id, [])
 
         # Step 2: Also trigger cancellation signal (redundant but ensures coverage)
         if channel_id in self.cancellation_signals:
-            logger.debug(
-                f"{message_type} from {author_name} triggered abort signal in #{channel_id}"
-            )
             self.cancellation_signals[channel_id].set()
 
         # Step 3: Cancel sending task if in break-cut mode
@@ -427,9 +408,6 @@ class BaseChatCog(commands.Cog):
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
-                logger.debug(
-                    f"{message_type} from {author_name} interrupted sending in #{channel_id}"
-                )
                 if self.config.break_cut_mode:
                     task.cancel()
                 # Get messages for stacking even if not cancelling (API done, but response still sending)
@@ -440,9 +418,6 @@ class BaseChatCog(commands.Cog):
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
-                logger.debug(
-                    f"{message_type} from {author_name} interrupted processing in #{channel_id}"
-                )
                 # If we didn't get messages from active_api_calls, get from active_batches
                 if not messages_to_prepend:
                     messages_to_prepend = self.active_batches.get(channel_id, [])

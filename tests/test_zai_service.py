@@ -301,11 +301,12 @@ class TestZAIServiceLogging:
         return service
 
     def test_log_raw_request_logs_when_debug_enabled(self, service):
-        """_log_raw_request logs when DEBUG level is enabled."""
+        """_log_raw_request no longer logs (debug logging removed)."""
         with patch("persbot.services.zai_service.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             service._log_raw_request("test message")
-            mock_logger.debug.assert_called()
+            # Debug logging has been removed, so debug should not be called
+            mock_logger.debug.assert_not_called()
 
     def test_log_raw_request_skips_when_debug_disabled(self, service):
         """_log_raw_request skips logging when DEBUG level is disabled."""
@@ -315,11 +316,12 @@ class TestZAIServiceLogging:
             mock_logger.debug.assert_not_called()
 
     def test_log_raw_response_logs_when_debug_enabled(self, service):
-        """_log_raw_response logs when DEBUG level is enabled."""
+        """_log_raw_response no longer logs (debug logging removed)."""
         with patch("persbot.services.zai_service.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             service._log_raw_response({"response": "data"}, attempt=1)
-            mock_logger.debug.assert_called()
+            # Debug logging has been removed, so debug should not be called
+            mock_logger.debug.assert_not_called()
 
     def test_log_raw_response_skips_when_debug_disabled(self, service):
         """_log_raw_response skips logging when DEBUG level is disabled."""

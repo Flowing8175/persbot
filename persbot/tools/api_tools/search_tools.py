@@ -46,7 +46,6 @@ async def web_search(
 
     # Check for cancellation before API call
     if cancel_event and cancel_event.is_set():
-        logger.debug("Web search aborted before API call")
         return ToolResult(success=False, error="Web search aborted by user")
 
     try:
@@ -76,7 +75,6 @@ async def web_search(
         )
 
     except asyncio.CancelledError:
-        logger.debug("Web search cancelled")
         return ToolResult(success=False, error="Web search aborted by user")
     except SearchRateLimitError:
         return ToolResult(

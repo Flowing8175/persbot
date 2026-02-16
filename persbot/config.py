@@ -15,9 +15,6 @@ from dotenv import load_dotenv
 _dotenv_path = Path(__file__).resolve().parent.parent / ".env"
 if _dotenv_path.exists():
     _ = load_dotenv(_dotenv_path)
-    logging.getLogger(__name__).debug("Loaded environment variables from %s", _dotenv_path)
-else:
-    logging.getLogger(__name__).debug("No .env file found; relying on existing environment")
 
 
 def _resolve_log_level(raw_level: str) -> int:
@@ -278,7 +275,6 @@ def load_config() -> AppConfig:
     # If using OpenAI and a fine-tuned model is specified, override the assistant model
     if assistant_llm_provider == "openai" and openai_finetuned_model:
         assistant_model_name = openai_finetuned_model
-        logger.debug("OpenAI Fine-tuned model selected: %s", assistant_model_name)
 
     summarizer_model_name = _resolve_model_name(summarizer_llm_provider, role="summary")
 
@@ -310,14 +306,6 @@ def load_config() -> AppConfig:
     top_p = _parse_float_env("TOP_P", 1.0)
     thinking_budget = _parse_thinking_budget()
     max_history = _parse_int_env("MAX_HISTORY", 50)
-
-    logger.info(
-        "LLM_PROVIDER(assistant)=%s, LLM_PROVIDER(summarizer)=%s, assistant_model=%s, summarizer_model=%s",
-        assistant_llm_provider,
-        summarizer_llm_provider,
-        assistant_model_name,
-        summarizer_model_name,
-    )
 
     # Parse tool configuration
     enable_tools = _parse_bool_env("ENABLE_TOOLS", default=True)

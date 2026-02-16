@@ -155,18 +155,12 @@ class ResponseCacheService:
 
             if self._is_expired(entry):
                 del self._cache[key]
-                logger.debug("Response cache entry expired: %s", key)
                 return None
 
             # Update access time for LRU
             entry.last_accessed_at = datetime.datetime.now(datetime.timezone.utc)
             entry.hit_count += 1
 
-            logger.debug(
-                "Response cache hit: %s (hits: %d)",
-                key[:20],
-                entry.hit_count,
-            )
             return entry.response_text, entry.response_obj
 
     async def set(
@@ -206,11 +200,6 @@ class ResponseCacheService:
             )
             self._cache[key] = entry
 
-            logger.debug(
-                "Response cached: %s (cache size: %d)",
-                key[:20],
-                len(self._cache),
-            )
 
     def _evict_lru(self) -> None:
         """Evict the least recently used entry. Must be called within lock."""
@@ -223,7 +212,6 @@ class ResponseCacheService:
             key=lambda k: self._cache[k].last_accessed_at,
         )
         del self._cache[lru_key]
-        logger.debug("Evicted LRU response cache entry: %s", lru_key[:20])
 
     async def invalidate(self, query: str, model_alias: str) -> bool:
         """Invalidate a specific cache entry.
@@ -240,7 +228,6 @@ class ResponseCacheService:
         async with self._lock:
             if key in self._cache:
                 del self._cache[key]
-                logger.debug("Invalidated response cache entry: %s", key[:20])
                 return True
             return False
 
@@ -253,7 +240,6 @@ class ResponseCacheService:
         async with self._lock:
             count = len(self._cache)
             self._cache.clear()
-            logger.info("Cleared response cache (%d entries)", count)
             return count
 
     async def cleanup_expired(self) -> int:
@@ -275,7 +261,7 @@ class ResponseCacheService:
                 removed += 1
 
         if removed > 0:
-            logger.debug("Cleaned up %d expired response cache entries", removed)
+            pass  # Logging removed
 
         return removed
 

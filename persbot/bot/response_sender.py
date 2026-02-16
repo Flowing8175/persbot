@@ -87,7 +87,6 @@ async def send_split_response(
                     session_manager.link_message_to_session(str(img_msg.id), reply.session_key)
 
     except asyncio.CancelledError:
-        logger.debug(f"Sending interrupted for channel {channel.id}.")
         raise  # Re-raise to signal cancellation
 
 

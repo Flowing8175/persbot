@@ -158,16 +158,9 @@ async def create_chat_reply(
 
         # Check for cancellation before starting tool execution
         if cancel_event and cancel_event.is_set():
-            logger.debug("Tool execution loop aborted")
             function_calls = None  # Prevent the loop from executing
         else:
             while function_calls and tool_rounds < max_tool_rounds:
-                logger.debug(
-                    "Detected %d function calls in response (round %d)",
-                    len(function_calls),
-                    tool_rounds + 1,
-                )
-
                 # Send progress notification before tool execution
                 notification_text = f"🔧 {', '.join(TOOL_NAME_KOREAN.get(call.get('name', 'unknown'), call.get('name', 'unknown')) for call in function_calls)} 사용 중..."
                 progress_msg = None
@@ -182,11 +175,6 @@ async def create_chat_reply(
                     # Execute tools in parallel
                     results = await tool_manager.execute_tools(
                         function_calls, primary_msg, cancel_event
-                    )
-                    logger.debug(
-                        "Executed %d tools: %s",
-                        len(results),
-                        [r.get("name") for r in results],
                     )
 
                     # Collect any generated images to send after LLM response
@@ -315,7 +303,6 @@ async def send_split_response(
                     session_manager.link_message_to_session(str(img_msg.id), reply.session_key)
 
     except asyncio.CancelledError:
-        logger.debug(f"Sending interrupted for channel {channel.id}.")
         raise  # Re-raise to signal cancellation
 
 
@@ -434,13 +421,7 @@ async def send_streaming_response(
                     session_manager.link_message_to_session(str(sent_msg.id), session_key)
                     sent_messages.append(sent_msg)
 
-        logger.debug(
-            "Streaming response complete: %d messages sent",
-            len(sent_messages),
-        )
-
     except asyncio.CancelledError:
-        logger.debug("Streaming response interrupted for channel %s - closing stream", channel.id)
         # Close the stream to stop LLM server-side generation and save costs
         # Use aclose() for async generators (which don't have close()),
         # fall back to close() for sync streams

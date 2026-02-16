@@ -106,7 +106,6 @@ async def get_member_info(
         # Try cache first
         cached_info = await get_cached_member(guild_id, user_id)
         if cached_info:
-            logger.debug("Cache hit for member %s in guild %s", user_id, guild_id)
             return ToolResult(success=True, data=cached_info)
 
         guild = discord_context.guild if discord_context.guild.id == guild_id else None
@@ -142,7 +141,6 @@ async def get_member_info(
 
         # Cache the result
         await cache_member(guild_id, user_id, info)
-        logger.debug("Cached member %s in guild %s", user_id, guild_id)
 
         return ToolResult(success=True, data=info)
 
