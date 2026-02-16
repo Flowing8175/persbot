@@ -323,10 +323,12 @@ class TestSessionManager:
         manager = SessionManager(mock_config, mock_llm_service)
 
         # Create a mock chat with history
+        # Note: Use _history (not history) since the code accesses the internal attribute
+        # directly to avoid the copy that the history property returns
         mock_chat = MagicMock()
         mock_msg = MagicMock()
         mock_msg.message_ids = []
-        mock_chat.history = [mock_msg]
+        mock_chat._history = [mock_msg]
 
         manager.sessions["channel:123"] = ChatSession(
             chat=mock_chat,
