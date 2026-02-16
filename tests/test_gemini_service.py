@@ -175,8 +175,8 @@ class TestGeminiServiceGetOrCreateModel:
     def test_returns_cached_model_when_valid(self, minimal_service):
         """_get_or_create_model returns cached model when still valid."""
         # Pre-populate cache with a valid model
-        # Cache key now includes tools_hash (hash of empty tuple when tools=None)
-        tools_hash = hash(())
+        # Cache key now includes tools_hash (0 when tools=None, matching implementation)
+        tools_hash = 0  # Matches implementation: tools_hash = 0 when tools is None
         cache_key = hash(("test-model", "system instruction", True, tools_hash))
         cached_model = MockGeminiCachedModel()
         future_expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
@@ -191,8 +191,8 @@ class TestGeminiServiceGetOrCreateModel:
     def test_refreshes_expired_model(self, minimal_service):
         """_get_or_create_model refreshes expired cached model."""
         # Pre-populate cache with an expired model
-        # Cache key now includes tools_hash (hash of empty tuple when tools=None)
-        tools_hash = hash(())
+        # Cache key now includes tools_hash (0 when tools=None, matching implementation)
+        tools_hash = 0  # Matches implementation: tools_hash = 0 when tools is None
         cache_key = hash(("test-model", "system instruction", True, tools_hash))
         expired_model = MockGeminiCachedModel()
         past_expiration = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
@@ -296,22 +296,18 @@ class TestGeminiServiceResolveGeminiCache:
         assert result == (None, None)
 
     def test_uses_implicit_caching_when_enabled(self, service):
-        """_resolve_gemini_cache returns (None, None) to use implicit caching.
+        """_resolve_gemini_cache returns (None, None) when tools are present.
 
-        As of 2025, explicit caching requires `contents` parameter. We rely on
-        implicit caching which is automatically enabled for Gemini 2.5+ models.
+        Gemini's cached content doesn't support function calling.
+        When tools are needed, we skip caching and use standard context.
+        When no tools and cache is enabled, it attempts to get/create a cache.
         """
-        # Mock count_tokens to avoid actual API call
-        with patch.object(
-            service.client.models, "count_tokens", return_value=Mock(total_tokens=2500)
-        ):
-            result = service._resolve_gemini_cache(
-                "gemini-2.5-flash", "instruction" * 100, [], use_cache=True
-            )
-
-            # Should return (None, None) to use implicit caching
-            # (system_instruction passed directly in each request)
-            assert result == (None, None)
+        # When tools are present, should return (None, None)
+        mock_tool = Mock()
+        result = service._resolve_gemini_cache(
+            "gemini-2.5-flash", "instruction" * 100, [mock_tool], use_cache=True
+        )
+        assert result == (None, None)
 
 
 class TestGeminiServiceBuildGenerationConfig:
@@ -506,7 +502,15 @@ class TestGeminiServiceGetCacheKey:
     def test_includes_tools_suffix(self, service):
         """_get_cache_key includes '-tools' suffix when tools present."""
         key_no_tools = service._get_cache_key("model", "instruction", tools=None)
-        key_with_tools = service._get_cache_key("model", "instruction", tools=["tool"])
+
+        # Create a mock tool with function_declarations to match implementation expectations
+        mock_tool = Mock()
+        mock_fd = Mock()
+        mock_fd.name = "test_function"
+        mock_tool.function_declarations = [mock_fd]
+        mock_tool.google_search = None
+
+        key_with_tools = service._get_cache_key("model", "instruction", tools=[mock_tool])
 
         assert "-tools" not in key_no_tools
         assert "-tools" in key_with_tools

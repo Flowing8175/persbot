@@ -18,6 +18,19 @@ import pytest
 @pytest.fixture(autouse=True)
 def mock_genai_types():
     """Mock google.genai.types module to avoid import issues."""
+    import importlib
+
+    # Save original modules for restoration
+    original_modules = {}
+    for mod in ['google', 'google.genai', 'google.genai.types',
+                'persbot.tools.adapters.gemini_adapter', 'persbot.tools.adapters']:
+        original_modules[mod] = sys.modules.get(mod)
+
+    # Remove cached modules to force re-import with mocks
+    for mod in ['persbot.tools.adapters.gemini_adapter', 'persbot.tools.adapters']:
+        if mod in sys.modules:
+            del sys.modules[mod]
+
     # Create mock types module
     mock_types = MagicMock()
 
@@ -54,7 +67,7 @@ def mock_genai_types():
     mock_types.Part = MockPart
     mock_types.FunctionResponse = MockFunctionResponse
 
-    # Mock the module
+    # Mock the module - overwrite even if already exists
     mock_genai = MagicMock()
     mock_genai.types = mock_types
     sys.modules['google'] = mock_genai
@@ -63,9 +76,11 @@ def mock_genai_types():
 
     yield mock_types
 
-    # Cleanup
-    for mod in ['google.genai.types', 'google.genai', 'google']:
-        if mod in sys.modules:
+    # Cleanup - restore original modules
+    for mod, original in original_modules.items():
+        if original is not None:
+            sys.modules[mod] = original
+        elif mod in sys.modules:
             del sys.modules[mod]
 
 
