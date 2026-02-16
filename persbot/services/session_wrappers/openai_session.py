@@ -57,70 +57,126 @@ class ResponsesAPIStreamAdapter:
     def __aiter__(self):
         return self
 
-    async def __anext__(self) -> FakeChunk:
-        """Async next - iterates over the sync stream and returns chunks."""
+    def __iter__(self):
+        """Support sync iteration - returns self as iterator."""
+        logger.info("ResponsesAPIStreamAdapter.__iter__ called")
         if self._iterator is None:
             self._iterator = iter(self._raw_stream)
+            logger.info("Created iterator from raw_stream type=%s", type(self._raw_stream))
+        return self
 
+    def __next__(self) -> FakeChunk:
+        """Sync next - iterates over the raw stream and returns chunks."""
+        import sys
+        logger.info("=== ResponsesAPIStreamAdapter.__next__ CALLED ===")
+        print("=== ResponsesAPIStreamAdapter.__next__ CALLED ===", file=sys.stderr, flush=True)
+        event_count = 0
         while True:
             try:
                 event = next(self._iterator)
+                event_count += 1
+                logger.info("__next__: Got event #%d, type=%s", event_count, getattr(event, 'type', 'unknown'))
             except StopIteration:
+                logger.info("__next__: Raw stream exhausted after %d events", event_count)
+                print(f"__next__: Raw stream exhausted after {event_count} events", file=sys.stderr, flush=True)
+                raise StopIteration
+
+            chunk = self._process_event(event)
+            if chunk is not None:
+                logger.info("__next__: Returning chunk after processing %d events", event_count)
+                print(f"__next__: Returning chunk after {event_count} events", file=sys.stderr, flush=True)
+                return chunk
+            # Continue to next event if this one didn't produce a chunk
+            logger.info("__next__: Event type=%s didn't produce chunk, continuing...", getattr(event, 'type', 'unknown'))
+
+    async def __anext__(self) -> FakeChunk:
+        """Async next - iterates over the sync stream and returns chunks."""
+        logger.info("__anext__ called, iterating for next event...")
+        if self._iterator is None:
+            self._iterator = iter(self._raw_stream)
+            logger.info("Created iterator from raw_stream in __anext__, type=%s", type(self._raw_stream))
+
+        event_count = 0
+        while True:
+            try:
+                event = next(self._iterator)
+                event_count += 1
+                logger.info("__anext__: Got event #%d, type=%s", event_count, getattr(event, 'type', None))
+            except StopIteration:
+                logger.info("__anext__: Raw stream exhausted after %d events", event_count)
                 raise StopAsyncIteration
 
-            # Log raw event for debugging
-            event_type = getattr(event, 'type', None)
-            logger.info("Stream event type: %s, event: %s", event_type, str(event)[:500])
+            chunk = self._process_event(event)
+            logger.info("__anext__: _process_event returned %s", type(chunk).__name__ if chunk else None)
+            if chunk is not None:
+                logger.info("__anext__: Returning chunk after processing %d events", event_count)
+                return chunk
+            # Continue to next event if this one didn't produce a chunk
+            logger.info("__anext__: Event didn't produce chunk, continuing to next event...")
 
-            # Responses API uses event types
-            if event_type:
-                # Extract text from output_text.delta events
-                if event_type == 'response.output_text.delta':
-                    if hasattr(event, 'delta') and event.delta:
-                        logger.info("Yielding delta: %s", event.delta[:50] if len(event.delta) > 50 else event.delta)
-                        return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=event.delta))])
+    def _process_event(self, event) -> Optional[FakeChunk]:
+        """Process a single stream event and return a FakeChunk if text is found."""
+        # Log raw event for debugging
+        event_type = getattr(event, 'type', None)
+        logger.info("Stream event type: %s, event class: %s", event_type, type(event).__name__)
 
-                # Handle response.completed - extract text from response object
-                elif event_type == 'response.completed':
-                    response_obj = getattr(event, 'response', None)
-                    if response_obj:
-                        text = self._extract_text_from_response(response_obj)
-                        if text:
-                            logger.info("Yielding completed text: %s", text[:100])
-                            return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=text))])
+        # Check for errors in the response
+        if hasattr(event, 'response'):
+            resp = event.response
+            if hasattr(resp, 'error') and resp.error:
+                logger.error("Response has error: %s", resp.error)
+            # Log output status
+            output = getattr(resp, 'output', None)
+            output_text = getattr(resp, 'output_text', None)
+            logger.info("Response output: %s items, output_text: %s",
+                       len(output) if output else 0,
+                       output_text[:100] if output_text else 'None')
 
-                # Handle response.in_progress - might have partial text
-                elif event_type in ('response.in_progress', 'response.created'):
-                    response_obj = getattr(event, 'response', None)
-                    if response_obj:
-                        # Check for output_text on the response
-                        output_text = getattr(response_obj, 'output_text', None)
-                        if output_text:
-                            logger.info("Yielding output_text: %s", output_text[:100])
-                            return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=output_text))])
+        # Responses API uses event types
+        if event_type:
+            # Extract text from output_text.delta events
+            if event_type == 'response.output_text.delta':
+                if hasattr(event, 'delta') and event.delta:
+                    logger.info("Yielding delta: %s", event.delta[:50] if len(event.delta) > 50 else event.delta)
+                    return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=event.delta))])
 
-                # Also check for content in the event data
-                elif hasattr(event, 'data'):
-                    data = event.data
-                    if isinstance(data, dict):
-                        # Some events have delta in data
-                        delta_text = data.get('delta', {}).get('text', '')
-                        if delta_text:
-                            logger.info("Yielding data delta: %s", delta_text[:50])
-                            return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=delta_text))])
-            else:
-                # Fallback: try to extract content directly for unknown formats
-                # This handles cases where the SDK might normalize the response
-                if hasattr(event, 'choices') and event.choices:
-                    logger.info("Yielding event with choices")
-                    return event
-                elif hasattr(event, 'content'):
-                    text = event.content if isinstance(event.content, str) else str(event.content)
-                    if text:
-                        logger.info("Yielding content: %s", text[:50])
-                        return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=text))])
+            # Note: We do NOT yield from response.completed because we already
+            # got all the text from response.output_text.delta events.
+            # Yielding here would cause duplication.
 
-            # If we get here, the event didn't yield anything, continue to next event
+            # Handle response.in_progress - might have partial text (only if no deltas received yet)
+            elif event_type in ('response.in_progress', 'response.created'):
+                response_obj = getattr(event, 'response', None)
+                if response_obj:
+                    # Check for output_text on the response
+                    output_text = getattr(response_obj, 'output_text', None)
+                    if output_text:
+                        logger.info("Yielding output_text: %s", output_text[:100])
+                        return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=output_text))])
+
+            # Also check for content in the event data
+            elif hasattr(event, 'data'):
+                data = event.data
+                if isinstance(data, dict):
+                    # Some events have delta in data
+                    delta_text = data.get('delta', {}).get('text', '')
+                    if delta_text:
+                        logger.info("Yielding data delta: %s", delta_text[:50])
+                        return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=delta_text))])
+        else:
+            # Fallback: try to extract content directly for unknown formats
+            # This handles cases where the SDK might normalize the response
+            if hasattr(event, 'choices') and event.choices:
+                logger.info("Yielding event with choices")
+                return event
+            elif hasattr(event, 'content'):
+                text = event.content if isinstance(event.content, str) else str(event.content)
+                if text:
+                    logger.info("Yielding content: %s", text[:50])
+                    return FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=text))])
+
+        # If we get here, the event didn't yield anything, continue to next event
+        return None
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text from a Response object."""

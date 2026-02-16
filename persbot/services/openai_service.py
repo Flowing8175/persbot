@@ -405,13 +405,21 @@ class OpenAIService(BaseLLMServiceCore):
         images = await self._extract_images_from_messages(discord_message)
 
         # Convert tools to appropriate format based on session type
+        logger.info(
+            "generate_chat_response_stream: session_type=%s, is_response_session=%s, tools_count=%s",
+            type(chat_session).__name__,
+            isinstance(chat_session, ResponseSession),
+            len(tools) if tools else 0
+        )
         if tools:
             # ResponseSession uses Responses API which expects flatter format
             if isinstance(chat_session, ResponseSession):
                 converted_tools = OpenAIToolAdapter.convert_tools_for_responses_api(tools)
+                logger.info("Converted tools for Responses API: %s", converted_tools[:1] if converted_tools else [])
             else:
                 # ChatCompletionSession uses Chat Completions API
                 converted_tools = OpenAIToolAdapter.convert_tools(tools)
+                logger.info("Converted tools for Chat Completions API: %s", converted_tools[:1] if converted_tools else [])
         else:
             converted_tools = None
 
@@ -484,6 +492,8 @@ class OpenAIService(BaseLLMServiceCore):
 
                 def _sync_iterate():
                     """Run in thread: iterate stream and put chunks in queue."""
+                    chunk_count = 0
+                    logger.info("_sync_iterate: Starting iteration, stream type=%s", type(stream).__name__)
                     try:
                         for chunk in stream:
                             # Check for cancellation from within the thread
@@ -491,12 +501,15 @@ class OpenAIService(BaseLLMServiceCore):
                             if cancel_flag.is_set():
                                 logger.debug("Sync stream iteration aborted in thread")
                                 break
+                            chunk_count += 1
+                            logger.info("_sync_iterate: Got chunk #%d, type=%s", chunk_count, type(chunk).__name__)
                             # Put chunk in queue for async consumption
                             # Use put_nowait since queue is unbounded (no maxsize)
                             queue.put_nowait(chunk)
                     except Exception as e:
-                        logger.debug("Stream iteration error: %s", e)
+                        logger.error("_sync_iterate: Stream iteration error: %s", e, exc_info=True)
                     finally:
+                        logger.info("_sync_iterate: Finished after %d chunks", chunk_count)
                         # Signal end of stream
                         try:
                             queue.put_nowait(sentinel)

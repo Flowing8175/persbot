@@ -573,6 +573,11 @@ class LLMService:
             yield "❌ 선택한 모델을 사용할 수 없습니다."
             return
 
+        logger.info(
+            "generate_chat_response_stream: model_alias=%s, final_alias=%s, api_model_name=%s, backend_type=%s",
+            model_alias, final_alias, api_model_name, type(active_backend).__name__
+        )
+
         # Check if backend supports streaming
         if not hasattr(active_backend, "generate_chat_response_stream"):
             # Fall back to non-streaming
