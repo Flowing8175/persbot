@@ -21,6 +21,7 @@ class CachedItem:
     expiration: Optional[datetime.datetime]
     cache_key: str
     created_at: datetime.datetime
+    last_accessed_at: datetime.datetime  # For true LRU eviction
 
 
 class CacheStrategy(ABC):
@@ -135,6 +136,8 @@ class CacheManager:
                 logger.debug("Cache entry expired: %s", key)
                 return default
 
+            # Update last accessed time for LRU tracking
+            item.last_accessed_at = datetime.datetime.now(datetime.timezone.utc)
             return item.value
 
     async def set(
@@ -162,11 +165,13 @@ class CacheManager:
             if len(self._cache) >= self.max_size and key not in self._cache:
                 self._evict_oldest()
 
+            now = datetime.datetime.now(datetime.timezone.utc)
             item = CachedItem(
                 value=value,
                 expiration=self._calculate_expiration(ttl),
                 cache_key=key,
-                created_at=datetime.datetime.now(datetime.timezone.utc),
+                created_at=now,
+                last_accessed_at=now,
             )
             self._cache[key] = item
             logger.debug("Cached value with key: %s (TTL: %s min)", key, ttl)
@@ -227,16 +232,16 @@ class CacheManager:
         return value, True
 
     def _evict_oldest(self) -> None:
-        """Evict the oldest entry from the cache."""
+        """Evict the least recently used entry from the cache (true LRU)."""
         if not self._cache:
             return
 
-        oldest_key = min(
+        lru_key = min(
             self._cache.keys(),
-            key=lambda k: self._cache[k].created_at,
+            key=lambda k: self._cache[k].last_accessed_at,
         )
-        del self._cache[oldest_key]
-        logger.debug("Evicted oldest cache entry: %s", oldest_key)
+        del self._cache[lru_key]
+        logger.debug("Evicted LRU cache entry: %s", lru_key)
 
     async def cleanup_expired(self) -> int:
         """

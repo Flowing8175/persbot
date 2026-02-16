@@ -23,6 +23,131 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+class RateLimitExtractor:
+    """Extract retry delays from rate limit error messages.
+
+    Supports provider-specific patterns for:
+    - Gemini: "Please retry in Xs", "quota exceeded"
+    - OpenAI: "try again in Xs", "rate_limit_reset: timestamp"
+    - ZAI: "seconds: X", Chinese patterns
+    """
+
+    # Provider-specific patterns
+    GEMINI_PATTERNS = [
+        (r"Please retry in ([0-9.]+)s?", 1.0),  # Direct seconds
+        (r"quota exceeded.*?retry.*?(\d+)\s*s", 1.0),  # Quota with seconds
+        (r"RESOURCE_EXHAUSTED.*?(\d+)\s*s", 1.0),  # Resource exhausted
+    ]
+
+    OPENAI_PATTERNS = [
+        (r"try again in ([0-9.]+)s?", 1.0),  # Direct seconds
+        (r"rate.limit.*?(\d+)\s*(?:seconds?|s)", 1.0),  # Rate limit with seconds
+        (r"rate_limit_reset[:\s]+(\d+)", 1.0),  # Unix timestamp
+        (r"Please wait ([0-9.]+)\s*(?:seconds?|s)", 1.0),  # Wait pattern
+    ]
+
+    ZAI_PATTERNS = [
+        (r"seconds:\s*(\d+)", 1.0),  # English pattern
+        (r"请.*?(\d+)\s*秒", 1.0),  # Chinese: please wait X seconds
+        (r"等待\s*(\d+)\s*秒", 1.0),  # Chinese: wait X seconds
+        (r"重试.*?(\d+)", 1.0),  # Chinese: retry in X
+    ]
+
+    # Generic patterns (fallback for all providers)
+    GENERIC_PATTERNS = [
+        (r"retry.*?(?:in|after)\s*([0-9.]+)\s*(?:seconds?|s)", 1.0),
+        (r"wait\s*([0-9.]+)\s*(?:seconds?|s)", 1.0),
+        (r"(\d+)\s*(?:seconds?|s).*?(?:retry|wait)", 1.0),
+    ]
+
+    @classmethod
+    def extract(cls, error: Exception, provider: str = "generic") -> Optional[float]:
+        """Extract retry delay from an error message.
+
+        Args:
+            error: The exception to parse.
+            provider: The provider name (gemini, openai, zai, or generic).
+
+        Returns:
+            Delay in seconds if found, None otherwise.
+        """
+        error_str = str(error).lower()
+
+        # Try provider-specific patterns first
+        patterns = cls._get_patterns(provider)
+        for pattern, multiplier in patterns:
+            match = re.search(pattern, error_str, re.IGNORECASE)
+            if match:
+                try:
+                    delay = float(match.group(1))
+                    # Handle potential timestamp (very large number)
+                    if delay > 1000000:  # Likely a Unix timestamp
+                        import time as time_module
+                        delay = max(0, delay - time_module.time())
+                    return min(delay * multiplier, 300)  # Cap at 5 minutes
+                except (ValueError, IndexError):
+                    continue
+
+        return None
+
+    @classmethod
+    def _get_patterns(cls, provider: str) -> list:
+        """Get patterns for a specific provider.
+
+        Args:
+            provider: The provider name.
+
+        Returns:
+            List of (pattern, multiplier) tuples.
+        """
+        provider_lower = provider.lower()
+
+        if provider_lower == "gemini":
+            return cls.GEMINI_PATTERNS + cls.GENERIC_PATTERNS
+        elif provider_lower == "openai":
+            return cls.OPENAI_PATTERNS + cls.GENERIC_PATTERNS
+        elif provider_lower == "zai":
+            return cls.ZAI_PATTERNS + cls.GENERIC_PATTERNS
+        else:
+            return cls.GENERIC_PATTERNS
+
+    @classmethod
+    def is_rate_limit_error(cls, error: Exception, provider: str = "generic") -> bool:
+        """Check if an error indicates rate limiting.
+
+        Args:
+            error: The exception to check.
+            provider: The provider name for provider-specific detection.
+
+        Returns:
+            True if this is a rate limit error.
+        """
+        error_str = str(error).lower()
+
+        # Check for common rate limit indicators
+        rate_limit_indicators = [
+            "429",
+            "rate limit",
+            "rate_limit",
+            "too many requests",
+            "quota exceeded",
+            "resource_exhausted",
+            "quota",
+            "throttl",
+            "请求过于频繁",  # Chinese: too many requests
+            "频率限制",  # Chinese: rate limit
+        ]
+
+        for indicator in rate_limit_indicators:
+            if indicator in error_str:
+                # Avoid false positives from 400 errors without quota keyword
+                if "400" in error_str and "quota" not in error_str:
+                    continue
+                return True
+
+        return False
+
+
 class RetryStrategy(str, Enum):
     """Retry strategy types."""
 
@@ -157,6 +282,82 @@ class RateLimitRetryCondition(RetryCondition):
         return any(
             pattern in error_str for pattern in ("429", "rate limit", "quota", "too many requests")
         )
+
+
+class GeminiRetryCondition(RetryCondition):
+    """Retry condition specialized for Gemini API errors."""
+
+    def __init__(self, max_retries: int = RetryConfig.MAX_RETRIES):
+        self.max_retries = max_retries
+
+    def should_retry(self, error: Exception, attempt: int) -> bool:
+        """Check if error is retryable for Gemini."""
+        if attempt >= self.max_retries:
+            return False
+
+        error_str = str(error).lower()
+
+        # Check for fatal errors that should never be retried
+        if self._is_fatal_error(error_str):
+            return False
+
+        # Check for rate limit errors
+        return RateLimitExtractor.is_rate_limit_error(error, "gemini")
+
+    def _is_fatal_error(self, error_str: str) -> bool:
+        """Check if the error is a fatal cache error."""
+        return (
+            "cachedcontent not found" in error_str
+            or ("403" in error_str and "permission" in error_str)
+        )
+
+
+class OpenAIRetryCondition(RetryCondition):
+    """Retry condition specialized for OpenAI API errors."""
+
+    def __init__(self, max_retries: int = RetryConfig.MAX_RETRIES):
+        self.max_retries = max_retries
+
+    def should_retry(self, error: Exception, attempt: int) -> bool:
+        """Check if error is retryable for OpenAI."""
+        if attempt >= self.max_retries:
+            return False
+
+        return RateLimitExtractor.is_rate_limit_error(error, "openai")
+
+
+class ZAIRetryCondition(RetryCondition):
+    """Retry condition specialized for ZAI API errors."""
+
+    def __init__(self, max_retries: int = RetryConfig.MAX_RETRIES):
+        self.max_retries = max_retries
+
+    def should_retry(self, error: Exception, attempt: int) -> bool:
+        """Check if error is retryable for ZAI."""
+        if attempt >= self.max_retries:
+            return False
+
+        return RateLimitExtractor.is_rate_limit_error(error, "zai")
+
+
+def get_retry_condition_for_provider(provider: str) -> RetryCondition:
+    """Get the appropriate retry condition for a provider.
+
+    Args:
+        provider: The provider name (gemini, openai, zai).
+
+    Returns:
+        A RetryCondition instance for the provider.
+    """
+    provider_lower = provider.lower()
+    if provider_lower == "gemini":
+        return GeminiRetryCondition()
+    elif provider_lower == "openai":
+        return OpenAIRetryCondition()
+    elif provider_lower == "zai":
+        return ZAIRetryCondition()
+    else:
+        return DefaultRetryCondition()
 
 
 class RetryService:

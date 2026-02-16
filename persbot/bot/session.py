@@ -68,6 +68,7 @@ class SessionManager:
         self._cleanup_task: Optional[asyncio.Task] = (
             None  # Track cleanup task for graceful shutdown
         )
+        self._sessions_lock = asyncio.Lock()  # Lock for thread-safe session operations
 
         # Start periodic session cleanup task
         if config.session_inactive_minutes > 0:
@@ -146,36 +147,37 @@ class SessionManager:
         user_id = str(user_id)
         target_model_alias = self._resolve_target_model_alias(session_key, channel_id)
 
-        existing_session = self.sessions.get(session_key)
-        if existing_session:
-            if self._check_session_model_compatibility(
-                existing_session, session_key, target_model_alias
-            ):
-                # Compatible - update and return existing session
-                self._update_existing_session(
-                    existing_session,
-                    session_key,
-                    channel_id,
-                    user_id,
-                    username,
-                    message_content,
-                    message_ts,
-                    message_id,
-                )
-                return existing_session.chat, session_key
-            # Incompatible - will create new below
-            del self.sessions[session_key]
+        async with self._sessions_lock:
+            existing_session = self.sessions.get(session_key)
+            if existing_session:
+                if self._check_session_model_compatibility(
+                    existing_session, session_key, target_model_alias
+                ):
+                    # Compatible - update and return existing session
+                    self._update_existing_session(
+                        existing_session,
+                        session_key,
+                        channel_id,
+                        user_id,
+                        username,
+                        message_content,
+                        message_ts,
+                        message_id,
+                    )
+                    return existing_session.chat, session_key
+                # Incompatible - will create new below
+                del self.sessions[session_key]
 
-        return await self._create_new_session(
-            session_key,
-            channel_id,
-            user_id,
-            username,
-            message_content,
-            message_ts,
-            message_id,
-            target_model_alias,
-        )
+            return await self._create_new_session(
+                session_key,
+                channel_id,
+                user_id,
+                username,
+                message_content,
+                message_ts,
+                message_id,
+                target_model_alias,
+            )
 
     def _resolve_target_model_alias(self, session_key: str, channel_id: int) -> str:
         """Determine the target model alias for a session."""

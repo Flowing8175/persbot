@@ -299,3 +299,21 @@ class PersonaCreationException(PromptGenerationException):
     """Exception raised when persona creation fails."""
 
     pass
+
+
+# =============================================================================
+# Circuit Breaker Exceptions
+# =============================================================================
+
+
+class CircuitBreakerOpenException(SoyeBotException):
+    """Exception raised when circuit breaker is open (provider failing)."""
+
+    def __init__(self, provider: str, recovery_time: float):
+        self.provider = provider
+        self.recovery_time = recovery_time
+        super().__init__(
+            f"Circuit breaker open for provider '{provider}'. "
+            f"Retry in {recovery_time:.1f}s",
+            {"provider": provider, "recovery_time": recovery_time},
+        )

@@ -35,12 +35,14 @@ class TestCachedItem:
             expiration=expiration,
             cache_key="cache-123",
             created_at=now,
+            last_accessed_at=now,
         )
 
         assert item.value == "test_value"
         assert item.expiration == expiration
         assert item.cache_key == "cache-123"
         assert item.created_at == now
+        assert item.last_accessed_at == now
 
     def test_accepts_none_expiration(self):
         """CachedItem accepts None for expiration (no expiry)."""
@@ -51,6 +53,7 @@ class TestCachedItem:
             expiration=None,
             cache_key="cache-123",
             created_at=now,
+            last_accessed_at=now,
         )
 
         assert item.expiration is None
@@ -65,6 +68,7 @@ class TestCachedItem:
             expiration=None,
             cache_key="dict-key",
             created_at=now,
+            last_accessed_at=now,
         )
         assert dict_item.value["nested"]["a"] == 1
 
@@ -74,6 +78,7 @@ class TestCachedItem:
             expiration=None,
             cache_key="list-key",
             created_at=now,
+            last_accessed_at=now,
         )
         assert list_item.value[3] == "four"
 
@@ -86,10 +91,11 @@ class TestCachedItem:
             expiration=None,
             cache_key="key",
             created_at=datetime.now(timezone.utc),
+            last_accessed_at=datetime.now(timezone.utc),
         )
 
         field_names = {f.name for f in fields(item)}
-        assert field_names == {"value", "expiration", "cache_key", "created_at"}
+        assert field_names == {"value", "expiration", "cache_key", "created_at", "last_accessed_at"}
 
 
 class TestCacheStrategy:
