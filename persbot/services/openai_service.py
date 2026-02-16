@@ -414,8 +414,14 @@ class OpenAIService(BaseLLMServiceCore):
         if tools:
             # ResponseSession uses Responses API which expects flatter format
             if isinstance(chat_session, ResponseSession):
-                converted_tools = OpenAIToolAdapter.convert_tools_for_responses_api(tools)
-                logger.info("Converted tools for Responses API: %s", converted_tools[:1] if converted_tools else [])
+                # TEMPORARILY DISABLED: Responses API tool support pending investigation
+                # The Responses API has different tool requirements than Chat Completions
+                # TODO: Re-enable once tool format is validated
+                converted_tools = None
+                logger.warning("Tools temporarily DISABLED for Responses API - pending format investigation")
+                # Original code:
+                # converted_tools = OpenAIToolAdapter.convert_tools_for_responses_api(tools)
+                # logger.info("Converted tools for Responses API: %s", converted_tools[:1] if converted_tools else [])
             else:
                 # ChatCompletionSession uses Chat Completions API
                 converted_tools = OpenAIToolAdapter.convert_tools(tools)
@@ -468,20 +474,32 @@ class OpenAIService(BaseLLMServiceCore):
                         if cancel_event and cancel_event.is_set():
                             logger.debug("Streaming aborted - closing async stream")
                             # Close the stream to stop server-side generation
-                            if hasattr(stream, 'close'):
+                            if hasattr(stream, 'aclose'):
+                                await stream.aclose()
+                            elif hasattr(stream, 'close'):
                                 stream.close()
                             raise asyncio.CancelledError("LLM streaming aborted by user")
                         yield chunk
                 except asyncio.CancelledError:
                     logger.debug("Streaming response cancelled - ensuring stream is closed")
                     # Ensure stream is closed on cancellation
-                    if hasattr(stream, 'close'):
-                        stream.close()
+                    try:
+                        if hasattr(stream, 'aclose'):
+                            await stream.aclose()
+                        elif hasattr(stream, 'close'):
+                            stream.close()
+                    except BaseException:
+                        pass
                     raise
                 except Exception:
                     # Close stream on any exception to prevent resource leaks
-                    if hasattr(stream, 'close'):
-                        stream.close()
+                    try:
+                        if hasattr(stream, 'aclose'):
+                            await stream.aclose()
+                        elif hasattr(stream, 'close'):
+                            stream.close()
+                    except BaseException:
+                        pass
                     raise
             else:
                 # Sync stream - iterate in thread to avoid blocking

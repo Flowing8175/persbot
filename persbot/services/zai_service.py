@@ -407,7 +407,9 @@ class ZAIService(BaseLLMServiceCore):
                     if cancel_event and cancel_event.is_set():
                         logger.debug("Streaming aborted - closing async stream")
                         # Close the stream to stop server-side generation
-                        if hasattr(stream, 'close'):
+                        if hasattr(stream, 'aclose'):
+                            await stream.aclose()
+                        elif hasattr(stream, 'close'):
                             stream.close()
                         raise asyncio.CancelledError("LLM streaming aborted by user")
 
@@ -460,27 +462,33 @@ class ZAIService(BaseLLMServiceCore):
         except asyncio.CancelledError:
             logger.debug("Streaming response cancelled - ensuring stream is closed")
             # Ensure stream is closed on cancellation to stop server-side generation
-            if hasattr(stream, 'close'):
-                try:
+            try:
+                if hasattr(stream, 'aclose'):
+                    await stream.aclose()
+                elif hasattr(stream, 'close'):
                     stream.close()
-                except Exception:
-                    pass
+            except BaseException:
+                pass
             raise
         except Exception:
             # Close stream on any exception to prevent resource leaks
-            if hasattr(stream, 'close'):
-                try:
+            try:
+                if hasattr(stream, 'aclose'):
+                    await stream.aclose()
+                elif hasattr(stream, 'close'):
                     stream.close()
-                except Exception:
-                    pass
+            except BaseException:
+                pass
             raise
         finally:
             # Always try to close stream as a safety net
-            if hasattr(stream, 'close'):
-                try:
+            try:
+                if hasattr(stream, 'aclose'):
+                    await stream.aclose()
+                elif hasattr(stream, 'close'):
                     stream.close()
-                except Exception:
-                    pass
+            except BaseException:
+                pass
 
         # Update history with the full conversation
         model_msg = ChatMessage(role="assistant", content=full_content)

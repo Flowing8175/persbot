@@ -487,7 +487,33 @@ class LLMService:
             notification,
         ) = await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
         if final_alias != model_alias:
-            chat_session.model_alias = final_alias
+            # Check if provider changed - need to recreate session if so
+            original_def = self.model_usage_service.MODEL_DEFINITIONS.get(model_alias)
+            final_def = self.model_usage_service.MODEL_DEFINITIONS.get(final_alias)
+            original_provider = original_def.provider if original_def else None
+            final_provider = final_def.provider if final_def else None
+
+            if original_provider != final_provider:
+                # Provider changed - create new session for the new provider
+                logger.info(
+                    "Provider changed from %s to %s, creating new session",
+                    original_provider, final_provider
+                )
+                system_instruction = getattr(chat_session, '_system_instruction', '')
+                if not system_instruction and hasattr(chat_session, '_history'):
+                    # Try to extract from first system message in history
+                    for msg in chat_session._history:
+                        if hasattr(msg, 'role') and msg.role == 'system':
+                            system_instruction = getattr(msg, 'content', '')
+                            break
+
+                new_session = self.create_chat_session_for_alias(final_alias, system_instruction)
+                # Copy history if possible
+                if hasattr(chat_session, 'history') and hasattr(new_session, 'history'):
+                    new_session.history = chat_session.history
+                chat_session = new_session
+            else:
+                chat_session.model_alias = final_alias
 
         if not is_allowed:
             return (notification or "❌ 사용 한도를 초과했습니다.", None)
@@ -555,7 +581,33 @@ class LLMService:
             notification,
         ) = await self.model_usage_service.check_and_increment_usage(guild_id, model_alias)
         if final_alias != model_alias:
-            chat_session.model_alias = final_alias
+            # Check if provider changed - need to recreate session if so
+            original_def = self.model_usage_service.MODEL_DEFINITIONS.get(model_alias)
+            final_def = self.model_usage_service.MODEL_DEFINITIONS.get(final_alias)
+            original_provider = original_def.provider if original_def else None
+            final_provider = final_def.provider if final_def else None
+
+            if original_provider != final_provider:
+                # Provider changed - create new session for the new provider
+                logger.info(
+                    "Provider changed from %s to %s, creating new session",
+                    original_provider, final_provider
+                )
+                system_instruction = getattr(chat_session, '_system_instruction', '')
+                if not system_instruction and hasattr(chat_session, '_history'):
+                    # Try to extract from first system message in history
+                    for msg in chat_session._history:
+                        if hasattr(msg, 'role') and msg.role == 'system':
+                            system_instruction = getattr(msg, 'content', '')
+                            break
+
+                new_session = self.create_chat_session_for_alias(final_alias, system_instruction)
+                # Copy history if possible
+                if hasattr(chat_session, 'history') and hasattr(new_session, 'history'):
+                    new_session.history = chat_session.history
+                chat_session = new_session
+            else:
+                chat_session.model_alias = final_alias
 
         if not is_allowed:
             yield notification or "❌ 사용 한도를 초과했습니다."

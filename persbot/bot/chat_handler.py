@@ -442,11 +442,15 @@ async def send_streaming_response(
     except asyncio.CancelledError:
         logger.debug("Streaming response interrupted for channel %s - closing stream", channel.id)
         # Close the stream to stop LLM server-side generation and save costs
-        if hasattr(stream, 'close'):
-            try:
+        # Use aclose() for async generators (which don't have close()),
+        # fall back to close() for sync streams
+        try:
+            if hasattr(stream, 'aclose'):
+                await stream.aclose()
+            elif hasattr(stream, 'close'):
                 stream.close()
-            except Exception:
-                pass
+        except BaseException:
+            pass
         raise
 
     return sent_messages
