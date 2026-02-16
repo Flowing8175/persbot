@@ -320,6 +320,11 @@ async def create_chat_reply_stream(
     This function yields text chunks as they arrive from the LLM,
     allowing for faster perceived response times.
 
+    If tools are enabled and the LLM makes function calls, this will:
+    1. Send a progress notification showing which tools are being used
+    2. Execute the tools
+    3. Send results back to LLM and stream the final response
+
     Args:
         message: The Discord message(s).
         resolution: The resolved session.
@@ -354,16 +359,118 @@ async def create_chat_reply_stream(
     if tool_manager and tool_manager.is_enabled():
         tools = list(tool_manager.get_enabled_tools().values())
 
-    # Stream the response
-    async for chunk in llm_service.generate_chat_response_stream(
-        chat_session,
-        resolution.cleaned_message,
-        message,
-        use_summarizer_backend=resolution.is_reply_to_summary,
-        tools=tools,
-        cancel_event=cancel_event,
-    ):
-        yield chunk
+    # For tool support in streaming, we need to collect the response first
+    # to check for function calls, then handle tools if needed
+    if tools and tool_manager:
+        # Collect the full response to check for tool calls
+        collected_chunks: list[str] = []
+        response_obj = None
+
+        async for chunk in llm_service.generate_chat_response_stream(
+            chat_session,
+            resolution.cleaned_message,
+            message,
+            use_summarizer_backend=resolution.is_reply_to_summary,
+            tools=tools,
+            cancel_event=cancel_event,
+        ):
+            collected_chunks.append(chunk)
+
+        # Check for function calls in the response
+        full_text = "".join(collected_chunks)
+        active_backend = llm_service.get_active_backend(
+            chat_session,
+            use_summarizer_backend=resolution.is_reply_to_summary,
+        )
+
+        # Try to get function calls from the last response
+        # Note: streaming may not preserve response_obj, so we need to check
+        # if there are pending function calls in the session
+        function_calls = None
+        if hasattr(chat_session, '_pending_function_calls'):
+            function_calls = chat_session._pending_function_calls
+        elif hasattr(active_backend, 'get_pending_function_calls'):
+            function_calls = active_backend.get_pending_function_calls(chat_session)
+
+        # Handle tool calls if present
+        max_tool_rounds = 10
+        tool_rounds = 0
+
+        while function_calls and tool_rounds < max_tool_rounds:
+            # Check for cancellation
+            if cancel_event and cancel_event.is_set():
+                return
+
+            # Send progress notification
+            notification_text = f"🔧 {', '.join(TOOL_NAME_KOREAN.get(call.get('name', 'unknown'), call.get('name', 'unknown')) for call in function_calls)} 사용 중..."
+            progress_msg = None
+            if primary_msg and hasattr(primary_msg, "channel") and primary_msg.channel:
+                try:
+                    progress_msg = await primary_msg.channel.send(notification_text)
+                except Exception:
+                    pass
+
+            try:
+                # Execute tools
+                results = await tool_manager.execute_tools(
+                    function_calls, primary_msg, cancel_event
+                )
+
+                # Send tool results back to LLM
+                tool_rounds_list = [(None, results)]  # response_obj may be None for streaming
+
+                continuation = await llm_service.send_tool_results(
+                    chat_session,
+                    tool_rounds=tool_rounds_list,
+                    tools=tools,
+                    discord_message=primary_msg,
+                    cancel_event=cancel_event,
+                )
+
+                if not continuation:
+                    break
+
+                response_text, response_obj = continuation
+
+                # Check for more function calls
+                function_calls = llm_service.extract_function_calls_from_response(
+                    active_backend, response_obj
+                )
+                tool_rounds += 1
+
+                # If no more function calls, yield the final response as stream
+                if not function_calls and response_text:
+                    # Yield the response text for streaming
+                    for line in response_text.split('\n'):
+                        if line.strip():
+                            yield line + '\n'
+                            await asyncio.sleep(0.01)  # Small delay for streaming feel
+
+            except Exception as e:
+                logger.error("Error executing tools in stream: %s", e, exc_info=True)
+                break
+            finally:
+                # Clean up progress message
+                if progress_msg:
+                    try:
+                        await progress_msg.delete()
+                    except Exception:
+                        pass
+
+        # If no tool calls were made, yield the collected chunks
+        if tool_rounds == 0 and full_text:
+            yield full_text
+    else:
+        # No tools - stream directly
+        async for chunk in llm_service.generate_chat_response_stream(
+            chat_session,
+            resolution.cleaned_message,
+            message,
+            use_summarizer_backend=resolution.is_reply_to_summary,
+            tools=tools,
+            cancel_event=cancel_event,
+        ):
+            yield chunk
 
 
 async def send_streaming_response(
