@@ -79,6 +79,93 @@ class TestSearchEpisodicMemory:
             # Test with limit under min
             await search_episodic_memory(user_id="123", query="test", limit=0)
 
+    @pytest.mark.asyncio
+    async def test_global_search_returns_all_memories(self):
+        """search_episodic_memory with global_search=True returns all memories for user."""
+        from persbot.tools.persona_tools.memory_tools import search_episodic_memory
+
+        memories = [
+            {"user_id": "123", "content": "memory 1", "date": "2024-01-01", "type": "fact", "tags": []},
+            {"user_id": "123", "content": "memory 2", "date": "2024-01-02", "type": "preference", "tags": []},
+            {"user_id": "456", "content": "other user memory", "date": "2024-01-03", "type": "fact", "tags": []},
+        ]
+
+        with patch('persbot.tools.persona_tools.memory_tools._load_memory_vector', new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = memories
+
+            result = await search_episodic_memory(user_id="123", global_search=True)
+
+            assert result.success is True
+            assert result.data["global_search"] is True
+            assert result.data["query"] == "*"
+            assert len(result.data["memories"]) == 2  # Only user 123's memories
+
+    @pytest.mark.asyncio
+    async def test_global_search_includes_global_memories(self):
+        """search_episodic_memory with global_search=True includes global memories."""
+        from persbot.tools.persona_tools.memory_tools import search_episodic_memory
+
+        memories = [
+            {"user_id": "123", "content": "user memory", "date": "2024-01-01", "type": "fact", "tags": []},
+            {"user_id": "global", "content": "global memory", "date": "2024-01-02", "type": "preference", "tags": []},
+        ]
+
+        with patch('persbot.tools.persona_tools.memory_tools._load_memory_vector', new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = memories
+
+            result = await search_episodic_memory(user_id="123", global_search=True)
+
+            assert result.success is True
+            assert len(result.data["memories"]) == 2  # User + global memories
+
+    @pytest.mark.asyncio
+    async def test_global_search_does_not_require_query(self):
+        """search_episodic_memory with global_search=True does not require query."""
+        from persbot.tools.persona_tools.memory_tools import search_episodic_memory
+
+        with patch('persbot.tools.persona_tools.memory_tools._load_memory_vector', new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = []
+
+            result = await search_episodic_memory(user_id="123", global_search=True)
+
+            assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_global_search_respects_limit(self):
+        """search_episodic_memory with global_search=True respects limit."""
+        from persbot.tools.persona_tools.memory_tools import search_episodic_memory
+
+        memories = [
+            {"user_id": "123", "content": f"memory {i}", "date": f"2024-01-{i:02d}", "type": "fact", "tags": []}
+            for i in range(1, 21)  # 20 memories
+        ]
+
+        with patch('persbot.tools.persona_tools.memory_tools._load_memory_vector', new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = memories
+
+            result = await search_episodic_memory(user_id="123", global_search=True, limit=5)
+
+            assert result.success is True
+            assert len(result.data["memories"]) == 5
+
+    @pytest.mark.asyncio
+    async def test_global_search_allows_higher_limit(self):
+        """search_episodic_memory with global_search=True allows limit up to 50."""
+        from persbot.tools.persona_tools.memory_tools import search_episodic_memory
+
+        memories = [
+            {"user_id": "123", "content": f"memory {i}", "date": f"2024-01-{i:02d}", "type": "fact", "tags": []}
+            for i in range(1, 61)  # 60 memories
+        ]
+
+        with patch('persbot.tools.persona_tools.memory_tools._load_memory_vector', new_callable=AsyncMock) as mock_load:
+            mock_load.return_value = memories
+
+            result = await search_episodic_memory(user_id="123", global_search=True, limit=60)
+
+            assert result.success is True
+            assert len(result.data["memories"]) == 50  # Clamped to 50
+
 
 class TestSaveEpisodicMemory:
     """Tests for save_episodic_memory function."""

@@ -22,8 +22,9 @@ DEFAULT_MEMORY_PATH = "data/memory_vector_mock.json"
 
 async def search_episodic_memory(
     user_id: str,
-    query: str,
+    query: str = "",
     limit: int = 5,
+    global_search: bool = False,
     **kwargs,
 ) -> ToolResult:
     """Search through episodic memory for relevant past conversations and events.
@@ -33,29 +34,20 @@ async def search_episodic_memory(
 
     Args:
         user_id: The Discord user ID to search memories for.
-        query: The search query to find relevant memories.
-        limit: Maximum number of memory results to return (default: 5).
+        query: The search query to find relevant memories (optional if global_search=True).
+        limit: Maximum number of memory results to return (default: 5, max: 50 for global search).
+        global_search: If True, list all memories for the user without query filtering.
 
     Returns:
         ToolResult with relevant episodic memories formatted as "Date - Content".
     """
-    """Search through episodic memory for relevant past conversations and events.
+    # Global search doesn't require a query
+    if not global_search and (not query or not query.strip()):
+        return ToolResult(success=False, error="Search query cannot be empty (use global_search=True to list all memories)")
 
-    This tool searches through stored memories to find specific promises,
-    preferences, facts, and past interactions with the user.
-
-    Args:
-        user_id: The Discord user ID to search memories for.
-        query: The search query to find relevant memories.
-        limit: Maximum number of memory results to return (default: 5).
-
-    Returns:
-        ToolResult with relevant episodic memories formatted as "Date - Content".
-    """
-    if not query or not query.strip():
-        return ToolResult(success=False, error="Search query cannot be empty")
-
-    limit = min(max(1, limit), 10)  # Clamp between 1-10
+    # Clamp limit: 1-10 for normal search, 1-50 for global search
+    max_limit = 50 if global_search else 10
+    limit = min(max(1, limit), max_limit)
 
     try:
         # Try to load from memory vector file
@@ -67,23 +59,34 @@ async def search_episodic_memory(
                 success=True,
                 data={
                     "user_id": user_id,
-                    "query": query,
+                    "query": query if not global_search else "*",
+                    "global_search": global_search,
                     "memories": [],
                     "message": "No episodic memories found. The persona is still building their memory bank.",
                 },
             )
 
-        # Simple keyword-based matching (prototype - will be replaced with vector search)
-        relevant_memories = _filter_memories_by_keywords(memories, user_id, query, limit)
+        # Global search: list all memories for the user
+        if global_search:
+            relevant_memories = _get_all_memories_for_user(memories, user_id, limit)
+        else:
+            # Simple keyword-based matching (prototype - will be replaced with vector search)
+            relevant_memories = _filter_memories_by_keywords(memories, user_id, query, limit)
 
         if not relevant_memories:
+            message = (
+                "No memories found for this user."
+                if global_search
+                else f"No specific memories found for '{query}'. The persona will remember this interaction for future conversations."
+            )
             return ToolResult(
                 success=True,
                 data={
                     "user_id": user_id,
-                    "query": query,
+                    "query": query if not global_search else "*",
+                    "global_search": global_search,
                     "memories": [],
-                    "message": f"No specific memories found for '{query}'. The persona will remember this interaction for future conversations.",
+                    "message": message,
                 },
             )
 
@@ -98,7 +101,8 @@ async def search_episodic_memory(
             success=True,
             data={
                 "user_id": user_id,
-                "query": query,
+                "query": query if not global_search else "*",
+                "global_search": global_search,
                 "count": len(formatted_memories),
                 "memories": formatted_memories,
             },
@@ -368,6 +372,32 @@ async def _save_memory_vector(memories: List[Dict[str, Any]]) -> None:
         raise
 
 
+def _get_all_memories_for_user(
+    memories: List[Dict[str, Any]],
+    user_id: str,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Get all memories for a specific user (global search).
+
+    Args:
+        memories: List of all memory entries.
+        user_id: User ID to filter by (memories with user_id or 'global').
+        limit: Maximum results to return.
+
+    Returns:
+        List of memories belonging to the user or global, sorted by date (newest first).
+    """
+    user_memories = []
+    for memory in memories:
+        memory_user_id = memory.get("user_id", "global")
+        if memory_user_id == user_id or memory_user_id == "global":
+            user_memories.append(memory)
+
+    # Sort by date descending (newest first)
+    user_memories.sort(key=lambda m: m.get("date", ""), reverse=True)
+    return user_memories[:limit]
+
+
 def _filter_memories_by_keywords(
     memories: List[Dict[str, Any]],
     user_id: str,
@@ -433,7 +463,7 @@ def register_memory_tools(registry) -> None:
     registry.register(
         ToolDefinition(
             name="search_episodic_memory",
-            description="Search through persona's episodic memory to find relevant past conversations, promises, preferences, and facts. Returns specific memories with dates.",
+            description="Search through persona's episodic memory to find relevant past conversations, promises, preferences, and facts. Returns specific memories with dates. Use global_search=True to list all memories.",
             category=ToolCategory.PERSONA_MEMORY,
             parameters=[
                 ToolParameter(
@@ -445,15 +475,23 @@ def register_memory_tools(registry) -> None:
                 ToolParameter(
                     name="query",
                     type="string",
-                    description="The search query to find relevant memories (keywords, topics, or questions).",
-                    required=True,
+                    description="The search query to find relevant memories (keywords, topics, or questions). Optional if global_search=True.",
+                    required=False,
+                    default="",
                 ),
                 ToolParameter(
                     name="limit",
                     type="integer",
-                    description="Maximum number of memory results to return (default: 5, max: 10).",
+                    description="Maximum number of memory results to return (default: 5, max: 10 for normal search, 50 for global search).",
                     required=False,
                     default=5,
+                ),
+                ToolParameter(
+                    name="global_search",
+                    type="boolean",
+                    description="If True, list all memories for the user without query filtering. Use to browse all stored memories.",
+                    required=False,
+                    default=False,
                 ),
             ],
             handler=search_episodic_memory,
