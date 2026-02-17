@@ -56,34 +56,30 @@ class GeminiChatSession:
     def _get_api_history(self) -> List[Dict[str, Any]]:
         """Convert local history to API format.
 
-        Returns parts as dicts (not Part objects) to ensure JSON serialization works.
+        Uses genai_types.Part factory methods for proper serialization.
         """
-        import base64
-
         api_history = []
         for msg in self.history:
             final_parts = []
 
-            # Add existing text/content parts as dicts
+            # Add existing text/content parts
             if msg.parts:
                 for p in msg.parts:
                     if isinstance(p, dict) and "text" in p:
-                        final_parts.append(p)
+                        # Use factory method for text
+                        final_parts.append(genai_types.Part.from_text(text=p["text"]))
                     elif hasattr(p, "text") and p.text:  # It's a Part object
-                        # Convert Part to dict
-                        final_parts.append({"text": p.text})
+                        # Use factory method for text
+                        final_parts.append(genai_types.Part.from_text(text=p.text))
 
-            # Reconstruct image parts from stored bytes as dicts
+            # Reconstruct image parts from stored bytes
             if hasattr(msg, "images") and msg.images:
                 for img_data in msg.images:
                     mime_type = get_mime_type(img_data)
-                    # Use inline_data dict format instead of Part object
-                    final_parts.append({
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": base64.b64encode(img_data).decode("utf-8")
-                        }
-                    })
+                    # Use from_bytes factory method
+                    final_parts.append(
+                        genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
+                    )
 
             api_history.append({"role": msg.role, "parts": final_parts})
         return api_history
@@ -223,8 +219,6 @@ class GeminiChatSession:
         Returns:
             Tuple of (model_message, response_obj).
         """
-        from persbot.tools.adapters.gemini_adapter import GeminiToolAdapter
-
         # Build contents from history
         contents = self._get_api_history()
 
@@ -245,39 +239,19 @@ class GeminiChatSession:
             # Build model parts from either response object or function_calls
             model_parts = None
             if resp_obj is not None and resp_obj.candidates:
+                # Use the response content directly - SDK handles serialization
                 model_content = resp_obj.candidates[0].content
-                # Convert Part objects to dicts for JSON serialization
-                model_parts = []
-                for part in model_content.parts:
-                    if hasattr(part, "text") and part.text:
-                        model_parts.append({"text": part.text})
-                    elif hasattr(part, "function_call") and part.function_call:
-                        fc = part.function_call
-                        model_parts.append({
-                            "function_call": {
-                                "name": getattr(fc, "name", None),
-                                "args": dict(getattr(fc, "args", {}) or {})
-                            }
-                        })
-                    elif hasattr(part, "function_response") and part.function_response:
-                        fr = part.function_response
-                        model_parts.append({
-                            "function_response": {
-                                "name": getattr(fr, "name", None),
-                                "response": dict(getattr(fr, "response", {}) or {})
-                            }
-                        })
+                model_parts = list(model_content.parts)
             elif function_calls:
-                # Streaming case: construct parts from extracted function_calls as dicts
+                # Streaming case: use factory method for proper serialization
                 model_parts = []
                 for fc in function_calls:
-                    # Build function_call part as dict (JSON-serializable)
-                    model_parts.append({
-                        "function_call": {
-                            "name": fc.get("name"),
-                            "args": fc.get("parameters") or fc.get("args") or {}
-                        }
-                    })
+                    model_parts.append(
+                        genai_types.Part.from_function_call(
+                            name=fc.get("name"),
+                            args=fc.get("parameters") or fc.get("args") or {}
+                        )
+                    )
 
             if model_parts is None:
                 logger.error("send_tool_results: no response object and no function_calls provided")
@@ -285,7 +259,7 @@ class GeminiChatSession:
 
             contents.append({"role": "model", "parts": model_parts})
 
-            # Add function response parts as dicts (not Part objects)
+            # Add function response parts using factory method
             for result_item in results:
                 tool_name = result_item.get("name")
                 result_data = result_item.get("result")
@@ -294,7 +268,10 @@ class GeminiChatSession:
                     response_data = {"error": error}
                 else:
                     response_data = {"result": str(result_data) if result_data is not None else ""}
-                fn_part = {"function_response": {"name": tool_name, "response": response_data}}
+                fn_part = genai_types.Part.from_function_response(
+                    name=tool_name,
+                    response=response_data
+                )
                 contents.append({"role": "user", "parts": [fn_part]})
 
         # Call generate_content
