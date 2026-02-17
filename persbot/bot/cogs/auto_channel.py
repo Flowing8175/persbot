@@ -154,7 +154,6 @@ class AutoChannelCog(BaseChatCog):
             logger.debug("Ignoring message in non-auto-reply channel %s", message.channel.id)
             return
 
-        logger.info("Processing message in auto-reply channel %s: %s", message.channel.id, message.content[:50] if message.content else "[no content]")
         if message.content.startswith(self.config.command_prefix):
             return
         if message.content and message.content.lstrip().startswith("\\"):
