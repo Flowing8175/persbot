@@ -527,7 +527,14 @@ class OpenAIService(BaseLLMServiceCore):
                         pass
 
         try:
+            pending_function_calls = []  # Track function calls from chunks
             async for chunk in _iterate_stream():
+                # Extract function calls from chunk (for tool support)
+                func_calls = self._extract_function_calls_from_stream_chunk(chunk)
+                if func_calls:
+                    pending_function_calls.extend(func_calls)
+                    logger.info("Extracted %d function calls from stream chunk", len(func_calls))
+
                 # Extract text delta from chunk
                 # Handle both OpenAI Chat Completions format and potential foreign formats
                 text = None
@@ -548,6 +555,11 @@ class OpenAIService(BaseLLMServiceCore):
 
         except asyncio.CancelledError:
             raise
+
+        # Store pending function calls in chat_session for tool handling
+        if pending_function_calls:
+            chat_session._pending_function_calls = pending_function_calls
+            logger.info("Stored %d pending function calls in chat_session", len(pending_function_calls))
 
         # Update history with the full conversation
         model_msg = ChatMessage(role="assistant", content=full_content)
@@ -638,3 +650,41 @@ class OpenAIService(BaseLLMServiceCore):
             List of message dictionaries in OpenAI tool format.
         """
         return OpenAIToolAdapter.format_results(results)
+
+    def _extract_function_calls_from_stream_chunk(self, chunk: Any) -> List[Dict[str, Any]]:
+        """Extract function calls from a streaming chunk.
+
+        OpenAI streaming chunks contain tool_calls in the delta when the LLM
+        decides to call a function.
+
+        Returns a list of dicts with 'id', 'name', and 'parameters' keys.
+        """
+        function_calls = []
+        try:
+            if hasattr(chunk, 'choices') and chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta and hasattr(delta, 'tool_calls') and delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        # Extract function call info
+                        func = getattr(tc, 'function', None)
+                        if func:
+                            call_info = {
+                                "id": getattr(tc, 'id', None),
+                                "name": getattr(func, 'name', None),
+                                "parameters": {},
+                            }
+                            # Parse arguments JSON if present
+                            args_str = getattr(func, 'arguments', None)
+                            if args_str:
+                                try:
+                                    import json
+                                    call_info["parameters"] = json.loads(args_str)
+                                except (json.JSONDecodeError, TypeError):
+                                    # Arguments might be incomplete during streaming
+                                    pass
+                            if call_info["name"]:
+                                function_calls.append(call_info)
+                                logger.info("Extracted function call from stream: %s", call_info["name"])
+        except Exception as e:
+            logger.error("Error extracting function calls from stream chunk: %s", e, exc_info=True)
+        return function_calls
