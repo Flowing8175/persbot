@@ -5,12 +5,13 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from persbot.config import AppConfig
 from persbot.prompts import BOT_PERSONA_PROMPT
 from persbot.services.llm_service import LLMService
 from persbot.services.model_usage_service import ModelUsageService
+from persbot.services.summarization_service import SummarizationConfig, SummarizationService
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,16 @@ class SessionManager:
             None  # Track cleanup task for graceful shutdown
         )
         self._sessions_lock = asyncio.Lock()  # Lock for thread-safe session operations
+
+        # Initialize summarization service
+        self._summarization_service = SummarizationService(
+            SummarizationConfig(
+                threshold=config.summarization_threshold,
+                keep_recent_messages=config.summarization_keep_recent,
+                summarization_model=config.summarization_model,
+                max_summary_length=config.summarization_max_tokens,
+            )
+        )
 
         # Start periodic session cleanup task
         if config.session_inactive_minutes > 0:
@@ -445,3 +456,116 @@ class SessionManager:
                 pass
         self.sessions.clear()
         self.session_contexts.clear()
+
+    def check_and_summarize_history(self, session_key: str) -> bool:
+        """Check if history needs summarization and trigger if threshold exceeded.
+
+        This method should be called after messages are added to history.
+        If the history exceeds the threshold, older messages are summarized
+        and replaced with a summary message.
+
+        Args:
+            session_key: The session key to check.
+
+        Returns:
+            True if summarization was performed, False otherwise.
+        """
+        session = self.sessions.get(session_key)
+        if not session or not hasattr(session.chat, "history"):
+            return False
+
+        history = session.chat.history
+        if not self._summarization_service.should_summarize(history):
+            return False
+
+        # Get messages to summarize and keep
+        to_summarize, to_keep = self._summarization_service.get_messages_to_summarize(history)
+
+        if not to_summarize:
+            return False
+
+        # Estimate tokens saved
+        tokens_before = self._summarization_service.estimate_tokens(to_summarize)
+        estimated_summary_tokens = self._summarization_service.config.max_summary_length
+        tokens_saved = max(0, tokens_before - estimated_summary_tokens)
+
+        # Format and create summary prompt
+        formatted = self._summarization_service.format_history_for_summary(to_summarize)
+        summary_prompt = self._summarization_service.create_summary_prompt(formatted)
+
+        # Store the summarization request for async processing
+        # The actual summarization will be done by the LLM service
+        session._pending_summarization = {
+            "prompt": summary_prompt,
+            "messages_to_summarize": to_summarize,
+            "messages_to_keep": to_keep,
+            "tokens_saved_estimate": tokens_saved,
+        }
+
+        logger.info(
+            "Session %s history exceeds threshold (%d messages). Summarization queued.",
+            session_key,
+            len(history),
+        )
+
+        return True
+
+    def apply_summarization(self, session_key: str, summary_text: str) -> bool:
+        """Apply summarization by replacing old messages with summary.
+
+        Args:
+            session_key: The session key to update.
+            summary_text: The generated summary text.
+
+        Returns:
+            True if summarization was applied, False otherwise.
+        """
+        session = self.sessions.get(session_key)
+        if not session or not hasattr(session.chat, "history"):
+            return False
+
+        pending = getattr(session, "_pending_summarization", None)
+        if not pending:
+            return False
+
+        # Create summary message
+        summary_msg = self._summarization_service.create_summary_message(summary_text)
+
+        # Replace history: summary + kept messages
+        new_history = [summary_msg] + pending["messages_to_keep"]
+        session.chat.history = new_history
+
+        # Record metrics
+        self._summarization_service.record_summarization(
+            len(pending["messages_to_summarize"]),
+            pending["tokens_saved_estimate"],
+        )
+
+        # Clear pending summarization
+        session._pending_summarization = None
+
+        logger.info(
+            "Summarization applied to session %s. New history length: %d",
+            session_key,
+            len(new_history),
+        )
+
+        return True
+
+    def get_summarization_stats(self) -> dict:
+        """Get summarization statistics.
+
+        Returns:
+            Dict with summarization metrics.
+        """
+        return self._summarization_service.get_stats()
+
+    def get_cache_stats(self) -> dict:
+        """Get cache statistics from the LLM service.
+
+        Returns:
+            Dict with cache metrics if available, empty dict otherwise.
+        """
+        if hasattr(self.llm_service, "get_cache_stats"):
+            return self.llm_service.get_cache_stats()
+        return {}

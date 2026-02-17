@@ -93,6 +93,12 @@ class AppConfig:
     thinking_budget: int | None = None
     max_history: int = 50
 
+    # --- Context Summarization ---
+    summarization_threshold: int = 40  # Messages before summarization triggers
+    summarization_keep_recent: int = 7  # Recent messages to keep unsummarized
+    summarization_model: str = "gemini-2.5-flash"  # Cheaper model for summarization
+    summarization_max_tokens: int = 500  # Max tokens for summary
+
     # Channels where every message should be auto-processed by Gemini
     auto_reply_channel_ids: tuple[int, ...] = ()
     log_level: int = logging.INFO

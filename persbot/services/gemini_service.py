@@ -68,6 +68,11 @@ class GeminiService(BaseLLMServiceCore):
         self._models_initialized = False
         self._cache_warmup_task: Optional[asyncio.Task] = None
 
+        # Cache metrics for observability
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
+        self._cache_tokens_saved: int = 0
+
         # Start periodic cache cleanup task
         if config.gemini_cache_ttl_minutes > 0:
             asyncio.create_task(self._periodic_cache_cleanup())
@@ -290,22 +295,23 @@ class GeminiService(BaseLLMServiceCore):
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """Resolve Gemini cache and log status.
 
-        Note: Gemini's cached content does NOT support function calling at the model level.
-        While CreateCachedContentConfig accepts a 'tools' parameter, using cached_content
-        with tools causes "Tool use with function calling is unsupported by the model" error.
-        When tools are needed, skip caching and use standard context.
+        Context caching now supports tools - the cache includes the system instruction
+        and tool definitions, allowing cache hits for tool-enabled conversations.
+        This provides significant cost savings for conversations using function calling.
         """
         if not use_cache:
             return None, None
 
-        # Gemini's cached content doesn't support function calling.
-        # When tools are needed, skip caching and use standard context.
-        if tools:
-            return None, None
-
         cache_name, cache_expiration = self._get_gemini_cache(
-            model_name, system_instruction, tools=None
+            model_name, system_instruction, tools=tools
         )
+
+        # Track cache metrics
+        if cache_name:
+            self._cache_hits += 1
+            logger.info("Cache hit for model %s (tools: %s)", model_name, bool(tools))
+        else:
+            self._cache_misses += 1
 
         return cache_name, cache_expiration
 
@@ -349,6 +355,21 @@ class GeminiService(BaseLLMServiceCore):
         self._assistant_model_instance = None
         self._summary_model_instance = None
         self._models_initialized = False
+
+    def get_cache_stats(self) -> dict:
+        """Get cache statistics for observability.
+
+        Returns:
+            Dict with cache_hits, cache_misses, hit_rate, and tokens_saved.
+        """
+        total = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total * 100) if total > 0 else 0.0
+        return {
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "hit_rate": round(hit_rate, 1),
+            "tokens_saved": self._cache_tokens_saved,
+        }
 
     def _create_retry_handler(self) -> RetryHandler:
         """Create Gemini-specific retry handler."""

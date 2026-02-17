@@ -795,3 +795,14 @@ class LLMService:
             and hasattr(self.summarizer_backend, "start_background_warmup")
         ):
             self.summarizer_backend.start_background_warmup()
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics from the assistant backend.
+
+        Returns:
+            Dict with cache metrics (hits, misses, hit_rate, tokens_saved)
+            or empty dict if caching not supported.
+        """
+        if hasattr(self.assistant_backend, "get_cache_stats"):
+            return self.assistant_backend.get_cache_stats()
+        return {}
