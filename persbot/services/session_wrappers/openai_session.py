@@ -65,20 +65,16 @@ class ResponsesAPIStreamAdapter:
 
     def __next__(self) -> FakeChunk:
         """Sync next - iterates over the raw stream and returns chunks."""
-        import sys
-        print("=== ResponsesAPIStreamAdapter.__next__ CALLED ===", file=sys.stderr, flush=True)
         event_count = 0
         while True:
             try:
                 event = next(self._iterator)
                 event_count += 1
             except StopIteration:
-                print(f"__next__: Raw stream exhausted after {event_count} events", file=sys.stderr, flush=True)
                 raise StopIteration
 
             chunk = self._process_event(event)
             if chunk is not None:
-                print(f"__next__: Returning chunk after {event_count} events", file=sys.stderr, flush=True)
                 return chunk
             # Continue to next event if this one didn't produce a chunk
 
