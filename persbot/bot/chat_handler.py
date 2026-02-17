@@ -417,7 +417,8 @@ async def create_chat_reply_stream(
                 )
 
                 # Send tool results back to LLM
-                tool_rounds_list = [(None, results)]  # response_obj may be None for streaming
+                # Pass (resp_obj, results, function_calls) - resp_obj is None for streaming
+                tool_rounds_list = [(None, results, function_calls)]
 
                 continuation = await llm_service.send_tool_results(
                     chat_session,

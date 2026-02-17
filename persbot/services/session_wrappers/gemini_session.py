@@ -225,16 +225,38 @@ class GeminiChatSession:
             contents.pop()
 
         # Add each tool round: model response (with function_call) + function results
-        for resp_obj, results in tool_rounds:
-            # Add model's response with function_call parts
-            if resp_obj is None:
-                logger.error("send_tool_results: response object is None")
+        # Format: (resp_obj, results, function_calls) - function_calls may be provided for streaming
+        for tool_round in tool_rounds:
+            # Unpack with optional third element for function_calls
+            if len(tool_round) == 3:
+                resp_obj, results, function_calls = tool_round
+            else:
+                resp_obj, results = tool_round
+                function_calls = None
+
+            # Build model parts from either response object or function_calls
+            model_parts = None
+            if resp_obj is not None and resp_obj.candidates:
+                model_content = resp_obj.candidates[0].content
+                model_parts = list(model_content.parts)
+            elif function_calls:
+                # Streaming case: construct parts from extracted function_calls
+                model_parts = []
+                for fc in function_calls:
+                    # Build function_call part in Gemini format
+                    from google.genai import types as genai_types
+                    fc_obj = genai_types.FunctionCall(
+                        name=fc.get("name"),
+                        args=fc.get("parameters") or fc.get("args") or {}
+                    )
+                    model_parts.append(genai_types.Part(function_call=fc_obj))
+                logger.info("Constructed %d function_call parts from streaming", len(model_parts))
+
+            if model_parts is None:
+                logger.error("send_tool_results: no response object and no function_calls provided")
                 continue
-            if not resp_obj.candidates:
-                logger.error("send_tool_results: response has no candidates")
-                continue
-            model_content = resp_obj.candidates[0].content
-            contents.append({"role": "model", "parts": list(model_content.parts)})
+
+            contents.append({"role": "model", "parts": model_parts})
 
             # Add function response parts
             fn_parts = GeminiToolAdapter.format_results(results)
