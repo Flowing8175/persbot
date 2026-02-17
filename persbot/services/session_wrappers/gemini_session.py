@@ -227,6 +227,9 @@ class GeminiChatSession:
         # Add each tool round: model response (with function_call) + function results
         for resp_obj, results in tool_rounds:
             # Add model's response with function_call parts
+            if resp_obj is None:
+                logger.error("send_tool_results: response object is None")
+                continue
             if not resp_obj.candidates:
                 logger.error("send_tool_results: response has no candidates")
                 continue
