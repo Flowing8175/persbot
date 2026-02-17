@@ -389,6 +389,7 @@ async def create_chat_reply_stream(
         function_calls = None
         if hasattr(chat_session, '_pending_function_calls'):
             function_calls = chat_session._pending_function_calls
+            del chat_session._pending_function_calls
         elif hasattr(active_backend, 'get_pending_function_calls'):
             function_calls = active_backend.get_pending_function_calls(chat_session)
 
