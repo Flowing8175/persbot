@@ -40,7 +40,7 @@ class SummarizerCog(commands.Cog):
         # Build formatted message list in single pass (memory optimization for 1GB RAM)
         # Eliminates intermediate message_list to reduce peak memory by ~20%
         text_parts = [
-            f"{msg.author.id}: {msg.content}"
+            f"{msg.author.display_name}: {msg.content}"
             async for msg in channel.history(**kwargs)
             if not msg.author.bot
         ]
@@ -198,7 +198,7 @@ class SummarizerCog(commands.Cog):
             )
             # 시작 메시지도 포함
             if not start_message.author.bot:
-                full_text = f"{start_message.author.id}: {start_message.content}\n" + full_text
+                full_text = f"{start_message.author.display_name}: {start_message.content}\n" + full_text
                 count += 1
 
             if count == 0:
