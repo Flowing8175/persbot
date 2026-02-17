@@ -12,6 +12,7 @@ from discord.ext import commands
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from persbot.bot.cogs.assistant import AssistantCog
+from persbot.bot.cogs.help import HelpCog
 from persbot.bot.cogs.model_selector import ModelSelectorCog
 from persbot.bot.cogs.persona import PersonaCog
 from persbot.bot.cogs.summarizer import SummarizerCog
@@ -100,6 +101,7 @@ async def main(config) -> None:
 
     # Register cogs before starting so listeners are ready on first connect
     # and won't raise on reconnect (on_ready can fire multiple times).
+    await bot.add_cog(HelpCog(bot, config))
     await bot.add_cog(SummarizerCog(bot, config, llm_service))
     await bot.add_cog(
         AssistantCog(bot, config, llm_service, session_manager, prompt_service, tool_manager)
