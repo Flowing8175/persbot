@@ -843,8 +843,10 @@ class GeminiService(BaseLLMServiceCore):
 
         try:
             logger.info("Starting to iterate over stream")
+            chunk_count = 0
             async for chunk in stream:
-                logger.debug("Received chunk from stream")
+                chunk_count += 1
+                logger.info("Received chunk #%d from stream", chunk_count)
                 # Check for cancellation
                 if cancel_event and cancel_event.is_set():
                     # Close the stream to stop server-side generation
@@ -876,6 +878,9 @@ class GeminiService(BaseLLMServiceCore):
             # Yield any remaining content in buffer
             if buffer:
                 yield buffer
+
+            # Log stream completion
+            logger.info("Stream iteration completed. Total chunks: %d, Full content length: %d", chunk_count, len(full_content))
 
             # Log usage metadata from final chunk
             if final_chunk:
