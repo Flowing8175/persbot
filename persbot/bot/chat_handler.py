@@ -500,6 +500,7 @@ async def send_streaming_response(
     sent_messages: list[discord.Message] = []
 
     try:
+        logger.info("send_streaming_response: Starting to consume stream")
         async for chunk in stream:
             # Skip empty chunks
             if not chunk.strip():
@@ -532,6 +533,19 @@ async def send_streaming_response(
         # Close the stream to stop LLM server-side generation and save costs
         # Use aclose() for async generators (which don't have close()),
         # fall back to close() for sync streams
+        try:
+            if hasattr(stream, 'aclose'):
+                await stream.aclose()
+            elif hasattr(stream, 'close'):
+                stream.close()
+        except BaseException:
+            pass
+        raise
+
+    except Exception as e:
+        # Log any other exception during stream consumption
+        logger.error("Error consuming stream in send_streaming_response: %s", e, exc_info=True)
+        # Close the stream
         try:
             if hasattr(stream, 'aclose'):
                 await stream.aclose()

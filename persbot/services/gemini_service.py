@@ -891,8 +891,9 @@ class GeminiService(BaseLLMServiceCore):
             except BaseException:
                 pass
             raise
-        except Exception:
+        except Exception as e:
             # Close stream on any exception to prevent resource leaks and stop server generation
+            logger.error("Exception during stream iteration: %s", e, exc_info=True)
             try:
                 if hasattr(stream, 'aclose'):
                     await stream.aclose()
