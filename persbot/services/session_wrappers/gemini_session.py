@@ -53,10 +53,10 @@ class GeminiChatSession:
         self._factory = factory
         self.history: deque[ChatMessage] = deque(maxlen=max_history)
 
-    def _get_api_history(self) -> List[Dict[str, Any]]:
+    def _get_api_history(self) -> List[genai_types.Content]:
         """Convert local history to API format.
 
-        Uses genai_types.Part factory methods for proper serialization.
+        Returns a list of types.Content objects for proper SDK serialization.
         """
         api_history = []
         for msg in self.history:
@@ -66,22 +66,20 @@ class GeminiChatSession:
             if msg.parts:
                 for p in msg.parts:
                     if isinstance(p, dict) and "text" in p:
-                        # Use factory method for text
                         final_parts.append(genai_types.Part.from_text(text=p["text"]))
-                    elif hasattr(p, "text") and p.text:  # It's a Part object
-                        # Use factory method for text
+                    elif hasattr(p, "text") and p.text:
                         final_parts.append(genai_types.Part.from_text(text=p.text))
 
             # Reconstruct image parts from stored bytes
             if hasattr(msg, "images") and msg.images:
                 for img_data in msg.images:
                     mime_type = get_mime_type(img_data)
-                    # Use from_bytes factory method
                     final_parts.append(
                         genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
                     )
 
-            api_history.append({"role": msg.role, "parts": final_parts})
+            # Create proper Content object instead of dict
+            api_history.append(genai_types.Content(role=msg.role, parts=final_parts))
         return api_history
 
     def send_message(
@@ -112,7 +110,7 @@ class GeminiChatSession:
 
         current_parts = []
         if user_message:
-            current_parts.append({"text": user_message})
+            current_parts.append(genai_types.Part.from_text(text=user_message))
 
         if images:
             for img_data in images:
@@ -121,7 +119,7 @@ class GeminiChatSession:
                     genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
                 )
 
-        contents.append({"role": "user", "parts": current_parts})
+        contents.append(genai_types.Content(role="user", parts=current_parts))
 
         # 2. Call generate_content directly (Stateless)
         response = self._factory.generate_content(contents=contents, tools=tools)
@@ -175,7 +173,7 @@ class GeminiChatSession:
 
         current_parts = []
         if user_message:
-            current_parts.append({"text": user_message})
+            current_parts.append(genai_types.Part.from_text(text=user_message))
 
         if images:
             for img_data in images:
@@ -184,7 +182,7 @@ class GeminiChatSession:
                     genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
                 )
 
-        contents.append({"role": "user", "parts": current_parts})
+        contents.append(genai_types.Content(role="user", parts=current_parts))
 
         # 2. Get async streaming iterator
         try:
@@ -223,7 +221,7 @@ class GeminiChatSession:
         contents = self._get_api_history()
 
         # The last entry is the text-only model msg from initial response - remove it
-        if contents and contents[-1]["role"] == "model":
+        if contents and contents[-1].role == "model":
             contents.pop()
 
         # Add each tool round: model response (with function_call) + function results
@@ -257,7 +255,8 @@ class GeminiChatSession:
                 logger.error("send_tool_results: no response object and no function_calls provided")
                 continue
 
-            contents.append({"role": "model", "parts": model_parts})
+            # Use Content object instead of dict
+            contents.append(genai_types.Content(role="model", parts=model_parts))
 
             # Add function response parts using factory method
             for result_item in results:
@@ -272,7 +271,8 @@ class GeminiChatSession:
                     name=tool_name,
                     response=response_data
                 )
-                contents.append({"role": "user", "parts": [fn_part]})
+                # Use Content object instead of dict
+                contents.append(genai_types.Content(role="user", parts=[fn_part]))
 
         # Call generate_content
         response = self._factory.generate_content(contents=contents, tools=tools)
