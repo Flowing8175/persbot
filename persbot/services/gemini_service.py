@@ -844,6 +844,7 @@ class GeminiService(BaseLLMServiceCore):
         try:
             logger.info("Starting to iterate over stream")
             chunk_count = 0
+            pending_function_calls = []  # Track function calls from chunks
             async for chunk in stream:
                 chunk_count += 1
                 logger.info("Received chunk #%d from stream", chunk_count)
@@ -858,6 +859,12 @@ class GeminiService(BaseLLMServiceCore):
 
                 # Save reference to final chunk for metadata extraction
                 final_chunk = chunk
+
+                # Extract function calls from chunk (for tool support)
+                func_calls = self._extract_function_calls_from_chunk(chunk)
+                if func_calls:
+                    pending_function_calls.extend(func_calls)
+                    logger.info("Extracted %d function calls from chunk", len(func_calls))
 
                 # Extract text from chunk
                 text = self._extract_text_from_stream_chunk(chunk)
@@ -878,6 +885,11 @@ class GeminiService(BaseLLMServiceCore):
             # Yield any remaining content in buffer
             if buffer:
                 yield buffer
+
+            # Store pending function calls in chat_session for tool handling
+            if pending_function_calls:
+                chat_session._pending_function_calls = pending_function_calls
+                logger.info("Stored %d pending function calls in chat_session", len(pending_function_calls))
 
             # Log stream completion
             logger.info("Stream iteration completed. Total chunks: %d, Full content length: %d", chunk_count, len(full_content))
@@ -938,6 +950,34 @@ class GeminiService(BaseLLMServiceCore):
         except Exception as e:
             logger.error("Error extracting text from chunk: %s", e, exc_info=True)
         return ""
+
+    def _extract_function_calls_from_chunk(self, chunk: Any) -> List[Dict[str, Any]]:
+        """Extract function calls from a streaming chunk.
+
+        Returns a list of dicts with 'name' and 'parameters' keys.
+        """
+        function_calls = []
+        try:
+            if hasattr(chunk, "candidates") and chunk.candidates:
+                for candidate in chunk.candidates:
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        for part in candidate.content.parts:
+                            # Skip parts that are marked as thoughts
+                            if getattr(part, "thought", False):
+                                continue
+
+                            if hasattr(part, "function_call") and part.function_call:
+                                fc = part.function_call
+                                call_info = {
+                                    "name": getattr(fc, "name", None),
+                                    "parameters": dict(getattr(fc, "args", {}) or {}),
+                                }
+                                if call_info["name"]:
+                                    function_calls.append(call_info)
+                                    logger.info("Extracted function call: %s with args: %s", call_info["name"], call_info["parameters"])
+        except Exception as e:
+            logger.error("Error extracting function calls from chunk: %s", e, exc_info=True)
+        return function_calls
 
     async def send_tool_results(
         self,
