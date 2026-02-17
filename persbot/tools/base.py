@@ -1,6 +1,7 @@
 """Base tool definitions for SoyeBot AI tool system."""
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
@@ -13,6 +14,8 @@ try:
 except ImportError:
     genai_types = None
     HAS_GENAI = False
+
+logger = logging.getLogger(__name__)
 
 
 class ToolCategory(Enum):
@@ -133,6 +136,7 @@ class ToolDefinition:
             # Re-raise cancellation errors to propagate abort signal
             raise
         except Exception as e:
+            logger.exception("Tool '%s' execution failed", self.name)
             return ToolResult(success=False, error=str(e))
 
     def to_openai_format(self) -> Dict[str, Any]:
