@@ -221,6 +221,9 @@ class GeminiChatSession:
         # Add each tool round: model response (with function_call) + function results
         for resp_obj, results in tool_rounds:
             # Add model's response with function_call parts
+            if not resp_obj.candidates:
+                logger.error("send_tool_results: response has no candidates")
+                continue
             model_content = resp_obj.candidates[0].content
             contents.append({"role": "model", "parts": list(model_content.parts)})
 

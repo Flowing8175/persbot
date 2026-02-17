@@ -144,7 +144,7 @@ class BaseChatCog(commands.Cog):
                     )
                     return stream
             except Exception as e:
-                logger.warning("Streaming failed, falling back to non-streaming: %s", e)
+                logger.warning("Streaming failed, falling back to non-streaming: %s", e, exc_info=True)
                 # Fall back to non-streaming
                 resolution = await resolve_session_for_message(
                     primary_message,
