@@ -1007,7 +1007,10 @@ class GeminiService(BaseLLMServiceCore):
             if hasattr(chunk, "candidates") and chunk.candidates:
                 for candidate in chunk.candidates:
                     if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                        for part in candidate.content.parts:
+                        parts = candidate.content.parts
+                        if not parts:
+                            continue
+                        for part in parts:
                             # Skip parts that are marked as thoughts
                             if getattr(part, "thought", False):
                                 continue
@@ -1029,7 +1032,10 @@ class GeminiService(BaseLLMServiceCore):
             if hasattr(chunk, "candidates") and chunk.candidates:
                 for candidate in chunk.candidates:
                     if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                        for part in candidate.content.parts:
+                        parts = candidate.content.parts
+                        if not parts:
+                            continue
+                        for part in parts:
                             # Skip parts that are marked as thoughts
                             if getattr(part, "thought", False):
                                 continue
