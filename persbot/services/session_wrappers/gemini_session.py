@@ -181,7 +181,13 @@ class GeminiChatSession:
         contents.append({"role": "user", "parts": current_parts})
 
         # 2. Get async streaming iterator
-        stream = self._factory.generate_content_stream(contents=contents, tools=tools)
+        logger.info("Calling generate_content_stream with tools=%s", tools)
+        try:
+            stream = self._factory.generate_content_stream(contents=contents, tools=tools)
+            logger.info("generate_content_stream returned successfully")
+        except Exception as e:
+            logger.error("generate_content_stream failed: %s", e, exc_info=True)
+            raise
 
         # 3. Create user ChatMessage (model message created after stream completes)
         user_msg = ChatMessage(

@@ -842,7 +842,9 @@ class GeminiService(BaseLLMServiceCore):
         final_chunk = None  # Track final chunk for usage metadata
 
         try:
+            logger.info("Starting to iterate over stream")
             async for chunk in stream:
+                logger.debug("Received chunk from stream")
                 # Check for cancellation
                 if cancel_event and cancel_event.is_set():
                     # Close the stream to stop server-side generation
