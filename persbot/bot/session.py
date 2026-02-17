@@ -172,8 +172,21 @@ class SessionManager:
                         message_id,
                     )
                     return existing_session.chat, session_key
-                # Incompatible - will create new below
+                # Incompatible - extract history before deletion
+                history_to_transfer = self._extract_history(existing_session.chat)
                 del self.sessions[session_key]
+
+                return await self._create_new_session(
+                    session_key,
+                    channel_id,
+                    user_id,
+                    username,
+                    message_content,
+                    message_ts,
+                    message_id,
+                    target_model_alias,
+                    history_to_transfer=history_to_transfer,
+                )
 
             return await self._create_new_session(
                 session_key,
@@ -241,11 +254,22 @@ class SessionManager:
         message_ts: Optional[datetime],
         message_id: Optional[str],
         model_alias: str,
+        history_to_transfer: Optional[List[Dict[str, str]]] = None,
     ) -> Tuple[object, str]:
-        """Create a new chat session."""
+        """Create a new chat session, optionally with transferred history."""
         system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
         chat = self.llm_service.create_chat_session_for_alias(model_alias, system_prompt)
         chat.model_alias = model_alias
+
+        # Apply transferred history if provided
+        if history_to_transfer and hasattr(chat, 'history'):
+            self._apply_history(chat, history_to_transfer)
+            logger.info(
+                "Transferred %d messages to new session %s with model %s",
+                len(history_to_transfer),
+                session_key,
+                model_alias,
+            )
 
         self.sessions[session_key] = ChatSession(
             chat=chat,
@@ -268,6 +292,93 @@ class SessionManager:
         self._evict_if_needed()
 
         return chat, session_key
+
+    def _extract_history(self, chat: object) -> List[Dict[str, str]]:
+        """Extract history from a chat object into a normalized format.
+
+        Works with both OpenAI/ZAI (_history list) and Gemini (history deque) formats.
+        Returns a list of {role, content} dicts, excluding system messages.
+        """
+        history_container = None
+
+        # Handle OpenAI/ZAI format (uses _history internally)
+        if hasattr(chat, "_history") and chat._history:
+            history_container = chat._history
+        # Handle Gemini format (uses history directly)
+        elif hasattr(chat, "history") and chat.history:
+            history_container = chat.history
+
+        if not history_container:
+            return []
+
+        # Ensure history_container is iterable (handles Mock objects gracefully)
+        try:
+            iter(history_container)
+        except TypeError:
+            return []
+
+        normalized = []
+        for msg in history_container:
+            role = getattr(msg, 'role', None)
+            content = getattr(msg, 'content', None)
+
+            # Skip system messages (new session gets fresh system prompt)
+            # Skip messages without proper role/content
+            if role and content and role != 'system':
+                normalized.append({'role': role, 'content': content})
+
+        return normalized
+
+    def _apply_history(self, chat: object, history: List[Dict[str, str]]) -> None:
+        """Apply normalized history to a chat object.
+
+        Appends messages to the chat's history in a format-compatible way.
+        Works with both OpenAI/ZAI and Gemini chat objects.
+        """
+        if not history or not hasattr(chat, 'history'):
+            return
+
+        # Get the message class used by this chat implementation
+        # Most chat objects have their messages as objects with role/content attributes
+        # We'll create simple message objects that the chat can work with
+
+        # Try to get the history container (handle both _history and history)
+        if hasattr(chat, "_history"):
+            history_container = chat._history
+        else:
+            history_container = chat.history
+
+        # Determine the message class to use based on existing history
+        if history_container:
+            # Use the same type as existing messages
+            sample_msg = history_container[0] if len(history_container) > 0 else None
+            msg_class = type(sample_msg) if sample_msg else None
+        else:
+            msg_class = None
+
+        for msg_dict in history:
+            if msg_class:
+                # Create message of the same type
+                try:
+                    new_msg = msg_class(
+                        role=msg_dict['role'],
+                        content=msg_dict['content']
+                    )
+                    history_container.append(new_msg)
+                    continue
+                except Exception:
+                    pass  # Fall through to dict fallback
+
+            # Fallback: try to create a simple object with role/content
+            class SimpleMessage:
+                def __init__(self, role, content):
+                    self.role = role
+                    self.content = content
+
+            history_container.append(SimpleMessage(
+                role=msg_dict['role'],
+                content=msg_dict['content']
+            ))
 
     def set_channel_prompt(self, channel_id: int, prompt_content: Optional[str]) -> None:
         """Set a custom system prompt for a specific channel."""
