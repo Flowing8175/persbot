@@ -85,6 +85,13 @@ class ToolExecutor:
                     error=f"Missing required permissions for tool '{tool_name}'",
                 )
 
+        # Inject user_id from Discord context if tool requires it but it's not provided
+        if discord_context:
+            # Check if tool has user_id parameter and it's not already provided
+            has_user_id_param = any(p.name == "user_id" for p in tool.parameters)
+            if has_user_id_param and "user_id" not in parameters:
+                parameters["user_id"] = str(discord_context.author.id)
+
         # Execute the tool
         return await self._execute_with_timeout(tool, parameters, cancel_event)
 
