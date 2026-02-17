@@ -1,5 +1,6 @@
 """Gemini chat session wrapper for managing history with author tracking."""
 
+import json
 import logging
 from collections import deque
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -10,6 +11,39 @@ from persbot.services.base import ChatMessage
 from persbot.utils import get_mime_type
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_json_serializable(obj: Any) -> Any:
+    """Recursively convert objects to JSON-serializable types.
+
+    This handles Pydantic models, protobuf Messages, and other non-serializable types
+    by using model_dump() or converting to dict/string as appropriate.
+    """
+    if obj is None:
+        return None
+    elif isinstance(obj, (str, int, float, bool)):
+        return obj
+    elif isinstance(obj, bytes):
+        # bytes should be base64 encoded, but we shouldn't have raw bytes in contents
+        return obj.decode('utf-8', errors='replace')
+    elif isinstance(obj, dict):
+        return {k: _ensure_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_ensure_json_serializable(item) for item in obj]
+    elif hasattr(obj, 'model_dump'):
+        # Pydantic model - use model_dump and recurse
+        return _ensure_json_serializable(obj.model_dump())
+    elif hasattr(obj, '__dict__'):
+        # Generic object - convert to dict
+        return _ensure_json_serializable(vars(obj))
+    else:
+        # Fallback: try to convert to string
+        try:
+            # Check if it's JSON serializable
+            json.dumps(obj)
+            return obj
+        except (TypeError, ValueError):
+            return str(obj)
 
 
 def extract_clean_text(response_obj: Any) -> str:
@@ -129,6 +163,9 @@ class GeminiChatSession:
 
         contents.append({"role": "user", "parts": current_parts})
 
+        # Ensure all contents are JSON-serializable
+        contents = _ensure_json_serializable(contents)
+
         # 2. Call generate_content directly (Stateless)
         response = self._factory.generate_content(contents=contents, tools=tools)
 
@@ -195,6 +232,9 @@ class GeminiChatSession:
                 })
 
         contents.append({"role": "user", "parts": current_parts})
+
+        # Ensure all contents are JSON-serializable
+        contents = _ensure_json_serializable(contents)
 
         # 2. Get async streaming iterator
         try:
@@ -299,6 +339,9 @@ class GeminiChatSession:
                         }
                     }]
                 })
+
+        # Ensure all contents are JSON-serializable (removes any protobuf objects)
+        contents = _ensure_json_serializable(contents)
 
         # Call generate_content
         response = self._factory.generate_content(contents=contents, tools=tools)
