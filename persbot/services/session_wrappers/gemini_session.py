@@ -53,10 +53,10 @@ class GeminiChatSession:
         self._factory = factory
         self.history: deque[ChatMessage] = deque(maxlen=max_history)
 
-    def _get_api_history(self) -> List[genai_types.Content]:
+    def _get_api_history(self) -> List[Dict[str, Any]]:
         """Convert local history to API format.
 
-        Returns a list of types.Content objects for proper SDK serialization.
+        Returns a list of ContentDict dictionaries for JSON serialization.
         """
         api_history = []
         for msg in self.history:
@@ -66,20 +66,24 @@ class GeminiChatSession:
             if msg.parts:
                 for p in msg.parts:
                     if isinstance(p, dict) and "text" in p:
-                        final_parts.append(genai_types.Part.from_text(text=p["text"]))
+                        final_parts.append({"text": p["text"]})
                     elif hasattr(p, "text") and p.text:
-                        final_parts.append(genai_types.Part.from_text(text=p.text))
+                        final_parts.append({"text": p.text})
 
             # Reconstruct image parts from stored bytes
             if hasattr(msg, "images") and msg.images:
                 for img_data in msg.images:
                     mime_type = get_mime_type(img_data)
-                    final_parts.append(
-                        genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
-                    )
+                    # Use inline_data format for images
+                    import base64
+                    final_parts.append({
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": base64.b64encode(img_data).decode("utf-8")
+                        }
+                    })
 
-            # Create proper Content object instead of dict
-            api_history.append(genai_types.Content(role=msg.role, parts=final_parts))
+            api_history.append({"role": msg.role, "parts": final_parts})
         return api_history
 
     def send_message(
@@ -110,16 +114,20 @@ class GeminiChatSession:
 
         current_parts = []
         if user_message:
-            current_parts.append(genai_types.Part.from_text(text=user_message))
+            current_parts.append({"text": user_message})
 
         if images:
             for img_data in images:
                 mime_type = get_mime_type(img_data)
-                current_parts.append(
-                    genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
-                )
+                import base64
+                current_parts.append({
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": base64.b64encode(img_data).decode("utf-8")
+                    }
+                })
 
-        contents.append(genai_types.Content(role="user", parts=current_parts))
+        contents.append({"role": "user", "parts": current_parts})
 
         # 2. Call generate_content directly (Stateless)
         response = self._factory.generate_content(contents=contents, tools=tools)
@@ -173,16 +181,20 @@ class GeminiChatSession:
 
         current_parts = []
         if user_message:
-            current_parts.append(genai_types.Part.from_text(text=user_message))
+            current_parts.append({"text": user_message})
 
         if images:
             for img_data in images:
                 mime_type = get_mime_type(img_data)
-                current_parts.append(
-                    genai_types.Part.from_bytes(data=img_data, mime_type=mime_type)
-                )
+                import base64
+                current_parts.append({
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": base64.b64encode(img_data).decode("utf-8")
+                    }
+                })
 
-        contents.append(genai_types.Content(role="user", parts=current_parts))
+        contents.append({"role": "user", "parts": current_parts})
 
         # 2. Get async streaming iterator
         try:
@@ -221,7 +233,7 @@ class GeminiChatSession:
         contents = self._get_api_history()
 
         # The last entry is the text-only model msg from initial response - remove it
-        if contents and contents[-1].role == "model":
+        if contents and contents[-1]["role"] == "model":
             contents.pop()
 
         # Add each tool round: model response (with function_call) + function results
@@ -237,28 +249,39 @@ class GeminiChatSession:
             # Build model parts from either response object or function_calls
             model_parts = None
             if resp_obj is not None and resp_obj.candidates:
-                # Use the response content directly - SDK handles serialization
+                # Extract function_call data from response and convert to dict format
                 model_content = resp_obj.candidates[0].content
-                model_parts = list(model_content.parts)
+                model_parts = []
+                for part in model_content.parts:
+                    if hasattr(part, "function_call") and part.function_call:
+                        fc = part.function_call
+                        model_parts.append({
+                            "function_call": {
+                                "name": getattr(fc, "name", ""),
+                                "args": dict(getattr(fc, "args", {}) or {})
+                            }
+                        })
+                    elif hasattr(part, "text") and part.text:
+                        model_parts.append({"text": part.text})
             elif function_calls:
-                # Streaming case: use factory method for proper serialization
+                # Streaming case: convert function_calls to dict format
                 model_parts = []
                 for fc in function_calls:
-                    model_parts.append(
-                        genai_types.Part.from_function_call(
-                            name=fc.get("name"),
-                            args=fc.get("parameters") or fc.get("args") or {}
-                        )
-                    )
+                    model_parts.append({
+                        "function_call": {
+                            "name": fc.get("name", ""),
+                            "args": fc.get("parameters") or fc.get("args") or {}
+                        }
+                    })
 
-            if model_parts is None:
+            if model_parts is None or not model_parts:
                 logger.error("send_tool_results: no response object and no function_calls provided")
                 continue
 
-            # Use Content object instead of dict
-            contents.append(genai_types.Content(role="model", parts=model_parts))
+            # Use dict format
+            contents.append({"role": "model", "parts": model_parts})
 
-            # Add function response parts using factory method
+            # Add function response parts in dict format
             for result_item in results:
                 tool_name = result_item.get("name")
                 result_data = result_item.get("result")
@@ -267,12 +290,15 @@ class GeminiChatSession:
                     response_data = {"error": error}
                 else:
                     response_data = {"result": str(result_data) if result_data is not None else ""}
-                fn_part = genai_types.Part.from_function_response(
-                    name=tool_name,
-                    response=response_data
-                )
-                # Use Content object instead of dict
-                contents.append(genai_types.Content(role="user", parts=[fn_part]))
+                contents.append({
+                    "role": "user",
+                    "parts": [{
+                        "function_response": {
+                            "name": tool_name,
+                            "response": response_data
+                        }
+                    }]
+                })
 
         # Call generate_content
         response = self._factory.generate_content(contents=contents, tools=tools)
