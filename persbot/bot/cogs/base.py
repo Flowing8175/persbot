@@ -295,13 +295,16 @@ class BaseChatCog(commands.Cog):
 
         try:
             full_text = await self._prepare_batch_context(messages)
+            logger.info("_prepare_batch_context returned: %s", full_text[:100] if full_text else "[empty]")
 
             if not full_text:
+                logger.warning("_process_batch: full_text is empty, returning")
                 return
 
 
             # Choose streaming or non-streaming path based on break_cut_mode
             use_streaming = self._should_use_streaming()
+            logger.info("use_streaming=%s", use_streaming)
 
             if use_streaming:
                 # Streaming path with fallback to non-streaming on failure
