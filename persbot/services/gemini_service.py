@@ -838,16 +838,20 @@ class GeminiService(BaseLLMServiceCore):
         full_content = ""
         final_chunk = None  # Track final chunk for usage metadata
 
-        try:
-            pending_function_calls = []  # Track function calls from chunks
-            async for chunk in stream:
+        # Helper to process a single stream with retry support
+        async def _process_stream(stream_iterator, is_retry: bool = False):
+            """Process stream iterator, yielding text chunks."""
+            nonlocal buffer, full_content, final_chunk
+            pending_function_calls = []
+
+            async for chunk in stream_iterator:
                 # Check for cancellation
                 if cancel_event and cancel_event.is_set():
                     # Close the stream to stop server-side generation
-                    if hasattr(stream, 'aclose'):
-                        await stream.aclose()
-                    elif hasattr(stream, 'close'):
-                        stream.close()
+                    if hasattr(stream_iterator, 'aclose'):
+                        await stream_iterator.aclose()
+                    elif hasattr(stream_iterator, 'close'):
+                        stream_iterator.close()
                     raise asyncio.CancelledError("LLM streaming aborted by user")
 
                 # Save reference to final chunk for metadata extraction
@@ -886,6 +890,11 @@ class GeminiService(BaseLLMServiceCore):
             if final_chunk:
                 self._log_raw_response(final_chunk, 1)
 
+        try:
+            # Try processing the original stream
+            async for text_chunk in _process_stream(stream):
+                yield text_chunk
+
         except asyncio.CancelledError:
             # Ensure stream is closed on cancellation to stop server-side generation
             try:
@@ -897,7 +906,47 @@ class GeminiService(BaseLLMServiceCore):
                 pass
             raise
         except Exception as e:
-            # Close stream on any exception to prevent resource leaks and stop server generation
+            # Check if this is a cache error - we can retry once
+            if self._is_cache_error(e):
+                logger.warning("Cache error during stream iteration, refreshing and retrying: %s", e)
+
+                # Close the failed stream
+                try:
+                    if hasattr(stream, 'aclose'):
+                        await stream.aclose()
+                    elif hasattr(stream, 'close'):
+                        stream.close()
+                except BaseException:
+                    pass
+
+                # Refresh the session and get a new stream
+                await _refresh_streaming_session()
+
+                try:
+                    # Re-send the message to get a fresh stream
+                    user_msg, new_stream = await chat_session.send_message_stream(
+                        user_message,
+                        author_id=author_id,
+                        author_name=author_name,
+                        message_ids=message_ids,
+                        images=images,
+                        tools=final_tools,
+                    )
+
+                    # Reset buffer for fresh start
+                    buffer = ""
+                    full_content = ""
+
+                    # Process the new stream
+                    async for text_chunk in _process_stream(new_stream, is_retry=True):
+                        yield text_chunk
+
+                    return  # Success on retry
+                except Exception as retry_e:
+                    logger.error("Stream retry failed after cache refresh: %s", retry_e, exc_info=True)
+                    raise
+
+            # For non-cache errors, close stream and re-raise
             logger.error("Exception during stream iteration: %s", e, exc_info=True)
             try:
                 if hasattr(stream, 'aclose'):
