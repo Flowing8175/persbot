@@ -928,10 +928,15 @@ class GeminiService(BaseLLMServiceCore):
                             if getattr(part, "thought", False):
                                 continue
 
-                            if hasattr(part, "text") and part.text:
+                            # Log what's in the part for debugging
+                            if hasattr(part, "function_call") and part.function_call:
+                                logger.info("Chunk contains function_call: %s", part.function_call)
+                            elif hasattr(part, "text") and part.text:
                                 return part.text
-        except Exception:
-            pass
+                            else:
+                                logger.info("Chunk part has no text or function_call: %s", dir(part))
+        except Exception as e:
+            logger.error("Error extracting text from chunk: %s", e, exc_info=True)
         return ""
 
     async def send_tool_results(
