@@ -296,18 +296,21 @@ class TestGeminiServiceResolveGeminiCache:
         assert result == (None, None)
 
     def test_uses_implicit_caching_when_enabled(self, service):
-        """_resolve_gemini_cache returns (None, None) when tools are present.
+        """_resolve_gemini_cache attempts caching even with tools present.
 
-        Gemini's cached content doesn't support function calling.
-        When tools are needed, we skip caching and use standard context.
-        When no tools and cache is enabled, it attempts to get/create a cache.
+        Gemini's cached content supports function calling via the tools parameter.
+        When cache is enabled, it attempts to get/create a cache with tools included.
         """
-        # When tools are present, should return (None, None)
-        mock_tool = Mock()
-        result = service._resolve_gemini_cache(
-            "gemini-2.5-flash", "instruction" * 100, [mock_tool], use_cache=True
-        )
-        assert result == (None, None)
+        # When tools are present, should still attempt caching
+        # Mock _get_gemini_cache to return a cache name
+        with patch.object(service, '_get_gemini_cache', return_value=("cache-123", None)):
+            mock_tool = Mock()
+            mock_tool.function_declarations = []  # Make it iterable
+            result = service._resolve_gemini_cache(
+                "gemini-2.5-flash", "instruction" * 100, [mock_tool], use_cache=True
+            )
+            # Should return the cache name, not (None, None)
+            assert result == ("cache-123", None)
 
 
 class TestGeminiServiceBuildGenerationConfig:

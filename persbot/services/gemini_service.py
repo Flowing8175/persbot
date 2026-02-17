@@ -288,17 +288,16 @@ class GeminiService(BaseLLMServiceCore):
         tools: Optional[list],
         use_cache: bool,
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
-        """Resolve Gemini cache and log status."""
+        """Resolve Gemini cache and log status.
+
+        Note: Gemini's cached content DOES support tools/function calling.
+        Tools are included in the cache key to ensure tool-specific caches.
+        """
         if not use_cache:
             return None, None
 
-        # Gemini's cached content doesn't support function calling.
-        # When tools are needed, skip caching and use standard context.
-        if tools:
-            return None, None
-
         cache_name, cache_expiration = self._get_gemini_cache(
-            model_name, system_instruction, tools=None
+            model_name, system_instruction, tools=tools
         )
 
         return cache_name, cache_expiration
