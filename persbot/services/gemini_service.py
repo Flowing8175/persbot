@@ -765,10 +765,7 @@ class GeminiService(BaseLLMServiceCore):
         if self._model_supports_tools(effective_model):
             # Convert custom tools to Gemini format if provided
             if tools:
-                # Debug: log the type of tools being passed
-                logger.info("Tools type before conversion: %s, first tool type: %s", type(tools), type(tools[0]) if tools else None)
                 custom_tools = GeminiToolAdapter.convert_tools(tools)
-                logger.info("Tools type after conversion: %s, first tool: %s", type(custom_tools), type(custom_tools[0]) if custom_tools else None)
             else:
                 custom_tools = None
 

@@ -279,7 +279,9 @@ class BaseChatCog(commands.Cog):
 
         primary_message = messages[0]
         channel_id = primary_message.channel.id
-        logger.info("_process_batch called for channel %s with %d messages", channel_id, len(messages))
+        channel_name = getattr(primary_message.channel, 'name', None) or f"DM-{primary_message.author.display_name}"
+        message_preview = messages[0].content[:50] + ("..." if len(messages[0].content) > 50 else "")
+        logger.info("Processing %d message(s) in #%s | %s", len(messages), channel_name, message_preview)
 
         # Register task
         self.active_batches[channel_id] = messages
@@ -295,7 +297,6 @@ class BaseChatCog(commands.Cog):
 
         try:
             full_text = await self._prepare_batch_context(messages)
-            logger.info("_prepare_batch_context returned: %s", full_text[:100] if full_text else "[empty]")
 
             if not full_text:
                 logger.warning("_process_batch: full_text is empty, returning")
@@ -304,7 +305,6 @@ class BaseChatCog(commands.Cog):
 
             # Choose streaming or non-streaming path based on break_cut_mode
             use_streaming = self._should_use_streaming()
-            logger.info("use_streaming=%s", use_streaming)
 
             if use_streaming:
                 # Streaming path with fallback to non-streaming on failure

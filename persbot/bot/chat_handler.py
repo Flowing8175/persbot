@@ -501,7 +501,6 @@ async def send_streaming_response(
     sent_messages: list[discord.Message] = []
 
     try:
-        logger.info("send_streaming_response: Starting to consume stream")
         async for chunk in stream:
             # Skip empty chunks
             if not chunk.strip():
