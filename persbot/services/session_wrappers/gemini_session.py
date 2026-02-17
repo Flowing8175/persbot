@@ -238,16 +238,16 @@ class GeminiChatSession:
                 model_content = resp_obj.candidates[0].content
                 model_parts = list(model_content.parts)
             elif function_calls:
-                # Streaming case: construct parts from extracted function_calls
+                # Streaming case: construct parts from extracted function_calls as dicts
                 model_parts = []
                 for fc in function_calls:
-                    # Build function_call part in Gemini format
-                    from google.genai import types as genai_types
-                    fc_obj = genai_types.FunctionCall(
-                        name=fc.get("name"),
-                        args=fc.get("parameters") or fc.get("args") or {}
-                    )
-                    model_parts.append(genai_types.Part(function_call=fc_obj))
+                    # Build function_call part as dict (JSON-serializable)
+                    model_parts.append({
+                        "function_call": {
+                            "name": fc.get("name"),
+                            "args": fc.get("parameters") or fc.get("args") or {}
+                        }
+                    })
 
             if model_parts is None:
                 logger.error("send_tool_results: no response object and no function_calls provided")
