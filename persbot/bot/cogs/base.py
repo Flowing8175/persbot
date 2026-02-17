@@ -280,8 +280,8 @@ class BaseChatCog(commands.Cog):
         primary_message = messages[0]
         channel_id = primary_message.channel.id
         channel_name = getattr(primary_message.channel, 'name', None) or f"DM-{primary_message.author.display_name}"
-        message_preview = messages[0].content[:50] + ("..." if len(messages[0].content) > 50 else "")
-        logger.info("Processing %d message(s) in #%s | %s", len(messages), channel_name, message_preview)
+        batch_contents = " | ".join(f'"{m.content}"' for m in messages)
+        logger.info("Processing %d message(s) in #%s: %s", len(messages), channel_name, batch_contents)
 
         # Register task
         self.active_batches[channel_id] = messages
