@@ -69,6 +69,10 @@ class SummarizerCog(commands.Cog):
         - `!요약 20분`: 최근 20분 요약
         - `!요약 <ID> 이후`: 해당 메시지 이후 요약
         - `!요약 <ID> <이후|이전> 30분`: 특정 시점 기준 범위 요약
+
+        답글 사용법 (메시지에 답글하여):
+        - `!요약 이후`: 답글 대상 메시지 이후 요약
+        - `!요약 <이후|이전> 30분`: 답글 대상 기준 범위 요약
         """
         # Collect non-None arguments into a tuple to mimic existing logic
         args = []
@@ -84,8 +88,25 @@ class SummarizerCog(commands.Cog):
 
         await self._handle_summarize_args(ctx, tuple(args))
 
+    def _get_reply_message_id(self, ctx: commands.Context) -> Optional[int]:
+        """명령어 메시지가 답글인 경우, 답글 대상 메시지의 ID를 반환합니다."""
+        if ctx.message.reference and ctx.message.reference.message_id:
+            return ctx.message.reference.message_id
+        return None
+
     async def _handle_summarize_args(self, ctx: commands.Context, args: tuple) -> None:
         """인자를 분석하여 적절한 요약 메서드를 호출합니다."""
+        # 답글에서 메시지 ID 가져오기
+        reply_message_id = self._get_reply_message_id(ctx)
+
+        # 답글이고 첫 인자가 '이후' 또는 '이전'인 경우, 답글 대상을 메시지 ID로 사용
+        if reply_message_id and len(args) >= 1 and args[0] in ["이후", "이전"]:
+            # args를 (message_id, 방향, 범위) 형식으로 재구성
+            direction = args[0]
+            time_arg = args[1] if len(args) >= 2 else None
+            args = (str(reply_message_id), direction) + ((time_arg,) if time_arg else ())
+            reply_message_id = None  # 이미 사용했으므로 초기화
+
         if len(args) == 0:
             # !요약 - 기본값: 최근 30분
             await self._summarize_by_time(ctx, 30)
@@ -148,7 +169,7 @@ class SummarizerCog(commands.Cog):
         else:
             await send_discord_message(
                 ctx,
-                f"❌ 올바른 형식을 사용해주세요.\n사용법:\n- `!요약`\n- `!요약 <시간>`\n- `!요약 <메시지ID> 이후`\n- `!요약 <메시지ID> <이후|이전> <시간>`",
+                f"❌ 올바른 형식을 사용해주세요.\n사용법:\n- `!요약`\n- `!요약 <시간>`\n- `!요약 <메시지ID> 이후`\n- `!요약 <메시지ID> <이후|이전> <시간>`\n\n답글로 사용:\n- `!요약 이후` (답글 대상 이후)\n- `!요약 <이후|이전> <시간>`",
             )
 
     def _is_message_id(self, arg: str) -> bool:
