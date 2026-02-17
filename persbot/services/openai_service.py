@@ -533,7 +533,6 @@ class OpenAIService(BaseLLMServiceCore):
                 func_calls = self._extract_function_calls_from_stream_chunk(chunk)
                 if func_calls:
                     pending_function_calls.extend(func_calls)
-                    logger.info("Extracted %d function calls from stream chunk", len(func_calls))
 
                 # Extract text delta from chunk
                 # Handle both OpenAI Chat Completions format and potential foreign formats
@@ -559,7 +558,6 @@ class OpenAIService(BaseLLMServiceCore):
         # Store pending function calls in chat_session for tool handling
         if pending_function_calls:
             chat_session._pending_function_calls = pending_function_calls
-            logger.info("Stored %d pending function calls in chat_session", len(pending_function_calls))
 
         # Update history with the full conversation
         model_msg = ChatMessage(role="assistant", content=full_content)
@@ -684,7 +682,6 @@ class OpenAIService(BaseLLMServiceCore):
                                     pass
                             if call_info["name"]:
                                 function_calls.append(call_info)
-                                logger.info("Extracted function call from stream: %s", call_info["name"])
         except Exception as e:
             logger.error("Error extracting function calls from stream chunk: %s", e, exc_info=True)
         return function_calls

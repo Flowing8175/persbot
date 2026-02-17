@@ -181,10 +181,8 @@ class GeminiChatSession:
         contents.append({"role": "user", "parts": current_parts})
 
         # 2. Get async streaming iterator
-        logger.info("Calling generate_content_stream with tools=%s", tools)
         try:
             stream = self._factory.generate_content_stream(contents=contents, tools=tools)
-            logger.info("generate_content_stream returned successfully")
         except Exception as e:
             logger.error("generate_content_stream failed: %s", e, exc_info=True)
             raise
@@ -250,7 +248,6 @@ class GeminiChatSession:
                         args=fc.get("parameters") or fc.get("args") or {}
                     )
                     model_parts.append(genai_types.Part(function_call=fc_obj))
-                logger.info("Constructed %d function_call parts from streaming", len(model_parts))
 
             if model_parts is None:
                 logger.error("send_tool_results: no response object and no function_calls provided")

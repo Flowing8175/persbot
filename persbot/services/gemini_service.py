@@ -842,12 +842,8 @@ class GeminiService(BaseLLMServiceCore):
         final_chunk = None  # Track final chunk for usage metadata
 
         try:
-            logger.info("Starting to iterate over stream")
-            chunk_count = 0
             pending_function_calls = []  # Track function calls from chunks
             async for chunk in stream:
-                chunk_count += 1
-                logger.info("Received chunk #%d from stream", chunk_count)
                 # Check for cancellation
                 if cancel_event and cancel_event.is_set():
                     # Close the stream to stop server-side generation
@@ -864,7 +860,6 @@ class GeminiService(BaseLLMServiceCore):
                 func_calls = self._extract_function_calls_from_chunk(chunk)
                 if func_calls:
                     pending_function_calls.extend(func_calls)
-                    logger.info("Extracted %d function calls from chunk", len(func_calls))
 
                 # Extract text from chunk
                 text = self._extract_text_from_stream_chunk(chunk)
@@ -889,10 +884,6 @@ class GeminiService(BaseLLMServiceCore):
             # Store pending function calls in chat_session for tool handling
             if pending_function_calls:
                 chat_session._pending_function_calls = pending_function_calls
-                logger.info("Stored %d pending function calls in chat_session", len(pending_function_calls))
-
-            # Log stream completion
-            logger.info("Stream iteration completed. Total chunks: %d, Full content length: %d", chunk_count, len(full_content))
 
             # Log usage metadata from final chunk
             if final_chunk:
@@ -940,13 +931,9 @@ class GeminiService(BaseLLMServiceCore):
                             if getattr(part, "thought", False):
                                 continue
 
-                            # Log what's in the part for debugging
-                            if hasattr(part, "function_call") and part.function_call:
-                                logger.info("Chunk contains function_call: %s", part.function_call)
-                            elif hasattr(part, "text") and part.text:
+                            # Extract text from text parts
+                            if hasattr(part, "text") and part.text:
                                 return part.text
-                            else:
-                                logger.info("Chunk part has no text or function_call: %s", dir(part))
         except Exception as e:
             logger.error("Error extracting text from chunk: %s", e, exc_info=True)
         return ""
