@@ -1,4 +1,4 @@
-"""Help Cog for Persbot - displays comprehensive bot functionality."""
+"""Help Cog for Persbot - displays comprehensive bot functionality with dropdown UI."""
 
 import logging
 from typing import Optional
@@ -6,9 +6,138 @@ from typing import Optional
 import discord
 from config import AppConfig
 from discord.ext import commands
-from utils import GENERIC_ERROR_MESSAGE
+from utils import GENERIC_ERROR_MESSAGE, send_discord_message
 
 logger = logging.getLogger(__name__)
+
+
+class HelpView(discord.ui.View):
+    """View containing the help category dropdown and close button."""
+
+    def __init__(self, cog: "HelpCog", ctx: commands.Context) -> None:
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.ctx = ctx
+        self.current_category: Optional[str] = None
+        self.message: Optional[discord.Message] = None
+        self.update_components()
+
+    def update_components(self) -> None:
+        """Update the view components based on current state."""
+        self.clear_items()
+
+        # Category dropdown - only show on main menu
+        if self.current_category is None:
+            select = discord.ui.Select(
+                placeholder="도움말 카테고리를 선택하세요...",
+                min_values=1,
+                max_values=1,
+                row=0,
+            )
+            select.callback = self.on_category_select
+            for option in self.cog.get_category_options():
+                select.add_option(**option)
+            self.add_item(select)
+
+        # Back button - only show when viewing a category
+        if self.current_category is not None:
+            btn_back = discord.ui.Button(
+                label="← 뒤로가기", style=discord.ButtonStyle.secondary, emoji="🔙", row=0
+            )
+            btn_back.callback = self.on_back
+            self.add_item(btn_back)
+
+        # Close button
+        btn_close = discord.ui.Button(
+            label="닫기", style=discord.ButtonStyle.danger, emoji="❌", row=1
+        )
+        btn_close.callback = self.on_close
+        self.add_item(btn_close)
+
+    async def on_category_select(self, interaction: discord.Interaction) -> None:
+        """Handle category selection from dropdown."""
+        self.current_category = interaction.data["values"][0]
+        await interaction.response.defer()
+        await self.refresh_view(interaction)
+
+    async def on_back(self, interaction: discord.Interaction) -> None:
+        """Handle back button click."""
+        self.current_category = None
+        await interaction.response.defer()
+        await self.refresh_view(interaction)
+
+    async def on_close(self, interaction: discord.Interaction) -> None:
+        """Handle close button click."""
+        await interaction.response.defer()
+        if self.message:
+            await self.message.delete()
+        self.stop()
+
+    async def refresh_view(self, interaction: Optional[discord.Interaction] = None) -> None:
+        """Refresh the view with updated content."""
+        self.update_components()
+        embed = self.build_embed()
+
+        try:
+            if interaction and not interaction.response.is_done():
+                await interaction.response.edit_message(embed=embed, view=self)
+            elif self.message:
+                await self.message.edit(embed=embed, view=self)
+        except Exception as e:
+            logger.error(f"Failed to refresh help view: {e}")
+
+    def build_embed(self) -> discord.Embed:
+        """Build the embed based on current state."""
+        if self.current_category:
+            return self.build_category_embed()
+        return self.build_main_embed()
+
+    def build_main_embed(self) -> discord.Embed:
+        """Build the main help menu embed."""
+        embed = discord.Embed(
+            title="🤖 Persbot 도움말",
+            description="Persbot은 다양한 AI 기능을 제공하는 디스코드 봇입니다.\n"
+            "아래 드롭다운에서 카테고리를 선택하여 상세 도움말을 확인하세요.",
+            color=discord.Color.blurple(),
+        )
+
+        # Quick overview of all categories
+        categories = self.cog.get_category_summaries()
+        for emoji, name, summary in categories:
+            embed.add_field(
+                name=f"{emoji} {name}",
+                value=summary,
+                inline=True,
+            )
+
+        # System info
+        embed.add_field(
+            name="🔧 시스템 정보",
+            value=f"🟢 온라인 | Discord.py | **{self.cog.ai_provider_label}**",
+            inline=False,
+        )
+
+        embed.set_footer(text="드롭다운에서 카테고리를 선택하세요.")
+        return embed
+
+    def build_category_embed(self) -> discord.Embed:
+        """Build embed for a specific category."""
+        category_data = self.cog.get_category_data(self.current_category)
+        if not category_data:
+            return self.build_main_embed()
+
+        embed = discord.Embed(
+            title=category_data["title"],
+            description=category_data["description"],
+            color=category_data["color"],
+        )
+
+        # Add tips if available
+        if category_data.get("tips"):
+            embed.add_field(name="💡 팁", value=category_data["tips"], inline=False)
+
+        embed.set_footer(text="뒤로가기 버튼을 누르면 메인 메뉴로 돌아갑니다.")
+        return embed
 
 
 class HelpCog(commands.Cog):
@@ -30,193 +159,99 @@ class HelpCog(commands.Cog):
         }
         return provider_map.get(provider_lower, provider)
 
-    @commands.hybrid_command(
-        name="help",
-        aliases=["도움말", "h"],
-        description="봇의 전체 기능을 설명하는 도움말을 표시합니다.",
-    )
-    @discord.app_commands.describe(
-        category="도움말을 볼 특정 카테고리 (대화, 요약, 페르소나, 모델, 설정, 자동채널)"
-    )
-    async def show_help(self, ctx: commands.Context, category: Optional[str] = None) -> None:
-        """봇의 전체 기능을 설명하는 도움말을 표시합니다.
+    def get_category_options(self) -> list[dict]:
+        """Get dropdown options for categories."""
+        return [
+            {
+                "label": "💬 대화",
+                "value": "대화",
+                "description": "AI 대화 기능 및 명령어",
+                "emoji": "💬",
+            },
+            {
+                "label": "📊 요약",
+                "value": "요약",
+                "description": "채팅 내용 요약 기능",
+                "emoji": "📊",
+            },
+            {
+                "label": "🎭 페르소나",
+                "value": "페르소나",
+                "description": "AI 캐릭터 설정 및 관리",
+                "emoji": "🎭",
+            },
+            {
+                "label": "🤖 모델",
+                "value": "모델",
+                "description": "AI 모델 선택 방법",
+                "emoji": "🤖",
+            },
+            {
+                "label": "⚙️ 설정",
+                "value": "설정",
+                "description": "봇 동작 설정 명령어",
+                "emoji": "⚙️",
+            },
+            {
+                "label": "🔔 자동채널",
+                "value": "자동채널",
+                "description": "자동 응답 채널 관리",
+                "emoji": "🔔",
+            },
+        ]
 
-        사용법: !도움말 [카테고리]
-        예: !도움말 요약, !도움말 페르소나
-        """
-        try:
-            if category:
-                category = category.lower().strip()
+    def get_category_summaries(self) -> list[tuple[str, str, str]]:
+        """Get quick summary for each category."""
+        return [
+            ("💬", "대화", "@멘션으로 AI와 대화\n`!retry`, `!stop`, `!초기화`"),
+            ("📊", "요약", "채팅 내용 요약\n시간/메시지 ID 기반"),
+            ("🎭", "페르소나", "AI 캐릭터 설정\n`!prompt`로 관리"),
+            ("🤖", "모델", "LLM/이미지 모델 선택\n`!model`로 변경"),
+            ("⚙️", "설정", "창의성/다양성 조절\n`!temp`, `!topp` 등"),
+            ("🔔", "자동채널", "자동 응답 채널\n`!자동채널 등록`"),
+        ]
 
-            # Display specific help for requested category
-            if category:
-                await self._show_category_help(ctx, category)
-                return
-
-            # Create main help embed
-            embed = discord.Embed(
-                title="🤖 Persbot 도움말",
-                description="Persbot은 다양한 AI 기능을 제공하는 디스코드 봇입니다.\n"
-                "`!도움말 [카테고리]`로 각 카테고리의 상세 도움말을 확인하세요.",
-                color=discord.Color.blurple(),
-            )
-
-            # AI Conversation Features
-            embed.add_field(
-                name="💬 대화",
-                value="**봇을 멘션(@mention)하여 대화**\n"
-                "• 자연스러운 대화\n"
-                "• `!retry` - 마지막 답변 재생성\n"
-                "• `!stop` - 진행 중인 응답 중단\n"
-                "• `!초기화` - 대화 내용 초기화\n\n"
-                "**상세:** `!도움말 대화`",
-                inline=True,
-            )
-
-            # Summarization
-            embed.add_field(
-                name="📊 요약",
-                value="**채팅 내용 요약**\n"
-                "• `!요약` - 최근 30분 요약\n"
-                "• `!요약 [시간]` - 지정 시간 요약\n"
-                "• 메시지 ID 기반 요약 지원\n\n"
-                "**상세:** `!도움말 요약`",
-                inline=True,
-            )
-
-            # Persona Management
-            embed.add_field(
-                name="🎭 페르소나",
-                value="**AI 캐릭터 설정**\n"
-                "• `!prompt` - 페르소나 관리 UI\n"
-                "• 캐릭터 생성/적용/관리\n"
-                "• AI 질문 모드 지원\n\n"
-                "**상세:** `!도움말 페르소나`",
-                inline=True,
-            )
-
-            # Model Selection
-            embed.add_field(
-                name="🤖 모델",
-                value="**AI 모델 선택**\n"
-                "• `!model llm` - LLM 모델 선택\n"
-                "• `!model image` - 이미지 모델 선택\n"
-                "• 드롭다운 UI로 쉬운 선택\n\n"
-                "**상세:** `!도움말 모델`",
-                inline=True,
-            )
-
-            # Settings
-            embed.add_field(
-                name="⚙️ 설정",
-                value="**봇 동작 설정**\n"
-                "• `!temp` - 창의성 조절 (0.0~2.0)\n"
-                "• `!topp` - 다양성 조절 (0.0~1.0)\n"
-                "• `!끊어치기` - 실시간 전송 모드\n"
-                "• `!delay` - 버퍼 대기 시간\n\n"
-                "**상세:** `!도움말 설정`",
-                inline=True,
-            )
-
-            # Auto Channel
-            embed.add_field(
-                name="🔔 자동채널",
-                value="**자동 응답 채널**\n"
-                "• `!자동채널 등록` - 자동응답 활성화\n"
-                "• `!자동채널 해제` - 자동응답 비활성화\n"
-                "• `!@` 또는 `!undo` - 메시지 취소\n\n"
-                "**상세:** `!도움말 자동채널`",
-                inline=True,
-            )
-
-            # Tips
-            embed.add_field(
-                name="💡 팁",
-                value="• 명령어는 대소문자를 구분하지 않습니다\n"
-                "• 대부분의 명령어는 별칭(alias)을 지원합니다\n"
-                "• 자동응답 채널에서는 멘션 없이도 대화 가능합니다",
-                inline=False,
-            )
-
-            # System Status
-            embed.add_field(
-                name="🔧 시스템 정보",
-                value=f"🟢 온라인 | Discord.py | **{self.ai_provider_label}**",
-                inline=False,
-            )
-
-            embed.set_footer(
-                text="자세한 정보가 필요하면 !도움말 [카테고리]를 입력하세요."
-            )
-
-            await ctx.reply(embed=embed, mention_author=False)
-
-        except Exception as e:
-            logger.error(f"Failed to show help: {e}")
-            await ctx.reply(
-                GENERIC_ERROR_MESSAGE,
-                mention_author=False,
-            )
-
-    async def _show_category_help(self, ctx: commands.Context, category: str) -> None:
-        """Display help for a specific category.
-
-        Args:
-            ctx: Command context
-            category: Category name (대화, 요약, 페르소나, 모델, 설정, 자동채널)
-        """
-        category_helps = {
+    def get_category_data(self, category: str) -> Optional[dict]:
+        """Get detailed data for a category."""
+        category_map = {
             "대화": {
                 "title": "💬 대화 기능 상세 도움말",
                 "description": self._get_conversation_help(),
                 "color": discord.Color.blue(),
+                "tips": "• 페르소나를 설정하면 일관된 캐릭터로 대화합니다\n• 자동응답 채널에서는 멘션 없이도 대화 가능합니다",
             },
             "요약": {
                 "title": "📊 요약 기능 상세 도움말",
                 "description": self._get_summary_help(),
                 "color": discord.Color.gold(),
+                "tips": "• 메시지 우클릭 → 'ID 복사'로 메시지 ID를 쉽게 복사할 수 있습니다\n• 답글 기능을 활용하면 ID를 복사할 필요가 없습니다",
             },
             "페르소나": {
                 "title": "🎭 페르소나 기능 상세 도움말",
                 "description": self._get_persona_help(),
                 "color": discord.Color.purple(),
+                "tips": "• 잘 만든 페르소나를 .txt 파일로 저장해두면 나중에 재사용할 수 있습니다\n• 하루 최대 2개의 페르소나를 생성할 수 있습니다",
             },
             "모델": {
                 "title": "🤖 모델 선택 상세 도움말",
                 "description": self._get_model_help(),
                 "color": discord.Color.green(),
+                "tips": "• 모델 선택은 채널별로 적용됩니다\n• 일일 사용 한도를 초과하면 자동으로 대체 모델이 사용됩니다",
             },
             "설정": {
                 "title": "⚙️ 설정 상세 도움말",
                 "description": self._get_settings_help(),
                 "color": discord.Color.orange(),
+                "tips": "• 일부 설정 명령어는 관리자 권한이 필요할 수 있습니다\n• Temperature가 높을수록 더 창의적이지만 예측하기 어려워집니다",
             },
             "자동채널": {
                 "title": "🔔 자동채널 상세 도움말",
                 "description": self._get_auto_channel_help(),
                 "color": discord.Color.red(),
+                "tips": "• 자동 응답 채널에서도 `!`로 시작하는 명령어는 정상 작동합니다\n• `!@` 또는 `!undo`로 실수로 보낸 메시지를 취소할 수 있습니다",
             },
         }
-
-        if category in category_helps:
-            info = category_helps[category]
-            embed = discord.Embed(
-                title=info["title"],
-                description=info["description"],
-                color=info["color"],
-            )
-            embed.set_footer(text="전체 도움말은 !도움말로 확인하세요.")
-            await ctx.reply(embed=embed, mention_author=False)
-        else:
-            # Unknown category, show available options
-            available = ", ".join(category_helps.keys())
-            embed = discord.Embed(
-                title="❓ 알 수 없는 카테고리",
-                description=f"인식할 수 없는 카테고리입니다.\n\n**사용 가능한 카테고리:**\n`{available}`",
-                color=discord.Color.red(),
-            )
-            embed.set_footer(text="!도움말로 전체 도움말을 확인하세요.")
-            await ctx.reply(embed=embed, mention_author=False)
+        return category_map.get(category)
 
     def _get_conversation_help(self) -> str:
         """Get conversation help text."""
@@ -267,9 +302,7 @@ class HelpCog(commands.Cog):
             "• **이름 변경** - 페르소나 이름 수정\n"
             "• **삭제** - 페르소나 삭제 (관리자 권한 필요)\n\n"
             "**제한:**\n"
-            "• 하루 최대 2개의 페르소나 생성 가능\n\n"
-            "**팁:**\n"
-            "• 잘 만든 페르소나를 .txt로 저장해두면 나중에 재사용 가능"
+            "• 하루 최대 2개의 페르소나 생성 가능"
         )
 
     def _get_model_help(self) -> str:
@@ -286,9 +319,7 @@ class HelpCog(commands.Cog):
             "• ⚡ Z.AI 모델군\n\n"
             "**일일 사용 한도:**\n"
             "• 모델마다 일일 사용 횟수 제한이 있음\n"
-            "• 한도 초과 시 자동으로 대체 모델 사용\n\n"
-            "**팁:**\n"
-            "• 모델 선택은 채널별로 적용됩니다"
+            "• 한도 초과 시 자동으로 대체 모델 사용"
         )
 
     def _get_settings_help(self) -> str:
@@ -307,9 +338,7 @@ class HelpCog(commands.Cog):
             "  • OFF: 응답 완료 후 한 번에 전송\n\n"
             "• `!delay [초]` - 메시지 버퍼 대기 시간 (0~60초)\n"
             "  • 여러 메시지를 모았다가 한 번에 처리하는 시간\n"
-            "  • 기본값: 3초\n\n"
-            "**팁:**\n"
-            "• 설정 명령어는 관리자 권한이 필요할 수 있습니다"
+            "  • 기본값: 3초"
         )
 
     def _get_auto_channel_help(self) -> str:
@@ -328,10 +357,37 @@ class HelpCog(commands.Cog):
             "• `!@ [숫자]` (또는 `!undo [숫자]`)\n"
             "  - 마지막 N개의 대화 쌍을 취소합니다.\n"
             "  - 예: `!@ 1`, `!undo 2`\n"
-            "  - 5회 이상 대화한 사용자 또는 관리자만 사용 가능\n\n"
-            "**팁:**\n"
-            "• 자동 응답 채널에서도 `!`로 시작하는 명령어는 정상 작동합니다"
+            "  - 5회 이상 대화한 사용자 또는 관리자만 사용 가능"
         )
+
+    @commands.hybrid_command(
+        name="help",
+        aliases=["도움말", "h"],
+        description="봇의 전체 기능을 설명하는 도움말을 표시합니다.",
+    )
+    async def show_help(self, ctx: commands.Context) -> None:
+        """봇의 전체 기능을 설명하는 도움말을 표시합니다.
+
+        사용법: !도움말
+        """
+        try:
+            view = HelpView(self, ctx)
+            embed = view.build_main_embed()
+
+            # Send the initial message
+            sent = await send_discord_message(
+                ctx, "", embed=embed, view=view, mention_author=False
+            )
+
+            if sent:
+                view.message = sent[0]
+
+        except Exception as e:
+            logger.error(f"Failed to show help: {e}")
+            await ctx.reply(
+                GENERIC_ERROR_MESSAGE,
+                mention_author=False,
+            )
 
     @commands.hybrid_command(
         name="features", aliases=["기능", "f"], description="봇의 주요 기능을 간단히 설명합니다."
@@ -363,7 +419,7 @@ class HelpCog(commands.Cog):
 
             embed.add_field(
                 name="📖 더 알아보기",
-                value="`!도움말`로 전체 명령어를 확인하거나\n`!도움말 [카테고리]`로 상세 도움말을 보세요.",
+                value="`!도움말`로 전체 명령어를 확인하세요.\n드롭다운 메뉴로 카테고리별 상세 도움말을 볼 수 있습니다.",
                 inline=False,
             )
 
