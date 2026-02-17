@@ -123,8 +123,8 @@ async def main(config) -> None:
             try:
                 await bot.tree.sync()
                 tree_synced = True
-            except Exception as e:
-                logger.error(f"Failed to sync command tree: {e}")
+            except Exception:
+                logger.exception("Failed to sync command tree")
 
     @bot.event
     async def on_close() -> None:

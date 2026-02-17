@@ -122,8 +122,8 @@ class ProviderRegistry:
                     assistant_model_name=effective_model,
                     prompt_service=self.prompt_service,
                 )
-        except Exception as e:
-            logger.error(f"Failed to create {provider_name} provider: {e}")
+        except Exception:
+            logger.exception("Failed to create %s provider", provider_name)
             return None
 
     def _get_default_model_for_provider(self, provider: str) -> str:

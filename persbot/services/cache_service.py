@@ -354,9 +354,9 @@ class GeminiCacheStrategy(CacheStrategy):
                 created=True,
             )
 
-        except Exception as e:
-            logger.error(f"Cache operation failed: {e}")
-            return CacheResult(success=False, error=str(e))
+        except Exception:
+            logger.exception("Cache operation failed")
+            return CacheResult(success=False, error="Cache operation failed")
 
     async def refresh(self, cache_name: str, ttl_seconds: int) -> bool:
         """Refresh Gemini cache TTL."""
@@ -367,8 +367,8 @@ class GeminiCacheStrategy(CacheStrategy):
                 config={"ttl": f"{ttl_seconds}s"},
             )
             return True
-        except Exception as e:
-            logger.error(f"Failed to refresh cache {cache_name}: {e}")
+        except Exception:
+            logger.exception("Failed to refresh cache %s", cache_name)
             return False
 
     async def delete(self, cache_name: str) -> bool:
@@ -376,8 +376,8 @@ class GeminiCacheStrategy(CacheStrategy):
         try:
             await asyncio.to_thread(self.client.caches.delete, name=cache_name)
             return True
-        except Exception as e:
-            logger.error(f"Failed to delete cache {cache_name}: {e}")
+        except Exception:
+            logger.exception("Failed to delete cache %s", cache_name)
             return False
 
     async def list_all(self, limit: int = CacheLimit.MAX_CACHED_ITEMS) -> list[CacheEntry]:
@@ -396,8 +396,8 @@ class GeminiCacheStrategy(CacheStrategy):
                 )
                 entries.append(entry)
             return entries
-        except Exception as e:
-            logger.error(f"Failed to list caches: {e}")
+        except Exception:
+            logger.exception("Failed to list caches")
             return []
 
     async def cleanup_expired(self) -> int:

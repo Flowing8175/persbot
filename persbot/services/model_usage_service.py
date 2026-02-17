@@ -93,8 +93,8 @@ class ModelUsageService:
                     )
                     self.DEFAULT_MODEL_ALIAS = default_alias
                     ModelUsageService.DEFAULT_MODEL_ALIAS = default_alias
-            except Exception as e:
-                logger.error(f"Failed to load model definitions: {e}")
+            except Exception:
+                logger.exception("Failed to load model definitions")
                 # Fallback or empty? If critical, we might want to raise, but let's log.
 
     def _load_usage(self) -> None:
@@ -104,8 +104,8 @@ class ModelUsageService:
             try:
                 with open(self.data_file, "r", encoding="utf-8") as f:
                     self.usage_data = json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load model usage data: {e}")
+            except Exception:
+                logger.exception("Failed to load model usage data")
                 self.usage_data = {}
         else:
             self.usage_data = {}
@@ -119,8 +119,8 @@ class ModelUsageService:
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
             async with aiofiles.open(self.data_file, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(self.usage_data, indent=2, ensure_ascii=False))
-        except Exception as e:
-            logger.error(f"Failed to save model usage data: {e}")
+        except Exception:
+            logger.exception("Failed to save model usage data")
 
     def _check_daily_reset(self) -> None:
         """Reset usage if the date has changed (KST Midnight)."""

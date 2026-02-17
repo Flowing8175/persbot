@@ -177,8 +177,8 @@ class BaseLLMService(ABC):
                     )
                     images.append(processed_data)
 
-                except Exception as e:
-                    logger.error(f"Failed to read/process attachment {attachment.filename}: {e}")
+                except Exception:
+                    logger.exception("Failed to read/process attachment %s", attachment.filename)
 
         return images
 

@@ -58,8 +58,8 @@ def _load_image_models():
                     except ValueError:
                         logger.warning(f"Invalid channel ID in preferences: {channel_id_str}")
 
-        except Exception as e:
-            logger.error(f"Failed to load image models: {e}")
+        except Exception:
+            logger.exception("Failed to load image models")
             # Use fallback defaults
             _image_models_cache = [
                 ImageModelDefinition(
@@ -103,8 +103,8 @@ def _save_preferences():
         with open(MODELS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    except Exception as e:
-        logger.error(f"Failed to save image model preferences: {e}")
+    except Exception:
+        logger.exception("Failed to save image model preferences")
 
 
 def get_available_image_models() -> List[ImageModelDefinition]:

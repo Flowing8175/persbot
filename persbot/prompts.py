@@ -33,8 +33,8 @@ def load_persona() -> str:
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
         return "System prompt could not be loaded."
-    except Exception as e:
-        logger.error(f"Failed to load persona.md: {e}")
+    except Exception:
+        logger.exception("Failed to load persona.md")
         return "System prompt error."
 
 

@@ -391,10 +391,10 @@ class PromptUseCase:
 
             return []
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse questions JSON: {e}")
+        except json.JSONDecodeError:
+            logger.exception("Failed to parse questions JSON")
             return []
 
-        except Exception as e:
-            logger.error(f"Error parsing questions: {e}")
+        except Exception:
+            logger.exception("Error parsing questions")
             return []

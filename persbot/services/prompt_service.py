@@ -45,8 +45,8 @@ class PromptService:
                     content = f.read()
                     name = file_path.stem  # Filename without extension
                     self.prompts.append({"name": name, "content": content, "path": str(file_path)})
-            except Exception as e:
-                logger.error(f"Failed to load prompt from {file_path}: {e}")
+            except Exception:
+                logger.exception("Failed to load prompt from %s", file_path)
 
         # Fallback if no prompts found (though persona.md should exist)
         if not self.prompts:
@@ -71,8 +71,8 @@ class PromptService:
                     content = await f.read()
                     name = file_path.stem
                     new_prompts.append({"name": name, "content": content, "path": str(file_path)})
-            except Exception as e:
-                logger.error(f"Failed to load prompt from {file_path}: {e}")
+            except Exception:
+                logger.exception("Failed to load prompt from %s", file_path)
 
         if new_prompts:
             self.prompts = new_prompts
@@ -84,8 +84,8 @@ class PromptService:
             try:
                 with open(self.usage_path, "r", encoding="utf-8") as f:
                     self.usage_data = json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load prompt usage: {e}")
+            except Exception:
+                logger.exception("Failed to load prompt usage")
                 self.usage_data = {}
         else:
             self.usage_data = {}
@@ -94,8 +94,8 @@ class PromptService:
         try:
             async with aiofiles.open(self.usage_path, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(self.usage_data, ensure_ascii=False, indent=4))
-        except Exception as e:
-            logger.error(f"Failed to save prompt usage: {e}")
+        except Exception:
+            logger.exception("Failed to save prompt usage")
 
     def _get_today_key(self) -> str:
         return datetime.datetime.now().strftime("%Y-%m-%d")
@@ -153,8 +153,8 @@ class PromptService:
                     return i
             return len(self.prompts) - 1  # Fallback
 
-        except Exception as e:
-            logger.error(f"Failed to add prompt file {file_path}: {e}")
+        except Exception:
+            logger.exception("Failed to add prompt file %s", file_path)
             return -1
 
     def list_prompts(self) -> List[Dict[str, str]]:
@@ -200,8 +200,8 @@ class PromptService:
             await asyncio.to_thread(os.rename, old_path, new_path)
             await self._reload()
             return True
-        except Exception as e:
-            logger.error(f"Failed to rename prompt: {e}")
+        except Exception:
+            logger.exception("Failed to rename prompt")
             return False
 
     async def delete_prompt(self, index: int) -> bool:
@@ -221,6 +221,6 @@ class PromptService:
             await asyncio.to_thread(os.remove, path)
             await self._reload()
             return True
-        except Exception as e:
-            logger.error(f"Failed to delete prompt file: {e}")
+        except Exception:
+            logger.exception("Failed to delete prompt file")
             return False

@@ -444,8 +444,8 @@ class RetryService:
                 if on_retry:
                     try:
                         await on_retry(e, attempt, delay)
-                    except Exception as callback_error:
-                        logger.error(f"on_retry callback failed: {callback_error}")
+                    except Exception:
+                        logger.exception("on_retry callback failed")
 
                 # Wait before retry (with cancellation check)
                 try:

@@ -205,8 +205,8 @@ async def send_discord_message(
 
             if msg:
                 sent_messages.append(msg)
-        except Exception as e:
-            logger.error(f"Error sending message chunk {i}: {e}")
+        except Exception:
+            logger.exception("Error sending message chunk %d", i)
             break
 
     return sent_messages
@@ -236,8 +236,8 @@ class DiscordUI:
         except discord.Forbidden:
             logger.warning(f"{getattr(channel, 'name', 'channel')}에 메시지 전송 실패 (권한 부족)")
             return None
-        except Exception as e:
-            logger.error(f"{getattr(channel, 'name', 'channel')}에 메시지 전송 중 에러: {e}")
+        except Exception:
+            logger.exception("%s에 메시지 전송 중 에러", getattr(channel, 'name', 'channel'))
             return None
 
 

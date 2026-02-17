@@ -84,8 +84,8 @@ class HelpView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, view=self)
             elif self.message:
                 await self.message.edit(embed=embed, view=self)
-        except Exception as e:
-            logger.error(f"Failed to refresh help view: {e}")
+        except Exception:
+            logger.exception("Failed to refresh help view")
 
     def build_embed(self) -> discord.Embed:
         """Build the embed based on current state."""
@@ -383,8 +383,8 @@ class HelpCog(commands.Cog):
             if sent:
                 view.message = sent[0]
 
-        except Exception as e:
-            logger.error(f"Failed to show help: {e}")
+        except Exception:
+            logger.exception("Failed to show help")
             await ctx.reply(
                 GENERIC_ERROR_MESSAGE,
                 mention_author=False,
@@ -427,8 +427,8 @@ class HelpCog(commands.Cog):
             embed.set_footer(text="Persbot | Advanced AI Discord Bot")
             await ctx.reply(embed=embed, mention_author=False)
 
-        except Exception as e:
-            logger.error(f"Failed to show features: {e}")
+        except Exception:
+            logger.exception("Failed to show features")
             await ctx.reply(
                 GENERIC_ERROR_MESSAGE,
                 mention_author=False,

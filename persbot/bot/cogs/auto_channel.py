@@ -58,8 +58,8 @@ class AutoChannelCog(BaseChatCog):
                     data = json.loads(content)
                     if isinstance(data, list):
                         self.dynamic_channel_ids = set(data)
-            except Exception as e:
-                logger.error(f"Failed to load auto channels from {self.json_file_path}: {e}")
+            except Exception:
+                logger.exception("Failed to load auto channels from %s", self.json_file_path)
 
         # Merge environment config with dynamic config
         combined = self.env_channel_ids | self.dynamic_channel_ids
@@ -77,8 +77,8 @@ class AutoChannelCog(BaseChatCog):
             # Update config immediately
             combined = self.env_channel_ids | self.dynamic_channel_ids
             self.config.auto_reply_channel_ids = tuple(combined)
-        except Exception as e:
-            logger.error(f"Failed to save auto channels to {self.json_file_path}: {e}")
+        except Exception:
+            logger.exception("Failed to save auto channels to %s", self.json_file_path)
 
     @commands.group(name="자동채널", aliases=["auto"], invoke_without_command=True)
     async def auto_channel_group(self, ctx: commands.Context) -> None:

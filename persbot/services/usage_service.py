@@ -33,8 +33,8 @@ class ImageUsageService:
         if directory:
             try:
                 os.makedirs(directory, exist_ok=True)
-            except OSError as e:
-                logger.error(f"Failed to create directory {directory}: {e}")
+            except OSError:
+                logger.exception("Failed to create directory %s", directory)
 
     def _get_today_key(self) -> str:
         """Returns current date string (YYYY-MM-DD) in KST (UTC+9)."""
@@ -59,8 +59,8 @@ class ImageUsageService:
                 async with aiofiles.open(self.storage_path, "r", encoding="utf-8") as f:
                     content = await f.read()
                     self.usage_data = json.loads(content)
-            except Exception as e:
-                logger.error(f"Failed to load image usage data: {e}")
+            except Exception:
+                logger.exception("Failed to load image usage data")
                 self.usage_data = {}
 
         self._loaded = True
@@ -76,8 +76,8 @@ class ImageUsageService:
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
                     self.usage_data = json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load image usage data: {e}")
+            except Exception:
+                logger.exception("Failed to load image usage data")
                 self.usage_data = {}
 
         self._loaded = True
@@ -89,8 +89,8 @@ class ImageUsageService:
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            logger.error(f"Failed to save image usage data: {e}")
+        except Exception:
+            logger.exception("Failed to save image usage data")
 
     async def _save_async(self) -> None:
         """Save usage data to disk asynchronously (backward compatible signature)."""
@@ -103,8 +103,8 @@ class ImageUsageService:
         try:
             async with aiofiles.open(self.storage_path, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(data, ensure_ascii=False, indent=4))
-        except Exception as e:
-            logger.error(f"Failed to save image usage data: {e}")
+        except Exception:
+            logger.exception("Failed to save image usage data")
 
     def _schedule_write(self) -> None:
         """Schedule a debounced write operation."""

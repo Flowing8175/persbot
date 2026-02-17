@@ -139,8 +139,8 @@ class PromptCreateModal(discord.ui.Modal, title="새로운 페르소나 생성")
                         view=modal_button_view,
                     )
 
-                except json.JSONDecodeError as e:
-                    logger.error(f"JSON parse error: {e}, Response: {questions_json[:200]}")
+                except json.JSONDecodeError:
+                    logger.exception("JSON parse error, Response: %s", questions_json[:200])
                     await msg.edit(content=f"❌ 질문 파싱 오류. 기본 모드로 진행합니다.")
                     await self._generate_direct(interaction, concept_str, msg)
                 except Exception as e:
@@ -418,8 +418,8 @@ class PromptManagerView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, view=self)
             elif self.message:
                 await self.message.edit(embed=embed, view=self)
-        except Exception as e:
-            logger.error(f"Failed to refresh view: {e}")
+        except Exception:
+            logger.exception("Failed to refresh view")
 
     def build_embed(self) -> discord.Embed:
         prompts = self.cog.prompt_service.list_prompts()
@@ -521,9 +521,9 @@ class PromptManagerView(discord.ui.View):
                     ephemeral=True,
                 )
                 return
-            except Exception as e:
-                logger.error(f"File read error: {e}")
-                await send_discord_message(interaction, f"❌ 파일 읽기 오류: {e}", ephemeral=True)
+            except Exception:
+                logger.exception("File read error")
+                await send_discord_message(interaction, "❌ 파일 읽기 오류가 발생했습니다.", ephemeral=True)
                 return
 
             name = attachment.filename.rsplit(".", 1)[0]
