@@ -4,9 +4,10 @@ import logging
 from typing import Optional
 
 import discord
-from config import AppConfig
 from discord.ext import commands
-from utils import GENERIC_ERROR_MESSAGE, send_discord_message
+
+from persbot.config import AppConfig
+from persbot.utils import GENERIC_ERROR_MESSAGE, send_discord_message
 
 logger = logging.getLogger(__name__)
 
