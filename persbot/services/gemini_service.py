@@ -295,21 +295,29 @@ class GeminiService(BaseLLMServiceCore):
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """Resolve Gemini cache and log status.
 
-        Context caching now supports tools - the cache includes the system instruction
-        and tool definitions, allowing cache hits for tool-enabled conversations.
-        This provides significant cost savings for conversations using function calling.
+        Note: Gemini's cached content does NOT support function calling at the model level.
+        While CreateCachedContentConfig accepts a 'tools' parameter, using cached_content
+        with tools causes "Tool use with function calling is unsupported by the model" error.
+        When tools are needed, skip caching and use standard context.
         """
         if not use_cache:
             return None, None
 
+        # Gemini's cached content doesn't support function calling.
+        # When tools are needed, skip caching and use standard context.
+        if tools:
+            self._cache_misses += 1
+            logger.debug("Skipping cache for model %s: tools present", model_name)
+            return None, None
+
         cache_name, cache_expiration = self._get_gemini_cache(
-            model_name, system_instruction, tools=tools
+            model_name, system_instruction, tools=None
         )
 
         # Track cache metrics
         if cache_name:
             self._cache_hits += 1
-            logger.info("Cache hit for model %s (tools: %s)", model_name, bool(tools))
+            logger.info("Cache hit for model %s", model_name)
         else:
             self._cache_misses += 1
 
