@@ -279,6 +279,7 @@ class BaseChatCog(commands.Cog):
 
         primary_message = messages[0]
         channel_id = primary_message.channel.id
+        logger.info("_process_batch called for channel %s with %d messages", channel_id, len(messages))
 
         # Register task
         self.active_batches[channel_id] = messages
