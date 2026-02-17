@@ -1,28 +1,32 @@
 """Discord guild read-only tools."""
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 import discord
 
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
+from persbot.utils import snowflake_to_int
 
 logger = logging.getLogger(__name__)
 
 
 async def get_guild_info(
-    guild_id: Optional[int] = None,
+    guild_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get information about a Discord guild.
 
     Args:
-        guild_id: The ID of the guild to get info for (optional, auto-filled from context).
+        guild_id: The ID of the guild to get info for (as string or int, optional, auto-filled from context).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with guild information.
     """
+    # Convert string ID to int if needed
+    guild_id = snowflake_to_int(guild_id)
+
     # Auto-fill guild_id from context if not provided
     if guild_id is None and discord_context and discord_context.guild:
         guild_id = discord_context.guild.id
@@ -70,18 +74,21 @@ async def get_guild_info(
 
 
 async def get_guild_roles(
-    guild_id: Optional[int] = None,
+    guild_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get all roles in a Discord guild.
 
     Args:
-        guild_id: The ID of the guild to get roles for (optional, auto-filled from context).
+        guild_id: The ID of the guild to get roles for (as string or int, optional, auto-filled from context).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with list of guild roles.
     """
+    # Convert string ID to int if needed
+    guild_id = snowflake_to_int(guild_id)
+
     # Auto-fill guild_id from context if not provided
     if guild_id is None and discord_context and discord_context.guild:
         guild_id = discord_context.guild.id
@@ -138,18 +145,21 @@ async def get_guild_roles(
 
 
 async def get_guild_emojis(
-    guild_id: Optional[int] = None,
+    guild_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get custom emojis in a Discord guild.
 
     Args:
-        guild_id: The ID of the guild to get emojis for (optional, auto-filled from context).
+        guild_id: The ID of the guild to get emojis for (as string or int, optional, auto-filled from context).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with list of guild emojis.
     """
+    # Convert string ID to int if needed
+    guild_id = snowflake_to_int(guild_id)
+
     # Auto-fill guild_id from context if not provided
     if guild_id is None and discord_context and discord_context.guild:
         guild_id = discord_context.guild.id
@@ -200,8 +210,8 @@ def register_guild_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="guild_id",
-                    type="integer",
-                    description="The ID of the guild to get information for (optional, auto-filled from context if in a guild)",
+                    type="string",
+                    description="The ID of the guild to get information for (as string to preserve precision, optional, auto-filled from context if in a guild)",
                     required=False,
                     default=None,
                 ),
@@ -219,8 +229,8 @@ def register_guild_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="guild_id",
-                    type="integer",
-                    description="The ID of the guild to get roles for (optional, auto-filled from context if in a guild)",
+                    type="string",
+                    description="The ID of the guild to get roles for (as string to preserve precision, optional, auto-filled from context if in a guild)",
                     required=False,
                     default=None,
                 ),
@@ -238,8 +248,8 @@ def register_guild_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="guild_id",
-                    type="integer",
-                    description="The ID of the guild to get emojis for (optional, auto-filled from context if in a guild)",
+                    type="string",
+                    description="The ID of the guild to get emojis for (as string to preserve precision, optional, auto-filled from context if in a guild)",
                     required=False,
                     default=None,
                 ),

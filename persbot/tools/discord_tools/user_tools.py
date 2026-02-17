@@ -1,29 +1,33 @@
 """Discord user/member read-only tools."""
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 import discord
 
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 from persbot.tools.discord_cache import cache_member, cache_user, get_cached_member, get_cached_user
+from persbot.utils import snowflake_to_int
 
 logger = logging.getLogger(__name__)
 
 
 async def get_user_info(
-    user_id: Optional[int] = None,
+    user_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get information about a Discord user.
 
     Args:
-        user_id: The ID of the user to get info for. Optional - defaults to current user if not specified.
+        user_id: The ID of the user to get info for (as string or int). Optional - defaults to current user if not specified.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with user information.
     """
+    # Convert string ID to int if needed
+    user_id = snowflake_to_int(user_id)
+
     # Auto-fill user_id from context if not provided
     if user_id is None and discord_context and discord_context.author:
         user_id = discord_context.author.id
@@ -69,20 +73,24 @@ async def get_user_info(
 
 
 async def get_member_info(
-    user_id: Optional[int] = None,
-    guild_id: Optional[int] = None,
+    user_id: Optional[Union[str, int]] = None,
+    guild_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get information about a Discord guild member.
 
     Args:
-        user_id: The ID of the user to get member info for. Optional - defaults to current user if not specified.
-        guild_id: The ID of the guild. Optional - defaults to current guild if not specified.
+        user_id: The ID of the user to get member info for (as string or int). Optional - defaults to current user if not specified.
+        guild_id: The ID of the guild (as string or int). Optional - defaults to current guild if not specified.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with member information.
     """
+    # Convert string IDs to int if needed
+    user_id = snowflake_to_int(user_id)
+    guild_id = snowflake_to_int(guild_id)
+
     # Auto-fill user_id from context if not provided
     if user_id is None and discord_context and discord_context.author:
         user_id = discord_context.author.id
@@ -150,20 +158,24 @@ async def get_member_info(
 
 
 async def get_member_roles(
-    user_id: Optional[int] = None,
-    guild_id: Optional[int] = None,
+    user_id: Optional[Union[str, int]] = None,
+    guild_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get roles for a guild member.
 
     Args:
-        user_id: The ID of the user to get roles for. Optional - defaults to current user if not specified.
-        guild_id: The ID of the guild. Optional - defaults to current guild if not specified.
+        user_id: The ID of the user to get roles for (as string or int). Optional - defaults to current user if not specified.
+        guild_id: The ID of the guild (as string or int). Optional - defaults to current guild if not specified.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with member roles.
     """
+    # Convert string IDs to int if needed
+    user_id = snowflake_to_int(user_id)
+    guild_id = snowflake_to_int(guild_id)
+
     # Auto-fill user_id from context if not provided
     if user_id is None and discord_context and discord_context.author:
         user_id = discord_context.author.id
@@ -243,8 +255,8 @@ def register_user_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="user_id",
-                    type="integer",
-                    description="The ID of the user to get information for (optional - defaults to current user if not specified)",
+                    type="string",
+                    description="The ID of the user to get information for (as string to preserve precision, optional - defaults to current user if not specified)",
                     required=False,
                     default=None,
                 ),
@@ -261,15 +273,15 @@ def register_user_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="user_id",
-                    type="integer",
-                    description="The ID of the user to get member info for (optional - defaults to current user if not specified)",
+                    type="string",
+                    description="The ID of the user to get member info for (as string to preserve precision, optional - defaults to current user if not specified)",
                     required=False,
                     default=None,
                 ),
                 ToolParameter(
                     name="guild_id",
-                    type="integer",
-                    description="The ID of the guild the user is in (optional - defaults to current guild if not specified)",
+                    type="string",
+                    description="The ID of the guild the user is in (as string to preserve precision, optional - defaults to current guild if not specified)",
                     required=False,
                     default=None,
                 ),
@@ -287,15 +299,15 @@ def register_user_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="user_id",
-                    type="integer",
-                    description="The ID of the user to get roles for (optional - defaults to current user if not specified)",
+                    type="string",
+                    description="The ID of the user to get roles for (as string to preserve precision, optional - defaults to current user if not specified)",
                     required=False,
                     default=None,
                 ),
                 ToolParameter(
                     name="guild_id",
-                    type="integer",
-                    description="The ID of the guild the user is in (optional - defaults to current guild if not specified)",
+                    type="string",
+                    description="The ID of the guild the user is in (as string to preserve precision, optional - defaults to current guild if not specified)",
                     required=False,
                     default=None,
                 ),

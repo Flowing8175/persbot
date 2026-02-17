@@ -20,6 +20,23 @@ ERROR_INVALID_ARGUMENT = "❌ 잘못된 인자입니다."
 logger = logging.getLogger(__name__)
 
 
+def snowflake_to_int(value: Optional[Union[str, int]]) -> Optional[int]:
+    """Convert string or int to int, handling Discord snowflake IDs safely.
+
+    Discord IDs are 64-bit integers that exceed JavaScript's MAX_SAFE_INTEGER,
+    so they must be passed as strings from the LLM to avoid precision loss.
+
+    Args:
+        value: String or int value to convert.
+
+    Returns:
+        Integer value or None.
+    """
+    if value is None:
+        return None
+    return int(value)
+
+
 def extract_message_metadata(
     discord_message: Union[discord.Message, list[discord.Message]]
 ) -> Tuple[int, int, int, discord.abc.User]:

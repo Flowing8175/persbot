@@ -1,29 +1,33 @@
 """Discord channel read-only tools."""
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 import discord
 
 from persbot.tools.base import ToolCategory, ToolDefinition, ToolParameter, ToolResult
 from persbot.tools.discord_cache import cache_message, get_cached_message
+from persbot.utils import snowflake_to_int
 
 logger = logging.getLogger(__name__)
 
 
 async def get_channel_info(
-    channel_id: Optional[int] = None,
+    channel_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get information about a Discord channel.
 
     Args:
-        channel_id: The ID of the channel to get info for. If None, uses the current channel.
+        channel_id: The ID of the channel to get info for (as string or int). If None, uses the current channel.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with channel information.
     """
+    # Convert string ID to int if needed
+    channel_id = snowflake_to_int(channel_id)
+
     # Auto-fill channel_id from context if not provided
     if channel_id is None and discord_context:
         channel_id = discord_context.channel.id
@@ -58,22 +62,26 @@ async def get_channel_info(
 
 
 async def get_channel_history(
-    channel_id: Optional[int] = None,
+    channel_id: Optional[Union[str, int]] = None,
     limit: int = 10,
-    before_message_id: Optional[int] = None,
+    before_message_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get recent messages from a Discord channel.
 
     Args:
-        channel_id: The ID of the channel to get history from. If None, uses the current channel.
+        channel_id: The ID of the channel to get history from (as string or int). If None, uses the current channel.
         limit: Maximum number of messages to retrieve (default: 10).
-        before_message_id: Optional message ID to get history before.
+        before_message_id: Optional message ID to get history before (as string or int).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with channel history.
     """
+    # Convert string IDs to int if needed
+    channel_id = snowflake_to_int(channel_id)
+    before_message_id = snowflake_to_int(before_message_id)
+
     # Auto-fill channel_id from context if not provided
     if channel_id is None and discord_context:
         channel_id = discord_context.channel.id
@@ -118,20 +126,24 @@ async def get_channel_history(
 
 
 async def get_message(
-    message_id: int,
-    channel_id: Optional[int] = None,
+    message_id: Union[str, int],
+    channel_id: Optional[Union[str, int]] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """Get a specific Discord message.
 
     Args:
-        message_id: The ID of the message to retrieve.
-        channel_id: The ID of the channel the message is in. If None, uses the current channel.
+        message_id: The ID of the message to retrieve (as string or int).
+        channel_id: The ID of the channel the message is in (as string or int). If None, uses the current channel.
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with message information.
     """
+    # Convert string IDs to int if needed
+    message_id = snowflake_to_int(message_id)
+    channel_id = snowflake_to_int(channel_id)
+
     # Auto-fill channel_id from context if not provided
     if channel_id is None and discord_context:
         channel_id = discord_context.channel.id
@@ -201,20 +213,23 @@ async def get_message(
 
 
 async def list_channels(
-    guild_id: Optional[int] = None,
+    guild_id: Optional[Union[str, int]] = None,
     channel_type: Optional[str] = None,
     discord_context: Optional[discord.Message] = None,
 ) -> ToolResult:
     """List all channels in a Discord guild.
 
     Args:
-        guild_id: The ID of the guild to list channels for. If None, uses the current guild.
+        guild_id: The ID of the guild to list channels for (as string or int). If None, uses the current guild.
         channel_type: Optional filter by channel type (text, voice, category).
         discord_context: Discord message context for accessing the client.
 
     Returns:
         ToolResult with list of channels.
     """
+    # Convert string ID to int if needed
+    guild_id = snowflake_to_int(guild_id)
+
     # Auto-fill guild_id from context if not provided
     if guild_id is None and discord_context and discord_context.guild:
         guild_id = discord_context.guild.id
@@ -275,8 +290,8 @@ def register_channel_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="channel_id",
-                    type="integer",
-                    description="The ID of the channel to get information for. Optional - will use current channel if not provided.",
+                    type="string",
+                    description="The ID of the channel to get information for (as string to preserve precision). Optional - will use current channel if not provided.",
                     required=False,
                     default=None,
                 ),
@@ -294,8 +309,8 @@ def register_channel_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="channel_id",
-                    type="integer",
-                    description="The ID of the channel to get history from. Optional - will use current channel if not provided.",
+                    type="string",
+                    description="The ID of the channel to get history from (as string to preserve precision). Optional - will use current channel if not provided.",
                     required=False,
                     default=None,
                 ),
@@ -308,8 +323,8 @@ def register_channel_tools(registry) -> None:
                 ),
                 ToolParameter(
                     name="before_message_id",
-                    type="integer",
-                    description="Optional message ID to get history before (for pagination)",
+                    type="string",
+                    description="Optional message ID to get history before (as string to preserve precision, for pagination)",
                     required=False,
                 ),
             ],
@@ -326,14 +341,14 @@ def register_channel_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="message_id",
-                    type="integer",
-                    description="The ID of the message to retrieve",
+                    type="string",
+                    description="The ID of the message to retrieve (as string to preserve precision)",
                     required=True,
                 ),
                 ToolParameter(
                     name="channel_id",
-                    type="integer",
-                    description="The ID of the channel the message is in. Optional - will use current channel if not provided.",
+                    type="string",
+                    description="The ID of the channel the message is in (as string to preserve precision). Optional - will use current channel if not provided.",
                     required=False,
                     default=None,
                 ),
@@ -351,8 +366,8 @@ def register_channel_tools(registry) -> None:
             parameters=[
                 ToolParameter(
                     name="guild_id",
-                    type="integer",
-                    description="The ID of the guild to list channels for. Optional - will use current guild if not provided.",
+                    type="string",
+                    description="The ID of the guild to list channels for (as string to preserve precision). Optional - will use current guild if not provided.",
                     required=False,
                     default=None,
                 ),
