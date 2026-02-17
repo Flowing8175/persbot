@@ -168,7 +168,7 @@ class ToolExecutor:
                 self._metrics[tool.name].record_success()
             else:
                 self._metrics[tool.name].record_failure()
-                logger.warning("Tool %s execution failed: %s", tool.name, result.error)
+                logger.error("Tool '%s' execution failed: %s", tool.name, result.error)
 
             return result
 
