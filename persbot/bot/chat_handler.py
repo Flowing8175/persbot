@@ -396,6 +396,7 @@ async def create_chat_reply_stream(
         # Handle tool calls if present
         max_tool_rounds = 10
         tool_rounds = 0
+        generated_images: list[bytes] = []  # Collect images from tool results
 
         while function_calls and tool_rounds < max_tool_rounds:
             # Check for cancellation
@@ -416,6 +417,11 @@ async def create_chat_reply_stream(
                 results = await tool_manager.execute_tools(
                     function_calls, primary_msg, cancel_event
                 )
+
+                # Collect generated images from tool results
+                for result_item in results:
+                    if result_item.get("image_bytes"):
+                        generated_images.append(result_item["image_bytes"])
 
                 # Send tool results back to LLM
                 # Pass (resp_obj, results, function_calls) - resp_obj is None for streaming
@@ -462,6 +468,10 @@ async def create_chat_reply_stream(
         # If no tool calls were made, yield the collected chunks
         if tool_rounds == 0 and full_text:
             yield full_text
+
+        # Yield images as a special marker for send_streaming_response to handle
+        if generated_images:
+            yield ("__IMAGES__", generated_images)
     else:
         # No tools - stream directly
         async for chunk in llm_service.generate_chat_response_stream(
@@ -487,9 +497,12 @@ async def send_streaming_response(
     Chunks are sent immediately after receiving them (the stream already
     buffers until line breaks for optimal latency).
 
+    Special chunks:
+        - ("__IMAGES__", [bytes, ...]): Image data to send as attachments at the end
+
     Args:
         channel: The Discord channel to send to.
-        stream: Async iterator yielding text chunks.
+        stream: Async iterator yielding text chunks or image marker tuples.
         session_key: The session key for linking messages.
         session_manager: The session manager for linking.
 
@@ -499,12 +512,20 @@ async def send_streaming_response(
     Raises:
         asyncio.CancelledError: If sending is interrupted.
     """
+    import io as io_module
+
     sent_messages: list[discord.Message] = []
+    pending_images: list[bytes] = []
 
     try:
         async for chunk in stream:
+            # Check for image marker tuple
+            if isinstance(chunk, tuple) and len(chunk) == 2 and chunk[0] == "__IMAGES__":
+                pending_images = chunk[1]
+                continue
+
             # Skip empty chunks
-            if not chunk.strip():
+            if not chunk or not chunk.strip():
                 continue
 
             # Split chunk into lines for Discord (respect max message length)
@@ -555,5 +576,14 @@ async def send_streaming_response(
         except BaseException:
             pass
         raise
+
+    # Send any pending images after text is complete
+    if pending_images:
+        for img_bytes in pending_images:
+            async with channel.typing():
+                img_file = discord.File(io_module.BytesIO(img_bytes), filename="generated_image.png")
+                img_msg = await channel.send(file=img_file)
+                session_manager.link_message_to_session(str(img_msg.id), session_key)
+                sent_messages.append(img_msg)
 
     return sent_messages
