@@ -97,12 +97,16 @@ class GeminiChatSession:
             final_parts = []
 
             # Add existing text/content parts
-            if msg.parts:
+            # Handle both ChatMessage (has parts) and SimpleMessage (has only content)
+            if hasattr(msg, 'parts') and msg.parts:
                 for p in msg.parts:
                     if isinstance(p, dict) and "text" in p:
                         final_parts.append({"text": p["text"]})
                     elif hasattr(p, "text") and p.text:
                         final_parts.append({"text": p.text})
+            elif hasattr(msg, 'content') and msg.content:
+                # Fallback for SimpleMessage or messages without parts
+                final_parts.append({"text": msg.content})
 
             # Reconstruct image parts from stored bytes
             if hasattr(msg, "images") and msg.images:
