@@ -1,9 +1,9 @@
 """Gemini chat session wrapper for managing history with author tracking."""
 
-import json
+import base64
 import logging
 from collections import deque
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 from google.genai import types as genai_types
 
@@ -13,37 +13,75 @@ from persbot.utils import get_mime_type
 logger = logging.getLogger(__name__)
 
 
-def _ensure_json_serializable(obj: Any) -> Any:
-    """Recursively convert objects to JSON-serializable types.
+def _build_content(role: str, parts: List[genai_types.Part]) -> genai_types.Content:
+    """Build a Content object with role and parts.
 
-    This handles Pydantic models, protobuf Messages, and other non-serializable types
-    by using model_dump() or converting to dict/string as appropriate.
+    Args:
+        role: The role ('user' or 'model').
+        parts: List of Part objects.
+
+    Returns:
+        A Content object.
     """
-    if obj is None:
-        return None
-    elif isinstance(obj, (str, int, float, bool)):
-        return obj
-    elif isinstance(obj, bytes):
-        # bytes should be base64 encoded, but we shouldn't have raw bytes in contents
-        return obj.decode('utf-8', errors='replace')
-    elif isinstance(obj, dict):
-        return {k: _ensure_json_serializable(v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [_ensure_json_serializable(item) for item in obj]
-    elif hasattr(obj, 'model_dump'):
-        # Pydantic model - use model_dump and recurse
-        return _ensure_json_serializable(obj.model_dump())
-    elif hasattr(obj, '__dict__'):
-        # Generic object - convert to dict
-        return _ensure_json_serializable(vars(obj))
-    else:
-        # Fallback: try to convert to string
-        try:
-            # Check if it's JSON serializable
-            json.dumps(obj)
-            return obj
-        except (TypeError, ValueError):
-            return str(obj)
+    return genai_types.Content(role=role, parts=parts)
+
+
+def _build_text_part(text: str) -> genai_types.Part:
+    """Build a Part object from text.
+
+    Args:
+        text: The text content.
+
+    Returns:
+        A Part object with text.
+    """
+    return genai_types.Part(text=text)
+
+
+def _build_function_call_part(name: str, args: dict) -> genai_types.Part:
+    """Build a Part object containing a function call.
+
+    Args:
+        name: The function name.
+        args: The function arguments.
+
+    Returns:
+        A Part object with function_call.
+    """
+    return genai_types.Part(
+        function_call=genai_types.FunctionCall(name=name, args=args)
+    )
+
+
+def _build_function_response_part(name: str, response: dict) -> genai_types.Part:
+    """Build a Part object containing a function response.
+
+    Args:
+        name: The function name.
+        response: The response dictionary (may contain 'result' or 'error').
+
+    Returns:
+        A Part object with function_response.
+    """
+    return genai_types.Part.from_function_response(name=name, response=response)
+
+
+def _build_inline_data_part(data: bytes, mime_type: str) -> genai_types.Part:
+    """Build a Part object containing inline data (e.g., images).
+
+    Args:
+        data: The raw binary data.
+        mime_type: The MIME type of the data.
+
+    Returns:
+        A Part object with inline_data.
+    """
+    return genai_types.Part(
+        inline_data=genai_types.Blob(
+            mime_type=mime_type,
+            data=base64.b64encode(data).decode("utf-8")
+        )
+    )
 
 
 def extract_clean_text(response_obj: Any) -> str:
@@ -87,41 +125,35 @@ class GeminiChatSession:
         self._factory = factory
         self.history: deque[ChatMessage] = deque(maxlen=max_history)
 
-    def _get_api_history(self) -> List[Dict[str, Any]]:
+    def _get_api_history(self) -> List[genai_types.Content]:
         """Convert local history to API format.
 
-        Returns a list of ContentDict dictionaries for JSON serialization.
+        Returns a list of Content objects for the Google GenAI SDK.
         """
         api_history = []
         for msg in self.history:
-            final_parts = []
+            final_parts: List[genai_types.Part] = []
 
             # Add existing text/content parts
             # Handle both ChatMessage (has parts) and SimpleMessage (has only content)
             if hasattr(msg, 'parts') and msg.parts:
                 for p in msg.parts:
                     if isinstance(p, dict) and "text" in p:
-                        final_parts.append({"text": p["text"]})
+                        final_parts.append(_build_text_part(p["text"]))
                     elif hasattr(p, "text") and p.text:
-                        final_parts.append({"text": p.text})
+                        final_parts.append(_build_text_part(p.text))
             elif hasattr(msg, 'content') and msg.content:
                 # Fallback for SimpleMessage or messages without parts
-                final_parts.append({"text": msg.content})
+                final_parts.append(_build_text_part(msg.content))
 
             # Reconstruct image parts from stored bytes
             if hasattr(msg, "images") and msg.images:
                 for img_data in msg.images:
                     mime_type = get_mime_type(img_data)
-                    # Use inline_data format for images
-                    import base64
-                    final_parts.append({
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": base64.b64encode(img_data).decode("utf-8")
-                        }
-                    })
+                    final_parts.append(_build_inline_data_part(img_data, mime_type))
 
-            api_history.append({"role": msg.role, "parts": final_parts})
+            if final_parts:
+                api_history.append(_build_content(msg.role, final_parts))
         return api_history
 
     def send_message(
@@ -148,27 +180,18 @@ class GeminiChatSession:
             Tuple of (user_message, model_message, raw_response).
         """
         # 1. Build the full content list for this turn (History + Current Message)
-        contents = self._get_api_history()
+        contents: List[genai_types.Content] = self._get_api_history()
 
-        current_parts = []
+        current_parts: List[genai_types.Part] = []
         if user_message:
-            current_parts.append({"text": user_message})
+            current_parts.append(_build_text_part(user_message))
 
         if images:
             for img_data in images:
                 mime_type = get_mime_type(img_data)
-                import base64
-                current_parts.append({
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": base64.b64encode(img_data).decode("utf-8")
-                    }
-                })
+                current_parts.append(_build_inline_data_part(img_data, mime_type))
 
-        contents.append({"role": "user", "parts": current_parts})
-
-        # Ensure all contents are JSON-serializable
-        contents = _ensure_json_serializable(contents)
+        contents.append(_build_content("user", current_parts))
 
         # 2. Call generate_content directly (Stateless)
         response = self._factory.generate_content(contents=contents, tools=tools)
@@ -218,27 +241,18 @@ class GeminiChatSession:
             Tuple of (user_message, async_stream_iterator).
         """
         # 1. Build the full content list for this turn (History + Current Message)
-        contents = self._get_api_history()
+        contents: List[genai_types.Content] = self._get_api_history()
 
-        current_parts = []
+        current_parts: List[genai_types.Part] = []
         if user_message:
-            current_parts.append({"text": user_message})
+            current_parts.append(_build_text_part(user_message))
 
         if images:
             for img_data in images:
                 mime_type = get_mime_type(img_data)
-                import base64
-                current_parts.append({
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": base64.b64encode(img_data).decode("utf-8")
-                    }
-                })
+                current_parts.append(_build_inline_data_part(img_data, mime_type))
 
-        contents.append({"role": "user", "parts": current_parts})
-
-        # Ensure all contents are JSON-serializable
-        contents = _ensure_json_serializable(contents)
+        contents.append(_build_content("user", current_parts))
 
         # 2. Get async streaming iterator
         try:
@@ -261,23 +275,23 @@ class GeminiChatSession:
         return user_msg, stream
 
     def send_tool_results(
-        self, tool_rounds: List[tuple[Any, List[Dict[str, Any]]]], tools: Optional[List[Any]] = None
+        self, tool_rounds: List[tuple], tools: Optional[List[Any]] = None
     ) -> tuple[ChatMessage, Any]:
         """
         Send tool execution results back to model and get continuation.
 
         Args:
-            tool_rounds: List of (response_obj, tool_results) tuples from each round.
+            tool_rounds: List of (response_obj, tool_results) or (response_obj, tool_results, function_calls) tuples.
             tools: Tools to pass for the next API call.
 
         Returns:
             Tuple of (model_message, response_obj).
         """
         # Build contents from history
-        contents = self._get_api_history()
+        contents: List[genai_types.Content] = self._get_api_history()
 
         # The last entry is the text-only model msg from initial response - remove it
-        if contents and contents[-1]["role"] == "model":
+        if contents and contents[-1].role == "model":
             contents.pop()
 
         # Add each tool round: model response (with function_call) + function results
@@ -291,49 +305,40 @@ class GeminiChatSession:
                 function_calls = None
 
             # Build model parts from either response object or function_calls
-            model_parts = None
+            model_parts: List[genai_types.Part] = []
             if resp_obj is not None and resp_obj.candidates:
-                # Extract function_call data from response and convert to dict format
+                # Extract function_call data from response and build Part objects
+                # IMPORTANT: Skip thought parts to avoid thought_signature validation errors
                 model_content = resp_obj.candidates[0].content
-                model_parts = []
                 for part in model_content.parts:
+                    # Skip thought parts - they contain thought_signature which causes validation errors
+                    if getattr(part, "thought", False):
+                        continue
+
                     if hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
-                        part_dict = {
-                            "function_call": {
-                                "name": getattr(fc, "name", ""),
-                                "args": dict(getattr(fc, "args", {}) or {})
-                            }
-                        }
-                        # Preserve thought_signature if present (required for Gemini 3 models)
-                        if hasattr(part, "thought_signature") and part.thought_signature:
-                            part_dict["thought_signature"] = part.thought_signature
-                        model_parts.append(part_dict)
+                        model_parts.append(_build_function_call_part(
+                            name=getattr(fc, "name", ""),
+                            args=dict(getattr(fc, "args", {}) or {})
+                        ))
                     elif hasattr(part, "text") and part.text:
-                        model_parts.append({"text": part.text})
+                        model_parts.append(_build_text_part(part.text))
             elif function_calls:
-                # Streaming case: convert function_calls to dict format
-                model_parts = []
+                # Streaming case: convert function_calls to Part objects
                 for fc in function_calls:
-                    part_dict = {
-                        "function_call": {
-                            "name": fc.get("name", ""),
-                            "args": fc.get("parameters") or fc.get("args") or {}
-                        }
-                    }
-                    # Preserve thought_signature if present (required for Gemini 3 models)
-                    if fc.get("thought_signature"):
-                        part_dict["thought_signature"] = fc["thought_signature"]
-                    model_parts.append(part_dict)
+                    model_parts.append(_build_function_call_part(
+                        name=fc.get("name", ""),
+                        args=fc.get("parameters") or fc.get("args") or {}
+                    ))
 
-            if model_parts is None or not model_parts:
+            if not model_parts:
                 logger.error("send_tool_results: no response object and no function_calls provided")
                 continue
 
-            # Use dict format
-            contents.append({"role": "model", "parts": model_parts})
+            # Add model content with function calls
+            contents.append(_build_content("model", model_parts))
 
-            # Add function response parts in dict format
+            # Add function response parts using proper SDK types
             for result_item in results:
                 tool_name = result_item.get("name")
                 result_data = result_item.get("result")
@@ -342,20 +347,12 @@ class GeminiChatSession:
                     response_data = {"error": error}
                 else:
                     response_data = {"result": str(result_data) if result_data is not None else ""}
-                contents.append({
-                    "role": "user",
-                    "parts": [{
-                        "function_response": {
-                            "name": tool_name,
-                            "response": response_data
-                        }
-                    }]
-                })
 
-        # Ensure all contents are JSON-serializable (removes any protobuf objects)
-        contents = _ensure_json_serializable(contents)
+                # Use proper Part.from_function_response
+                func_response_part = _build_function_response_part(tool_name, response_data)
+                contents.append(_build_content("user", [func_response_part]))
 
-        # Call generate_content
+        # Call generate_content with properly typed contents
         response = self._factory.generate_content(contents=contents, tools=tools)
 
         # Create model message
