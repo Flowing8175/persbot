@@ -23,6 +23,9 @@ from persbot.utils import extract_message_metadata
 
 logger = logging.getLogger(__name__)
 
+# Sentinel value to distinguish "no change" from "set to None"
+_UNSET = object()
+
 
 class ProviderRegistry:
     """Registry for managing LLM provider backends."""
@@ -749,20 +752,20 @@ class LLMService:
         self,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
-        thinking_budget: Optional[int] = None,
+        thinking_budget: Optional[int] = _UNSET,
     ) -> None:
         """Update model parameters and reload backends.
 
         Args:
             temperature: Optional temperature value (0.0-2.0).
             top_p: Optional top-p value (0.0-1.0).
-            thinking_budget: Optional thinking budget in tokens.
+            thinking_budget: Optional thinking budget in tokens. Pass None to disable.
         """
         if temperature is not None:
             self.config.temperature = temperature
         if top_p is not None:
             self.config.top_p = top_p
-        if thinking_budget is not None:
+        if thinking_budget is not _UNSET:
             self.config.thinking_budget = thinking_budget
 
         # Reload all registered backends
