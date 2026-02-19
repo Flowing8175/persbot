@@ -118,11 +118,13 @@ async def main(config) -> None:
     @bot.event
     async def on_ready() -> None:
         nonlocal tree_synced
+        logger.info("✅ Logged in as %s (ID: %s)", bot.user, bot.user.id if bot.user else "unknown")
         # Sync Command Tree (only once, on_ready can fire multiple times on reconnect)
         if not tree_synced:
             try:
                 await bot.tree.sync()
                 tree_synced = True
+                logger.info("✅ Command tree synced")
             except Exception:
                 logger.exception("Failed to sync command tree")
 
