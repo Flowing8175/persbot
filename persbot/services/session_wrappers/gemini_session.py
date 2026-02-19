@@ -82,6 +82,33 @@ def _build_inline_data_part(data: bytes, mime_type: str) -> genai_types.Part:
     )
 
 
+def _deep_serialize(obj: Any) -> Any:
+    """Recursively serialize any object to JSON-safe primitives.
+
+    Handles discord objects, pydantic models, and other non-serializable types
+    by converting them to strings or dicts of primitives.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        A JSON-serializable value (str, int, float, bool, list, dict, None).
+    """
+    if obj is None:
+        return ""
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, bytes):
+        return f"<bytes len={len(obj)}>"
+    if isinstance(obj, dict):
+        return {k: _deep_serialize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_deep_serialize(item) for item in obj]
+    # For any other object (including discord types, pydantic models, etc.)
+    # convert to string representation
+    return str(obj)
+
+
 def extract_clean_text(response_obj: Any) -> str:
     """Extract text content from Gemini response, filtering out thoughts."""
     try:
@@ -345,7 +372,9 @@ class GeminiChatSession:
                 if error:
                     response_data = {"error": error}
                 else:
-                    response_data = {"result": str(result_data) if result_data is not None else ""}
+                    # Deep serialize to ensure all nested objects (including discord types)
+                    # are converted to JSON-safe primitives
+                    response_data = {"result": _deep_serialize(result_data)}
 
                 # Use proper Part.from_function_response with role='tool' as per SDK docs
                 func_response_part = _build_function_response_part(tool_name, response_data)
