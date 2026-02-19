@@ -302,39 +302,38 @@ class GeminiChatSession:
                 resp_obj, results = tool_round
                 function_calls = None
 
-            # Build model parts from either response object or function_calls
-            model_parts: List[genai_types.Part] = []
+            # Build model content from either response object or function_calls
+            # Per SDK docs, we should use response.candidates[0].content directly
+            # rather than rebuilding parts, to avoid serialization issues
             if resp_obj is not None and resp_obj.candidates:
-                # Extract function_call data from response and build Part objects
-                # IMPORTANT: Skip thought parts to avoid thought_signature validation errors
                 model_content = resp_obj.candidates[0].content
-                for part in model_content.parts:
-                    # Skip thought parts - they contain thought_signature which causes validation errors
-                    if getattr(part, "thought", False):
-                        continue
-
-                    if hasattr(part, "function_call") and part.function_call:
-                        fc = part.function_call
-                        model_parts.append(_build_function_call_part(
-                            name=getattr(fc, "name", ""),
-                            args=dict(getattr(fc, "args", {}) or {})
-                        ))
-                    elif hasattr(part, "text") and part.text:
-                        model_parts.append(_build_text_part(part.text))
+                # Filter out thought parts if present (they cause validation errors)
+                if any(getattr(p, "thought", False) for p in model_content.parts):
+                    filtered_parts = [
+                        p for p in model_content.parts
+                        if not getattr(p, "thought", False)
+                    ]
+                    if filtered_parts:
+                        contents.append(genai_types.Content(role="model", parts=filtered_parts))
+                else:
+                    # Use the original content directly - it's already properly typed
+                    contents.append(model_content)
             elif function_calls:
                 # Streaming case: convert function_calls to Part objects
+                model_parts: List[genai_types.Part] = []
                 for fc in function_calls:
                     model_parts.append(_build_function_call_part(
                         name=fc.get("name", ""),
                         args=fc.get("parameters") or fc.get("args") or {}
                     ))
-
-            if not model_parts:
+                if model_parts:
+                    contents.append(_build_content("model", model_parts))
+                else:
+                    logger.error("send_tool_results: no function_calls to build")
+                    continue
+            else:
                 logger.error("send_tool_results: no response object and no function_calls provided")
                 continue
-
-            # Add model content with function calls
-            contents.append(_build_content("model", model_parts))
 
             # Add function response parts using proper SDK types
             for result_item in results:
