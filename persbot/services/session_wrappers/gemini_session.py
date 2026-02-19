@@ -48,9 +48,7 @@ def _build_function_call_part(name: str, args: dict) -> genai_types.Part:
     Returns:
         A Part object with function_call.
     """
-    return genai_types.Part(
-        function_call=genai_types.FunctionCall(name=name, args=args)
-    )
+    return genai_types.Part.from_function_call(name=name, args=args)
 
 
 def _build_function_response_part(name: str, response: dict) -> genai_types.Part:
@@ -348,9 +346,9 @@ class GeminiChatSession:
                 else:
                     response_data = {"result": str(result_data) if result_data is not None else ""}
 
-                # Use proper Part.from_function_response
+                # Use proper Part.from_function_response with role='tool' as per SDK docs
                 func_response_part = _build_function_response_part(tool_name, response_data)
-                contents.append(_build_content("user", [func_response_part]))
+                contents.append(_build_content("tool", [func_response_part]))
 
         # Call generate_content with properly typed contents
         response = self._factory.generate_content(contents=contents, tools=tools)
