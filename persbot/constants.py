@@ -32,13 +32,14 @@ class CacheConfig:
     """Gemini context cache configuration.
 
     Minimum token requirements by model (as of 2025):
-    - Gemini 2.5 Flash: 1,024 tokens (implicit caching)
-    - Gemini 2.5 Pro: 2,048 tokens (implicit caching)
+    - Gemini 2.5/3 Flash: 1,024 tokens
+    - Gemini 2.5/3 Pro: 4,096 tokens
 
-    We use 2,048 as the default to support all Gemini 2.5+ models.
+    We use 1,024 as the default (Flash requirement) since that's the common model.
+    The service will use model-specific minimums when available.
     """
 
-    MIN_TOKENS = 2048  # Supports Gemini 2.5 Pro (highest requirement)
+    MIN_TOKENS = 1024  # Default for Flash models (most common)
     TTL_MINUTES = 60
     REFRESH_BUFFER_MIN = 1
     REFRESH_BUFFER_MAX = 5

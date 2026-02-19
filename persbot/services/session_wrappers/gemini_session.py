@@ -219,7 +219,13 @@ class GeminiChatSession:
         contents.append(_build_content("user", current_parts))
 
         # 2. Call generate_content directly (Stateless)
-        response = self._factory.generate_content(contents=contents, tools=tools)
+        # When using cached_content, tools are "baked in" to the cache and should NOT
+        # be passed separately (would cause 400 error). Check if model has cached content.
+        if self._factory.has_cached_content:
+            # Tools are already in the cache, don't pass them
+            response = self._factory.generate_content(contents=contents, tools=None)
+        else:
+            response = self._factory.generate_content(contents=contents, tools=tools)
 
         # 3. Create ChatMessage objects but do NOT append to self.history yet.
         user_msg = ChatMessage(
@@ -280,8 +286,13 @@ class GeminiChatSession:
         contents.append(_build_content("user", current_parts))
 
         # 2. Get async streaming iterator
+        # When using cached_content, tools are "baked in" to the cache and should NOT
+        # be passed separately (would cause 400 error). Check if model has cached content.
         try:
-            stream = self._factory.generate_content_stream(contents=contents, tools=tools)
+            if self._factory.has_cached_content:
+                stream = self._factory.generate_content_stream(contents=contents, tools=None)
+            else:
+                stream = self._factory.generate_content_stream(contents=contents, tools=tools)
         except Exception as e:
             logger.error("generate_content_stream failed: %s", e, exc_info=True)
             raise
@@ -386,7 +397,12 @@ class GeminiChatSession:
         dict_contents = [c.model_dump(mode='json') for c in contents]
 
         # Call generate_content with properly serialized contents
-        response = self._factory.generate_content(contents=dict_contents, tools=tools)
+        # When using cached_content, tools are "baked in" to the cache and should NOT
+        # be passed separately (would cause 400 error). Check if model has cached content.
+        if self._factory.has_cached_content:
+            response = self._factory.generate_content(contents=dict_contents, tools=None)
+        else:
+            response = self._factory.generate_content(contents=dict_contents, tools=tools)
 
         # Create model message
         clean_content = extract_clean_text(response)

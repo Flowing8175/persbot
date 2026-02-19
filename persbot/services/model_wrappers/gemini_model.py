@@ -42,6 +42,11 @@ class GeminiCachedModel:
         """Get the model name."""
         return self._model_name
 
+    @property
+    def has_cached_content(self) -> bool:
+        """Check if this model uses cached content (tools are baked in)."""
+        return getattr(self._config, "cached_content", None) is not None
+
     def generate_content(
         self, contents: Union[str, List[Any]], tools: Optional[List[Any]] = None
     ) -> Any:

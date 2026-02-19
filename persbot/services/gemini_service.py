@@ -235,6 +235,37 @@ class GeminiService(BaseLLMServiceCore):
             return True  # Assume supported if no model specified
         return model_name not in self.MODELS_WITHOUT_TOOL_SUPPORT
 
+    # Model-specific minimum token requirements for context caching
+    # As of 2025: Gemini 2.5/3 Flash = 1024, Gemini 2.5/3 Pro = 4096
+    MODEL_CACHE_MIN_TOKENS = {
+        "gemini-2.5-flash": 1024,
+        "gemini-2.5-pro": 4096,
+        "gemini-3-flash-preview": 1024,
+        "gemini-3-flash": 1024,
+        "gemini-3-pro-preview": 4096,
+        "gemini-3-pro": 4096,
+    }
+
+    def _get_min_cache_tokens(self, model_name: str) -> int:
+        """Get minimum token requirement for context caching based on model.
+
+        Falls back to config or default if model not in lookup table.
+        """
+        # Normalize model name (remove prefix if present)
+        normalized = model_name.replace("models/", "")
+
+        # Check lookup table first
+        if normalized in self.MODEL_CACHE_MIN_TOKENS:
+            return self.MODEL_CACHE_MIN_TOKENS[normalized]
+
+        # Check for partial matches (e.g., "gemini-2.5-flash-...")
+        for key, value in self.MODEL_CACHE_MIN_TOKENS.items():
+            if normalized.startswith(key):
+                return value
+
+        # Fall back to config or default
+        return getattr(self.config, "gemini_cache_min_tokens", CacheConfig.MIN_TOKENS)
+
     def _get_search_tools(self, model_name: str) -> Optional[list]:
         """Get Google Search tools for Gemini models.
 
@@ -292,23 +323,15 @@ class GeminiService(BaseLLMServiceCore):
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """Resolve Gemini cache and log status.
 
-        Note: Gemini's cached content does NOT support function calling at the model level.
-        While CreateCachedContentConfig accepts a 'tools' parameter, using cached_content
-        with tools causes "Tool use with function calling is unsupported by the model" error.
-        When tools are needed, skip caching and use standard context.
+        Note: Gemini's cached content DOES support tools when included in the cache.
+        The cache should include both system_instruction AND tools together.
+        When using cached_content, the tools are baked into the cache.
         """
         if not use_cache:
             return None, None
 
-        # Gemini's cached content doesn't support function calling.
-        # When tools are needed, skip caching and use standard context.
-        if tools:
-            self._cache_misses += 1
-            logger.debug("Skipping cache for model %s: tools present", model_name)
-            return None, None
-
         cache_name, cache_expiration = self._get_gemini_cache(
-            model_name, system_instruction, tools=None
+            model_name, system_instruction, tools=tools
         )
 
         # Track cache metrics
@@ -422,8 +445,31 @@ class GeminiService(BaseLLMServiceCore):
         pass  # Request logging removed
 
     def _log_raw_response(self, response_obj: Any, attempt: int) -> None:
-        """Log raw API response data for debugging."""
-        pass  # Response logging removed
+        """Log raw API response data for debugging, including cache usage."""
+        if response_obj is None:
+            return
+
+        # Log cache usage from response
+        usage_metadata = getattr(response_obj, 'usage_metadata', None)
+        if usage_metadata:
+            cached_tokens = getattr(usage_metadata, 'cached_content_token_count', 0)
+            prompt_tokens = getattr(usage_metadata, 'prompt_token_count', 0)
+            total_tokens = getattr(usage_metadata, 'total_token_count', 0)
+
+            if cached_tokens and cached_tokens > 0:
+                self._cache_tokens_saved += cached_tokens
+                logger.info(
+                    "Cache hit: %d/%d tokens from cache (saved: %d total)",
+                    cached_tokens,
+                    prompt_tokens,
+                    self._cache_tokens_saved,
+                )
+            elif prompt_tokens > 0:
+                logger.debug(
+                    "API usage: prompt=%d, total=%d (no cache)",
+                    prompt_tokens,
+                    total_tokens,
+                )
 
     def _get_cache_key(self, model_name: str, content: str, tools: Optional[list] = None) -> str:
         """Generate a consistent cache key/name based on model and content hash."""
@@ -489,12 +535,24 @@ class GeminiService(BaseLLMServiceCore):
 
         # SLOW PATH: Check token count and create/list caches
         try:
-            # We must count tokens including tools and system instruction to be accurate.
+            # Count tokens for system_instruction AND tools together
+            # The cache will include both, so we need to count both for minimum token check
+            count_config = genai_types.GenerateContentConfig(
+                system_instruction=system_instruction,
+            )
+            if tools:
+                count_config.tools = tools
+
             count_result = self.client.models.count_tokens(
                 model=model_name,
-                contents=[system_instruction],
+                contents=[],  # Empty contents - we're counting system_instruction + tools
+                config=count_config,
             )
             token_count = count_result.total_tokens
+            logger.debug(
+                "Token count for cache (system_instruction + tools): %d tokens",
+                token_count,
+            )
         except Exception as e:
             logger.warning(
                 "Failed to count tokens for caching check: %s. Using standard context.",
@@ -502,8 +560,14 @@ class GeminiService(BaseLLMServiceCore):
             )
             return None, None
 
-        min_tokens = getattr(self.config, "gemini_cache_min_tokens", CacheConfig.MIN_TOKENS)
+        min_tokens = self._get_min_cache_tokens(model_name)
         if token_count < min_tokens:
+            logger.debug(
+                "Skipping cache: token count %d below minimum %d (model: %s)",
+                token_count,
+                min_tokens,
+                model_name,
+            )
             return None, None
 
         # Search for existing cache
@@ -542,6 +606,17 @@ class GeminiService(BaseLLMServiceCore):
                     tools=tools,
                     ttl=f"{ttl_seconds}s",
                 ),
+            )
+
+            # Log cache creation with usage metadata
+            cache_usage = getattr(cache, 'usage_metadata', None)
+            cached_tokens = getattr(cache_usage, 'total_tokens', token_count) if cache_usage else token_count
+            logger.info(
+                "Created Gemini cache '%s' for model %s: %d tokens cached (TTL: %ds)",
+                cache_display_name,
+                model_name,
+                cached_tokens,
+                ttl_seconds,
             )
 
             # Cache the result in memory for future lookups
