@@ -323,9 +323,9 @@ class GeminiService(BaseLLMServiceCore):
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """Resolve Gemini cache and log status.
 
-        Note: Gemini's cached content DOES support tools when included in the cache.
-        The cache should include both system_instruction AND tools together.
-        When using cached_content, the tools are baked into the cache.
+        Note: Gemini's context caching caches ONLY system_instruction (no tools).
+        ALL tools (including custom function calling and GoogleSearch) are passed
+        separately in generate_content calls, even when using cached_content.
         """
         if not use_cache:
             return None, None
@@ -506,12 +506,16 @@ class GeminiService(BaseLLMServiceCore):
 
         Note: This method is synchronous but uses cached data where possible.
         For new cache creation, it will make blocking API calls.
+
+        IMPORTANT: Context caching caches ONLY the system_instruction.
+        ALL tools (including custom function calling and GoogleSearch) are passed
+        separately in generate_content calls, not in the cache.
         """
         if not system_instruction:
             return None, None
 
-        # Generate cache display name
-        cache_display_name = self._get_cache_key(model_name, system_instruction, tools)
+        # Cache key uses only system_instruction (tools are NOT cached)
+        cache_display_name = self._get_cache_key(model_name, system_instruction, tools=None)
         ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", CacheConfig.TTL_MINUTES)
         ttl_seconds = ttl_minutes * 60
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -534,26 +538,15 @@ class GeminiService(BaseLLMServiceCore):
                 del self._cache_name_cache[cache_display_name]
 
         # SLOW PATH: Check token count and create/list caches
-        # Estimate tokens for system_instruction + tools
+        # Estimate tokens for system_instruction ONLY (tools are not cached)
         # Approximation: ~4 characters per token for mixed Korean/English content
         # This is a rough estimate to avoid the complexity of count_tokens API
-        # which requires actual contents, not just system_instruction + tools
+        # which requires actual contents, not just system_instruction
         total_chars = len(system_instruction) if system_instruction else 0
-        if tools:
-            for tool in tools:
-                if hasattr(tool, 'function_declarations') and tool.function_declarations:
-                    for fd in tool.function_declarations:
-                        if hasattr(fd, 'name'):
-                            total_chars += len(fd.name)
-                        if hasattr(fd, 'description'):
-                            total_chars += len(fd.description or '')
-                        if hasattr(fd, 'parameters') and fd.parameters:
-                            # Rough estimate for schema
-                            total_chars += len(str(fd.parameters))
 
         token_count = total_chars // 4  # Rough estimate: 4 chars per token
         logger.debug(
-            "Estimated token count for cache (system_instruction + tools): %d tokens (%d chars)",
+            "Estimated token count for cache (system_instruction only): %d tokens (%d chars)",
             token_count,
             total_chars,
         )
@@ -594,14 +587,15 @@ class GeminiService(BaseLLMServiceCore):
         except Exception as e:
             logger.error("Error listing Gemini caches: %s", e)
 
-        # Create new cache
+        # Create new cache (tools are NOT included - they're incompatible with context caching)
         try:
             cache = self.client.caches.create(
                 model=model_name,
                 config=genai_types.CreateCachedContentConfig(
                     display_name=cache_display_name,
                     system_instruction=system_instruction,
-                    tools=tools,
+                    # NOTE: tools intentionally NOT included - GoogleSearch/function calling
+                    # are incompatible with Gemini context caching
                     ttl=f"{ttl_seconds}s",
                 ),
             )

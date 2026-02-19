@@ -44,7 +44,7 @@ class GeminiCachedModel:
 
     @property
     def has_cached_content(self) -> bool:
-        """Check if this model uses cached content (tools are baked in)."""
+        """Check if this model uses cached content for system_instruction."""
         return getattr(self._config, "cached_content", None) is not None
 
     def generate_content(
@@ -56,7 +56,8 @@ class GeminiCachedModel:
         Args:
             contents: The content to generate.
             tools: Optional override for tools configuration.
-                   Note: Cannot override tools when using cached_content.
+                   Note: Tools are passed separately even when using cached_content
+                   since GoogleSearch/function calling are incompatible with context caching.
 
         Returns:
             The API response.
@@ -81,7 +82,8 @@ class GeminiCachedModel:
         Args:
             contents: The content to generate.
             tools: Optional override for tools configuration.
-                   Note: Cannot override tools when using cached_content.
+                   Note: Tools are passed separately even when using cached_content
+                   since GoogleSearch/function calling are incompatible with context caching.
 
         Yields:
             Response chunks as they arrive from the API.
@@ -100,36 +102,34 @@ class GeminiCachedModel:
             yield chunk
 
     def _build_config_with_tools(self, tools: List[Any]) -> genai_types.GenerateContentConfig:
-        """Build config with tools override, handling cache correctly."""
-        # Check if we're using cached_content - if so, cannot override tools
+        """Build config with tools override.
+
+        Note: Tools are NOT cached with system_instruction (GoogleSearch/function calling
+        are incompatible with context caching), so we always pass tools separately
+        even when using cached_content.
+        """
         has_cached_content = getattr(self._config, "cached_content", None) is not None
 
         if has_cached_content:
-            # When using cached_content, tools are already baked in
-            # Rebuild config without tools to avoid API error
+            # Using cached_content for system_instruction, but tools are passed separately
             config_kwargs = {
                 "temperature": getattr(self._config, "temperature", 1.0),
                 "top_p": getattr(self._config, "top_p", 1.0),
                 "cached_content": self._config.cached_content,
+                "tools": tools,  # Tools are NOT in cache, pass them separately
             }
-            # Add thinking config if present
-            if hasattr(self._config, "thinking_config") and self._config.thinking_config:
-                config_kwargs["thinking_config"] = self._config.thinking_config
-
-            logger.warning(
-                "Ignoring tools override when using cached_content. Tools are already in the cache."
-            )
         else:
-            # Not using cache, can override tools normally
+            # Not using cache, pass system_instruction and tools normally
             config_kwargs = {
                 "temperature": getattr(self._config, "temperature", 1.0),
                 "top_p": getattr(self._config, "top_p", 1.0),
                 "system_instruction": getattr(self._config, "system_instruction", None),
                 "tools": tools,
             }
-            # Add thinking config if present
-            if hasattr(self._config, "thinking_config") and self._config.thinking_config:
-                config_kwargs["thinking_config"] = self._config.thinking_config
+
+        # Add thinking config if present
+        if hasattr(self._config, "thinking_config") and self._config.thinking_config:
+            config_kwargs["thinking_config"] = self._config.thinking_config
 
         return genai_types.GenerateContentConfig(**config_kwargs)
 
