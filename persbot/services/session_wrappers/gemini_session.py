@@ -303,21 +303,21 @@ class GeminiChatSession:
                 function_calls = None
 
             # Build model content from either response object or function_calls
-            # Per SDK docs, we should use response.candidates[0].content directly
-            # rather than rebuilding parts, to avoid serialization issues
+            # Use model_copy(deep=True) to strip any internal Message references
+            # that cause "Object of type Message is not JSON serializable" errors
             if resp_obj is not None and resp_obj.candidates:
                 model_content = resp_obj.candidates[0].content
                 # Filter out thought parts if present (they cause validation errors)
                 if any(getattr(p, "thought", False) for p in model_content.parts):
                     filtered_parts = [
-                        p for p in model_content.parts
+                        p.model_copy(deep=True) for p in model_content.parts
                         if not getattr(p, "thought", False)
                     ]
                     if filtered_parts:
                         contents.append(genai_types.Content(role="model", parts=filtered_parts))
                 else:
-                    # Use the original content directly - it's already properly typed
-                    contents.append(model_content)
+                    # Use deep copy to strip internal Message references
+                    contents.append(model_content.model_copy(deep=True))
             elif function_calls:
                 # Streaming case: convert function_calls to Part objects
                 model_parts: List[genai_types.Part] = []
