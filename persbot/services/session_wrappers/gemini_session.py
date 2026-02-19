@@ -351,8 +351,12 @@ class GeminiChatSession:
                 func_response_part = _build_function_response_part(tool_name, response_data)
                 contents.append(_build_content("tool", [func_response_part]))
 
-        # Call generate_content with properly typed contents
-        response = self._factory.generate_content(contents=contents, tools=tools)
+        # Convert all contents to dicts to ensure JSON serialization works
+        # This strips any internal SDK Message references
+        dict_contents = [c.model_dump() for c in contents]
+
+        # Call generate_content with properly serialized contents
+        response = self._factory.generate_content(contents=dict_contents, tools=tools)
 
         # Create model message
         clean_content = extract_clean_text(response)
