@@ -534,31 +534,29 @@ class GeminiService(BaseLLMServiceCore):
                 del self._cache_name_cache[cache_display_name]
 
         # SLOW PATH: Check token count and create/list caches
-        try:
-            # Count tokens for system_instruction AND tools together
-            # The cache will include both, so we need to count both for minimum token check
-            count_config = genai_types.GenerateContentConfig(
-                system_instruction=system_instruction,
-            )
-            if tools:
-                count_config.tools = tools
+        # Estimate tokens for system_instruction + tools
+        # Approximation: ~4 characters per token for mixed Korean/English content
+        # This is a rough estimate to avoid the complexity of count_tokens API
+        # which requires actual contents, not just system_instruction + tools
+        total_chars = len(system_instruction) if system_instruction else 0
+        if tools:
+            for tool in tools:
+                if hasattr(tool, 'function_declarations') and tool.function_declarations:
+                    for fd in tool.function_declarations:
+                        if hasattr(fd, 'name'):
+                            total_chars += len(fd.name)
+                        if hasattr(fd, 'description'):
+                            total_chars += len(fd.description or '')
+                        if hasattr(fd, 'parameters') and fd.parameters:
+                            # Rough estimate for schema
+                            total_chars += len(str(fd.parameters))
 
-            count_result = self.client.models.count_tokens(
-                model=model_name,
-                contents=[],  # Empty contents - we're counting system_instruction + tools
-                config=count_config,
-            )
-            token_count = count_result.total_tokens
-            logger.debug(
-                "Token count for cache (system_instruction + tools): %d tokens",
-                token_count,
-            )
-        except Exception as e:
-            logger.warning(
-                "Failed to count tokens for caching check: %s. Using standard context.",
-                e,
-            )
-            return None, None
+        token_count = total_chars // 4  # Rough estimate: 4 chars per token
+        logger.debug(
+            "Estimated token count for cache (system_instruction + tools): %d tokens (%d chars)",
+            token_count,
+            total_chars,
+        )
 
         min_tokens = self._get_min_cache_tokens(model_name)
         if token_count < min_tokens:
