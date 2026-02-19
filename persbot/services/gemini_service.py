@@ -220,10 +220,7 @@ class GeminiService(BaseLLMServiceCore):
 
     # Models that don't support function calling / tool use
     # These models will return 400 Bad Request if tools are passed
-    MODELS_WITHOUT_TOOL_SUPPORT = frozenset([
-        "gemini-3-flash-preview",
-        "gemini-3-flash",
-    ])
+    MODELS_WITHOUT_TOOL_SUPPORT = frozenset([])
 
     def _model_supports_tools(self, model_name: Optional[str]) -> bool:
         """Check if a model supports function calling / tool use.
