@@ -392,42 +392,54 @@ class BaseChatCog(commands.Cog):
         1. Any ongoing LLM API-side generation is cancelled immediately (like STOP button)
         2. The messages from cancelled batch are returned for stacking
         3. A new request will be made with all stacked messages
+
+        IMPORTANT: Messages are only returned for prepending if we actually CANCELLED
+        an in-progress task. If the task already completed, we don't prepend to avoid
+        generating duplicate responses.
         """
         messages_to_prepend = []
+        was_cancelled = False  # Track if we actually cancelled something
 
         # Step 1: Cancel ongoing API call FIRST (critical for server-side cancellation)
         # This is the most important step - it cancels the actual HTTP request
         if channel_id in self.active_api_calls:
             active_api = self.active_api_calls[channel_id]
-            active_api.cancel()
-            # Get messages from the cancelled batch to prepend to new request
-            messages_to_prepend = self.active_batches.get(channel_id, [])
+            # Only prepend messages if the API call was actually in progress
+            if active_api.task and not active_api.task.done():
+                active_api.cancel()
+                was_cancelled = True
+                # Get messages from the cancelled batch to prepend to new request
+                messages_to_prepend = self.active_batches.get(channel_id, [])
 
         # Step 2: Also trigger cancellation signal (redundant but ensures coverage)
         if channel_id in self.cancellation_signals:
             self.cancellation_signals[channel_id].set()
 
         # Step 3: Cancel sending task if in break-cut mode
-        # Also check for messages to stack (handles case where API call finished but sending is ongoing)
+        # Only prepend messages if we're cancelling a send in progress
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
                 if self.config.break_cut_mode:
                     task.cancel()
-                # Get messages for stacking even if not cancelling (API done, but response still sending)
-                if not messages_to_prepend:
-                    messages_to_prepend = self.active_batches.get(channel_id, [])
+                    was_cancelled = True
+                    # Only get messages for stacking if we haven't already
+                    if not messages_to_prepend:
+                        messages_to_prepend = self.active_batches.get(channel_id, [])
 
         # Step 4: Cancel the processing task itself
         if channel_id in self.processing_tasks:
             task = self.processing_tasks[channel_id]
             if not task.done():
+                was_cancelled = True
                 # If we didn't get messages from active_api_calls, get from active_batches
                 if not messages_to_prepend:
                     messages_to_prepend = self.active_batches.get(channel_id, [])
                 task.cancel()
 
-        return messages_to_prepend
+        # Only return messages if we actually cancelled something in progress
+        # If tasks were already done, their responses will be sent - don't reprocess
+        return messages_to_prepend if was_cancelled else []
 
     @commands.Cog.listener()
     async def on_typing(
