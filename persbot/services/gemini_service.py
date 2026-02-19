@@ -1025,7 +1025,7 @@ class GeminiService(BaseLLMServiceCore):
     def _extract_function_calls_from_chunk(self, chunk: Any) -> List[Dict[str, Any]]:
         """Extract function calls from a streaming chunk.
 
-        Returns a list of dicts with 'name' and 'parameters' keys.
+        Returns a list of dicts with 'name', 'parameters', and optionally 'thought_signature' keys.
         """
         function_calls = []
         try:
@@ -1046,6 +1046,9 @@ class GeminiService(BaseLLMServiceCore):
                                     "name": getattr(fc, "name", None),
                                     "parameters": dict(getattr(fc, "args", {}) or {}),
                                 }
+                                # Preserve thought_signature if present (required for Gemini 3 models)
+                                if hasattr(part, "thought_signature") and part.thought_signature:
+                                    call_info["thought_signature"] = part.thought_signature
                                 if call_info["name"]:
                                     function_calls.append(call_info)
                                     logger.info("Extracted function call: %s with args: %s", call_info["name"], call_info["parameters"])

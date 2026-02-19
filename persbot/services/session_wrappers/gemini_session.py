@@ -299,24 +299,32 @@ class GeminiChatSession:
                 for part in model_content.parts:
                     if hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
-                        model_parts.append({
+                        part_dict = {
                             "function_call": {
                                 "name": getattr(fc, "name", ""),
                                 "args": dict(getattr(fc, "args", {}) or {})
                             }
-                        })
+                        }
+                        # Preserve thought_signature if present (required for Gemini 3 models)
+                        if hasattr(part, "thought_signature") and part.thought_signature:
+                            part_dict["thought_signature"] = part.thought_signature
+                        model_parts.append(part_dict)
                     elif hasattr(part, "text") and part.text:
                         model_parts.append({"text": part.text})
             elif function_calls:
                 # Streaming case: convert function_calls to dict format
                 model_parts = []
                 for fc in function_calls:
-                    model_parts.append({
+                    part_dict = {
                         "function_call": {
                             "name": fc.get("name", ""),
                             "args": fc.get("parameters") or fc.get("args") or {}
                         }
-                    })
+                    }
+                    # Preserve thought_signature if present (required for Gemini 3 models)
+                    if fc.get("thought_signature"):
+                        part_dict["thought_signature"] = fc["thought_signature"]
+                    model_parts.append(part_dict)
 
             if model_parts is None or not model_parts:
                 logger.error("send_tool_results: no response object and no function_calls provided")

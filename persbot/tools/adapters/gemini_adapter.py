@@ -43,7 +43,7 @@ class GeminiToolAdapter(BaseToolAdapter):
             response: Gemini response object.
 
         Returns:
-            List of function call dictionaries with 'name' and 'parameters'.
+            List of function call dictionaries with 'name', 'parameters', and optionally 'thought_signature'.
         """
         function_calls = []
 
@@ -59,6 +59,9 @@ class GeminiToolAdapter(BaseToolAdapter):
                                     "name": fc.name,
                                     "parameters": dict(fc.args) if hasattr(fc, "args") else {},
                                 }
+                                # Preserve thought_signature if present (required for Gemini 3 models)
+                                if hasattr(part, "thought_signature") and part.thought_signature:
+                                    call_data["thought_signature"] = part.thought_signature
                                 function_calls.append(call_data)
                             # Also check for functionResponses (results from previous calls)
                             elif hasattr(part, "function_response") and part.function_response:
