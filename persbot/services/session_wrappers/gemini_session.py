@@ -303,14 +303,14 @@ class GeminiChatSession:
                 function_calls = None
 
             # Build model content from either response object or function_calls
-            # Use model_dump() + model_validate() to completely strip any internal
+            # Use model_dump(mode='json') + model_validate() to completely strip any internal
             # Message references that cause "Object of type Message is not JSON serializable"
             if resp_obj is not None and resp_obj.candidates:
                 model_content = resp_obj.candidates[0].content
                 # Filter out thought parts if present (they cause validation errors)
                 if any(getattr(p, "thought", False) for p in model_content.parts):
                     filtered_parts = [
-                        genai_types.Part.model_validate(p.model_dump())
+                        genai_types.Part.model_validate(p.model_dump(mode='json'))
                         for p in model_content.parts
                         if not getattr(p, "thought", False)
                     ]
@@ -318,7 +318,7 @@ class GeminiChatSession:
                         contents.append(genai_types.Content(role="model", parts=filtered_parts))
                 else:
                     # Rebuild from dict to strip all internal references
-                    content_dict = model_content.model_dump()
+                    content_dict = model_content.model_dump(mode='json')
                     contents.append(genai_types.Content.model_validate(content_dict))
             elif function_calls:
                 # Streaming case: convert function_calls to Part objects
@@ -351,9 +351,10 @@ class GeminiChatSession:
                 func_response_part = _build_function_response_part(tool_name, response_data)
                 contents.append(_build_content("tool", [func_response_part]))
 
-        # Convert all contents to dicts to ensure JSON serialization works
-        # This strips any internal SDK Message references
-        dict_contents = [c.model_dump() for c in contents]
+        # Convert all contents to dicts with mode='json' to ensure full JSON serialization
+        # This recursively converts all nested objects (including SDK internal types)
+        # to JSON-serializable primitives (str, int, float, bool, list, dict, None)
+        dict_contents = [c.model_dump(mode='json') for c in contents]
 
         # Call generate_content with properly serialized contents
         response = self._factory.generate_content(contents=dict_contents, tools=tools)
