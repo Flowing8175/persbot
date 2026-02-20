@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -50,6 +50,8 @@ class ResolvedSession:
     session_key: str
     cleaned_message: str
     is_reply_to_summary: bool = False
+    # Pre-extracted images for retry operations (bypasses discord message extraction)
+    images: list[bytes] = field(default_factory=list)
 
 
 class SessionManager:

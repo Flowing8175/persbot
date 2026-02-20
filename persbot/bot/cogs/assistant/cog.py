@@ -94,7 +94,7 @@ class AssistantCog(BaseChatCog):
             return
 
         # Process removed messages
-        user_content = await utils.process_removed_messages(ctx, removed_messages, self.llm_service)
+        user_content, user_images = await utils.process_removed_messages(ctx, removed_messages, self.llm_service)
         if not user_content:
             await ctx.send("❌ 재시도할 사용자 메시지를 찾을 수 없습니다.")
             return
@@ -112,6 +112,7 @@ class AssistantCog(BaseChatCog):
                 msg, reply, self.config, self.session_manager, self._handle_break_cut_sending
             ),
             self.config,
+            user_images=user_images,
         )
 
     @commands.hybrid_command(

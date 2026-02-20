@@ -456,6 +456,7 @@ class LLMService:
         use_summarizer_backend: bool = False,
         tools: Optional[List[Any]] = None,
         cancel_event: Optional[asyncio.Event] = None,
+        images: Optional[List[bytes]] = None,
     ) -> Optional[Tuple[Optional[str], Any]]:
         """Generate a chat response.
 
@@ -466,6 +467,7 @@ class LLMService:
             use_summarizer_backend: Whether to use summarizer backend.
             tools: Optional list of tools for function calling.
             cancel_event: Optional cancellation event.
+            images: Optional pre-extracted images (e.g., for retry operations).
 
         Returns:
             Tuple of (response_text, response_obj) or None.
@@ -531,6 +533,7 @@ class LLMService:
             model_name=api_model_name,
             tools=tools,
             cancel_event=cancel_event,
+            images=images,
         )
 
         return self._prepare_response_with_notification(response, notification)

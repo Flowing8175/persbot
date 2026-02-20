@@ -138,6 +138,7 @@ async def create_chat_reply(
         use_summarizer_backend=resolution.is_reply_to_summary,
         tools=tools,
         cancel_event=cancel_event,
+        images=resolution.images if resolution.images else None,
     )
 
     if not response_result:
