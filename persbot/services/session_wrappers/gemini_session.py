@@ -135,6 +135,58 @@ def _sanitize_for_json(obj: Any) -> Any:
     return str(obj)
 
 
+def _content_to_safe_dict(content: genai_types.Content) -> dict:
+    """Convert Content object to JSON-safe dict, handling non-serializable types.
+
+    Manually extracts Content/Part structure and sanitizes all values to ensure
+    Discord Message objects and other non-serializable types are converted to strings.
+
+    Args:
+        content: A genai_types.Content object.
+
+    Returns:
+        A JSON-safe dict that can be used with Content.model_validate().
+    """
+    parts_data = []
+    for part in content.parts:
+        part_dict = {}
+
+        # Handle text
+        if hasattr(part, 'text') and part.text:
+            part_dict['text'] = part.text
+
+        # Handle function_call
+        if hasattr(part, 'function_call') and part.function_call:
+            fc = part.function_call
+            part_dict['function_call'] = {
+                'name': fc.name if hasattr(fc, 'name') else '',
+                'args': _deep_serialize(fc.args) if hasattr(fc, 'args') and fc.args else {}
+            }
+
+        # Handle function_response
+        if hasattr(part, 'function_response') and part.function_response:
+            fr = part.function_response
+            part_dict['function_response'] = {
+                'name': fr.name if hasattr(fr, 'name') else '',
+                'response': _deep_serialize(fr.response) if hasattr(fr, 'response') and fr.response else {}
+            }
+
+        # Handle inline_data (images)
+        if hasattr(part, 'inline_data') and part.inline_data:
+            id_data = part.inline_data
+            part_dict['inline_data'] = {
+                'mime_type': id_data.mime_type if hasattr(id_data, 'mime_type') else '',
+                'data': id_data.data if hasattr(id_data, 'data') else ''
+            }
+
+        parts_data.append(part_dict)
+
+    return {
+        'role': content.role,
+        'parts': parts_data
+    }
+
+
 def extract_clean_text(response_obj: Any) -> str:
     """Extract text content from Gemini response, filtering out thoughts."""
     try:
@@ -360,22 +412,29 @@ class GeminiChatSession:
                 function_calls = None
 
             # Build model content from either response object or function_calls
-            # Use model_dump(mode='json') + model_validate() to completely strip any internal
+            # Use _content_to_safe_dict + model_validate() to completely strip any internal
             # Message references that cause "Object of type Message is not JSON serializable"
             if resp_obj is not None and resp_obj.candidates:
                 model_content = resp_obj.candidates[0].content
                 # Filter out thought parts if present (they cause validation errors)
                 if any(getattr(p, "thought", False) for p in model_content.parts):
+                    # Build Content manually, filtering thought parts
+                    safe_dict = _content_to_safe_dict(model_content)
+                    safe_dict['parts'] = [
+                        p for i, p in enumerate(safe_dict['parts'])
+                        if not any(getattr(model_content.parts[i], "thought", False) if i < len(model_content.parts) else False for _ in [1])
+                    ]
+                    # Actually filter properly
                     filtered_parts = [
-                        genai_types.Part.model_validate(p.model_dump(mode='json'))
-                        for p in model_content.parts
-                        if not getattr(p, "thought", False)
+                        genai_types.Part.model_validate(p_dict)
+                        for i, p_dict in enumerate(safe_dict['parts'])
+                        if i < len(model_content.parts) and not getattr(model_content.parts[i], "thought", False)
                     ]
                     if filtered_parts:
                         contents.append(genai_types.Content(role="model", parts=filtered_parts))
                 else:
-                    # Rebuild from dict to strip all internal references
-                    content_dict = model_content.model_dump(mode='json')
+                    # Rebuild from safe dict to strip all internal references
+                    content_dict = _content_to_safe_dict(model_content)
                     contents.append(genai_types.Content.model_validate(content_dict))
             elif function_calls:
                 # Streaming case: convert function_calls to Part objects
@@ -410,11 +469,16 @@ class GeminiChatSession:
                 func_response_part = _build_function_response_part(tool_name, response_data)
                 contents.append(_build_content("tool", [func_response_part]))
 
-        # Convert Content objects to dicts using mode='python', then sanitize
-        # mode='json' fails on discord objects, mode='python' is more permissive
-        # _sanitize_for_json preserves structure while converting discord objects to strings
-        dict_contents = [_sanitize_for_json(c.model_dump(mode='python')) for c in contents]
-        response = self._factory.generate_content(contents=dict_contents, tools=tools)
+        # Convert Content objects to clean dicts using _content_to_safe_dict,
+        # then recreate Content objects using model_validate to strip any internal
+        # references (like Discord Message objects) that cause JSON serialization errors
+        clean_contents = []
+        for c in contents:
+            # Convert to safe dict, then recreate to strip internal references
+            content_dict = _content_to_safe_dict(c)
+            clean_contents.append(genai_types.Content.model_validate(content_dict))
+
+        response = self._factory.generate_content(contents=clean_contents, tools=tools)
 
         # Create model message
         clean_content = extract_clean_text(response)
