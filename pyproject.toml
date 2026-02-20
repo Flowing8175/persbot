@@ -21,6 +21,9 @@ dependencies = [
     "pytest-mock>=3.15.1",
     "pytest-cov>=7.0.0",
     "dpytest>=0.7.0",
+    "chzzkpy>=1.0.0",
+    "numpy>=2.2.6",
+    "psutil>=5.9.0",
 ]
 
 [project.scripts]
