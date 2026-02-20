@@ -109,6 +109,32 @@ def _deep_serialize(obj: Any) -> Any:
     return str(obj)
 
 
+def _sanitize_for_json(obj: Any) -> Any:
+    """Sanitize objects for JSON serialization without corrupting structure.
+
+    Only converts non-serializable objects (like discord.message.Message) to strings,
+    while preserving dicts, lists, and primitive types intact.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        The same object if serializable, or str(obj) for non-serializable types.
+    """
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, bytes):
+        return f"<bytes len={len(obj)}>"
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(item) for item in obj]
+    if isinstance(obj, set):
+        return [_sanitize_for_json(item) for item in obj]
+    # For any other object type, convert to string
+    return str(obj)
+
+
 def extract_clean_text(response_obj: Any) -> str:
     """Extract text content from Gemini response, filtering out thoughts."""
     try:
@@ -384,15 +410,9 @@ class GeminiChatSession:
                 func_response_part = _build_function_response_part(tool_name, response_data)
                 contents.append(_build_content("tool", [func_response_part]))
 
-        # Convert contents to dicts using mode='python' then _deep_serialize
-        # model_dump(mode='json') fails on discord.message.Message objects,
-        # so we use mode='python' + _deep_serialize to handle all types
-        dict_contents = [_deep_serialize(c.model_dump(mode='python')) for c in contents]
-
-        # Call generate_content with properly serialized contents
-        # Tools are NOT cached with system_instruction (GoogleSearch/function calling
-        # are incompatible with context caching), so we always pass tools separately.
-        response = self._factory.generate_content(contents=dict_contents, tools=tools)
+        # Pass Content objects directly to generate_content (same as send_message)
+        # The API accepts Content objects natively
+        response = self._factory.generate_content(contents=contents, tools=tools)
 
         # Create model message
         clean_content = extract_clean_text(response)
