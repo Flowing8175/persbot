@@ -500,22 +500,21 @@ class GeminiService(BaseLLMServiceCore):
         self, model_name: str, system_instruction: str, tools: Optional[list] = None
     ) -> Tuple[Optional[str], Optional[datetime.datetime]]:
         """
-        Attempts to find or create a Gemini cache for the given system instruction.
+        Attempts to find or create a Gemini cache for the given system instruction and tools.
         Uses in-memory cache for lookups to avoid repeated caches.list() calls.
         Returns: (cache_name, local_expiration_datetime)
 
         Note: This method is synchronous but uses cached data where possible.
         For new cache creation, it will make blocking API calls.
 
-        IMPORTANT: Context caching caches ONLY the system_instruction.
-        ALL tools (including custom function calling and GoogleSearch) are passed
-        separately in generate_content calls, not in the cache.
+        IMPORTANT: Context caching includes both system_instruction AND tools.
+        Tools are NOT passed separately in generate_content when using cached_content.
         """
         if not system_instruction:
             return None, None
 
-        # Cache key uses only system_instruction (tools are NOT cached)
-        cache_display_name = self._get_cache_key(model_name, system_instruction, tools=None)
+        # Cache key includes tools since they're now part of the cache
+        cache_display_name = self._get_cache_key(model_name, system_instruction, tools=tools)
         ttl_minutes = getattr(self.config, "gemini_cache_ttl_minutes", CacheConfig.TTL_MINUTES)
         ttl_seconds = ttl_minutes * 60
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -538,7 +537,7 @@ class GeminiService(BaseLLMServiceCore):
                 del self._cache_name_cache[cache_display_name]
 
         # SLOW PATH: Check token count and create/list caches
-        # Estimate tokens for system_instruction ONLY (tools are not cached)
+        # Estimate tokens for system_instruction and tools
         # Approximation: ~4 characters per token for mixed Korean/English content
         # This is a rough estimate to avoid the complexity of count_tokens API
         # which requires actual contents, not just system_instruction
@@ -587,17 +586,20 @@ class GeminiService(BaseLLMServiceCore):
         except Exception as e:
             logger.error("Error listing Gemini caches: %s", e)
 
-        # Create new cache (tools are NOT included - they're incompatible with context caching)
+        # Create new cache with tools included
         try:
+            cache_config = genai_types.CreateCachedContentConfig(
+                display_name=cache_display_name,
+                system_instruction=system_instruction,
+                ttl=f"{ttl_seconds}s",
+            )
+            # Include tools in cache so they don't need to be passed separately
+            if tools:
+                cache_config.tools = tools
+
             cache = self.client.caches.create(
                 model=model_name,
-                config=genai_types.CreateCachedContentConfig(
-                    display_name=cache_display_name,
-                    system_instruction=system_instruction,
-                    # NOTE: tools intentionally NOT included - GoogleSearch/function calling
-                    # are incompatible with Gemini context caching
-                    ttl=f"{ttl_seconds}s",
-                ),
+                config=cache_config,
             )
 
             # Log cache creation with usage metadata

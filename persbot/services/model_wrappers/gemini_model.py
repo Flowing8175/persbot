@@ -104,19 +104,18 @@ class GeminiCachedModel:
     def _build_config_with_tools(self, tools: List[Any]) -> genai_types.GenerateContentConfig:
         """Build config with tools override.
 
-        Note: Tools are NOT cached with system_instruction (GoogleSearch/function calling
-        are incompatible with context caching), so we always pass tools separately
-        even when using cached_content.
+        Note: When using cached_content, tools are already included in the cache,
+        so they should NOT be passed separately in the generate_content request.
         """
         has_cached_content = getattr(self._config, "cached_content", None) is not None
 
         if has_cached_content:
-            # Using cached_content for system_instruction, but tools are passed separately
+            # Using cached_content - tools are already in the cache, don't pass them separately
             config_kwargs = {
                 "temperature": getattr(self._config, "temperature", 1.0),
                 "top_p": getattr(self._config, "top_p", 1.0),
                 "cached_content": self._config.cached_content,
-                "tools": tools,  # Tools are NOT in cache, pass them separately
+                # Tools are NOT passed separately - they're in the cached_content
             }
         else:
             # Not using cache, pass system_instruction and tools normally
