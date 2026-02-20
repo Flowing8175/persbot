@@ -101,11 +101,5 @@
       "description": "Nano Banana 기반 이미지 생성",
       "default": false
     }
-  ],
-  "image_model_preferences": {
-    "default": "black-forest-labs/flux.2-klein-4b",
-    "channels": {
-      "1474408897463845019": "google/gemini-2.5-flash-image"
-    }
-  }
+  ]
 }

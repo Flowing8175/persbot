@@ -1,4 +1,8 @@
-"""Service for managing image model preferences per channel."""
+"""Service for managing image model preferences per channel.
+
+Image model preferences are kept in-memory only and reset on restart.
+The default model is determined by the 'default: true' flag in the model definition.
+"""
 
 import json
 import logging
@@ -24,12 +28,16 @@ class ImageModelDefinition:
 
 # In-memory cache for image model definitions and preferences
 _image_models_cache: List[ImageModelDefinition] = []
-_channel_image_preferences: Dict[int, str] = {}
+_channel_image_preferences: Dict[int, str] = {}  # In-memory only, reset on restart
 _default_image_model: str = "black-forest-labs/flux.2-klein-4b"
 
 
 def _load_image_models():
-    """Load image model definitions from models.json file."""
+    """Load image model definitions from models.json file.
+
+    The default model is determined by the 'default: true' flag in the model definition.
+    Channel preferences are in-memory only and not persisted.
+    """
     global _image_models_cache, _default_image_model
 
     if os.path.exists(MODELS_FILE):
@@ -47,16 +55,12 @@ def _load_image_models():
                     for m in models_data
                 ]
 
-                # Load default and channel preferences
-                prefs = data.get("image_model_preferences", {})
-                _default_image_model = prefs.get("default", "black-forest-labs/flux.2-klein-4b")
-                channel_prefs = prefs.get("channels", {})
-                _channel_image_preferences.clear()
-                for channel_id_str, model_name in channel_prefs.items():
-                    try:
-                        _channel_image_preferences[int(channel_id_str)] = model_name
-                    except ValueError:
-                        logger.warning(f"Invalid channel ID in preferences: {channel_id_str}")
+                # Determine default from model definition with default=True
+                _default_image_model = "black-forest-labs/flux.2-klein-4b"  # fallback
+                for model in _image_models_cache:
+                    if model.default:
+                        _default_image_model = model.api_model_name
+                        break
 
         except Exception:
             logger.exception("Failed to load image models")
@@ -79,32 +83,6 @@ def _load_image_models():
                 default=True,
             )
         ]
-
-
-def _save_preferences():
-    """Save channel preferences to models.json file."""
-    if not os.path.exists(MODELS_FILE):
-        logger.warning(f"Models file not found: {MODELS_FILE}, skipping save")
-        return
-
-    try:
-        with open(MODELS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Update preferences section
-        if "image_model_preferences" not in data:
-            data["image_model_preferences"] = {}
-
-        data["image_model_preferences"]["default"] = _default_image_model
-        data["image_model_preferences"]["channels"] = {
-            str(k): v for k, v in _channel_image_preferences.items()
-        }
-
-        with open(MODELS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
-    except Exception:
-        logger.exception("Failed to save image model preferences")
 
 
 def get_available_image_models() -> List[ImageModelDefinition]:
@@ -136,7 +114,7 @@ def get_image_model_by_name(model_name: str) -> Optional[ImageModelDefinition]:
 
 
 def set_channel_image_model(channel_id: int, model_name: str) -> bool:
-    """Set the image model preference for a channel.
+    """Set the image model preference for a channel (in-memory only).
 
     Args:
         channel_id: Discord channel ID.
@@ -147,7 +125,6 @@ def set_channel_image_model(channel_id: int, model_name: str) -> bool:
         True if successful.
     """
     _channel_image_preferences[channel_id] = model_name
-    _save_preferences()
     return True
 
 
@@ -166,14 +143,13 @@ def get_channel_image_model(channel_id: int) -> str:
 
 
 def clear_channel_image_model(channel_id: int) -> None:
-    """Clear the image model preference for a channel.
+    """Clear the image model preference for a channel (in-memory only).
 
     Args:
         channel_id: Discord channel ID.
     """
     if channel_id in _channel_image_preferences:
         del _channel_image_preferences[channel_id]
-        _save_preferences()
 
 
 def get_default_image_model() -> str:
@@ -188,7 +164,10 @@ def get_default_image_model() -> str:
 
 
 def set_default_image_model(model_name: str) -> bool:
-    """Set the default image model.
+    """Set the default image model (in-memory only for current session).
+
+    Note: The persistent default is determined by 'default: true' in the model definition.
+    This only overrides the default for the current session.
 
     Args:
         model_name: Image model name to set as default.
@@ -198,7 +177,6 @@ def set_default_image_model(model_name: str) -> bool:
         True if successful.
     """
     _default_image_model = model_name
-    _save_preferences()
     return True
 
 
