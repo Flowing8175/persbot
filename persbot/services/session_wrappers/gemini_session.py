@@ -410,9 +410,10 @@ class GeminiChatSession:
                 func_response_part = _build_function_response_part(tool_name, response_data)
                 contents.append(_build_content("tool", [func_response_part]))
 
-        # Pass Content objects directly to generate_content (same as send_message)
-        # The API accepts Content objects natively
-        response = self._factory.generate_content(contents=contents, tools=tools)
+        # Convert Content objects to dicts and sanitize to handle discord.message.Message
+        # The SDK's json.dumps fails on discord objects, so we must sanitize first
+        dict_contents = [_sanitize_for_json(c.model_dump(mode='python')) for c in contents]
+        response = self._factory.generate_content(contents=dict_contents, tools=tools)
 
         # Create model message
         clean_content = extract_clean_text(response)
