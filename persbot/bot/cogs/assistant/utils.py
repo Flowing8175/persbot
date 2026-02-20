@@ -62,6 +62,8 @@ async def prepare_batch_context(messages: list[discord.Message]) -> str:
 
     # 2. Combine current batch contents
     combined_content = []
+    has_images = False
+
     for msg in messages:
         content = extract_message_content(msg)
         if content:
@@ -70,9 +72,20 @@ async def prepare_batch_context(messages: list[discord.Message]) -> str:
             else:
                 combined_content.append(content)
 
+        # Check for image attachments
+        if any(
+            att.content_type and att.content_type.startswith("image/")
+            for att in msg.attachments
+        ):
+            has_images = True
+
     current_text = "\n".join(combined_content)
 
-    if not current_text:
+    # If there's no text but images are attached, provide a placeholder
+    # so the LLM service can process the images
+    if not current_text and has_images:
+        current_text = "[이미지]"
+    elif not current_text:
         return ""
 
     # Prepend context to the full text
@@ -101,19 +114,27 @@ async def handle_error(message: discord.Message, error: Exception) -> None:
 
 async def process_removed_messages(
     ctx: commands.Context, removed_messages: list, llm_service: LLMService
-) -> str:
-    """Process removed messages: delete assistant messages and return user content."""
+) -> tuple[str, list[bytes]]:
+    """Process removed messages: delete assistant messages and return user content with images.
+
+    Returns:
+        A tuple of (user_content, user_images) where user_images is a list of image bytes.
+    """
     user_role = llm_service.get_user_role_name()
     assistant_role = llm_service.get_assistant_role_name()
     user_content = ""
+    user_images: list[bytes] = []
 
     for msg in removed_messages:
         if msg.role == user_role:
             user_content = msg.content
+            # Extract images from the message if present
+            if hasattr(msg, "images") and msg.images:
+                user_images = list(msg.images)
         elif msg.role == assistant_role:
             await delete_assistant_messages(ctx.channel, msg)
 
-    return user_content
+    return user_content, user_images
 
 
 async def delete_assistant_messages(channel, msg) -> None:
@@ -138,13 +159,18 @@ async def regenerate_response(
     tool_manager,
     send_response_func,
     config: AppConfig,
+    user_images: list[bytes] = None,
 ) -> None:
-    """Regenerate LLM response and send it."""
+    """Regenerate LLM response and send it.
+
+    Args:
+        user_images: Optional pre-extracted images for retry operations.
+    """
     from persbot.bot.chat_handler import create_chat_reply
     from persbot.bot.session import ResolvedSession
 
     async with ctx.channel.typing():
-        resolution = ResolvedSession(session_key, user_content)
+        resolution = ResolvedSession(session_key, user_content, images=user_images or [])
         reply = await create_chat_reply(
             ctx.message,
             resolution=resolution,

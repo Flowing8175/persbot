@@ -337,11 +337,28 @@ class BaseChatCog(commands.Cog):
         """Prepare the text content for the LLM, including context if needed. Can be overridden."""
         # Default implementation: just combine messages
         combined_content = []
+        has_images = False
+
         for msg in messages:
             content = extract_message_content(msg)
             if content:
                 combined_content.append(content)
-        return "\n".join(combined_content)
+
+            # Check for image attachments
+            if any(
+                att.content_type and att.content_type.startswith("image/")
+                for att in msg.attachments
+            ):
+                has_images = True
+
+        text_content = "\n".join(combined_content)
+
+        # If there's no text but images are attached, provide a placeholder
+        # so the LLM service can process the images
+        if not text_content and has_images:
+            return "[이미지]"
+
+        return text_content
 
     async def _handle_error(self, message: discord.Message, error: Exception):
         """Handle errors during processing. Can be overridden."""
