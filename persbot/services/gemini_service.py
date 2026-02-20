@@ -269,14 +269,10 @@ class GeminiService(BaseLLMServiceCore):
     def _get_search_tools(self, model_name: str) -> Optional[list]:
         """Get Google Search tools for Gemini models.
 
-        Note: Some preview models (e.g., gemini-3-flash-preview) don't support
-        tool use yet and will return 400 Bad Request if tools are passed.
+        DISABLED: GoogleSearch causes "Tool use with function calling is unsupported"
+        errors on many models. Return None to disable.
         """
-        # Check if this model supports tools
-        if not self._model_supports_tools(model_name):
-            return None
-
-        return [genai_types.Tool(google_search=genai_types.GoogleSearch())]
+        return None
 
     def _combine_tools(
         self,
