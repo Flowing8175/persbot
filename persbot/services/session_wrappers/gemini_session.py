@@ -384,10 +384,10 @@ class GeminiChatSession:
                 func_response_part = _build_function_response_part(tool_name, response_data)
                 contents.append(_build_content("tool", [func_response_part]))
 
-        # Convert all contents to dicts with mode='json' to ensure full JSON serialization
-        # This recursively converts all nested objects (including SDK internal types)
-        # to JSON-serializable primitives (str, int, float, bool, list, dict, None)
-        dict_contents = [c.model_dump(mode='json') for c in contents]
+        # Convert contents to dicts using mode='python' then _deep_serialize
+        # model_dump(mode='json') fails on discord.message.Message objects,
+        # so we use mode='python' + _deep_serialize to handle all types
+        dict_contents = [_deep_serialize(c.model_dump(mode='python')) for c in contents]
 
         # Call generate_content with properly serialized contents
         # Tools are NOT cached with system_instruction (GoogleSearch/function calling
