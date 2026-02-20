@@ -179,6 +179,10 @@ def _content_to_safe_dict(content: genai_types.Content) -> dict:
                 'data': id_data.data if hasattr(id_data, 'data') else ''
             }
 
+        # Preserve thought_signature if present (required for Gemini 3 models with tools)
+        if hasattr(part, 'thought_signature') and part.thought_signature:
+            part_dict['thought_signature'] = part.thought_signature
+
         parts_data.append(part_dict)
 
     return {
