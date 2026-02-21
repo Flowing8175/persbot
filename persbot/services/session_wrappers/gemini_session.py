@@ -183,7 +183,10 @@ def _content_to_safe_dict(content: genai_types.Content) -> dict:
         if hasattr(part, 'thought_signature') and part.thought_signature:
             part_dict['thought_signature'] = part.thought_signature
 
-        parts_data.append(part_dict)
+        # Only append if part has actual content (at least one data field)
+        # Empty parts cause "required oneof field 'data' must have one initialized field" errors
+        if part_dict:
+            parts_data.append(part_dict)
 
     return {
         'role': content.role,
