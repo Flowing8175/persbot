@@ -122,6 +122,14 @@ class AppConfig:
     image_rate_limit_per_minute: int = 3
     image_rate_limit_per_hour: int = 15
 
+    # --- Git Webhook Configuration ---
+    git_webhook_enabled: bool = False
+    git_webhook_secret: str | None = None
+    git_webhook_port: int = 8080
+    git_webhook_path: str = "/git-pull"
+    git_repo_path: str | None = None  # Defaults to cwd if not set
+    git_notify_channel_id: int | None = None  # Discord channel for notifications
+
 
 def _normalize_provider(raw_provider: str | None, default: str) -> str:
     if raw_provider is None or not raw_provider.strip():
@@ -328,6 +336,15 @@ def load_config() -> AppConfig:
     image_rate_limit_per_minute = _parse_int_env("IMAGE_RATE_LIMIT_PER_MINUTE", 3)
     image_rate_limit_per_hour = _parse_int_env("IMAGE_RATE_LIMIT_PER_HOUR", 15)
 
+    # Parse git webhook configuration
+    git_webhook_enabled = _parse_bool_env("GIT_WEBHOOK_ENABLED", default=False)
+    git_webhook_secret = os.environ.get("GIT_WEBHOOK_SECRET")
+    git_webhook_port = _parse_int_env("GIT_WEBHOOK_PORT", 8080)
+    git_webhook_path = os.environ.get("GIT_WEBHOOK_PATH", "/git-pull")
+    git_repo_path = os.environ.get("GIT_REPO_PATH")
+    git_notify_channel_id_str = os.environ.get("GIT_NOTIFY_CHANNEL_ID")
+    git_notify_channel_id = int(git_notify_channel_id_str) if git_notify_channel_id_str else None
+
     return AppConfig(
         discord_token=discord_token,
         assistant_llm_provider=assistant_llm_provider,
@@ -364,4 +381,10 @@ def load_config() -> AppConfig:
         zai_request_timeout=zai_request_timeout,
         image_rate_limit_per_minute=image_rate_limit_per_minute,
         image_rate_limit_per_hour=image_rate_limit_per_hour,
+        git_webhook_enabled=git_webhook_enabled,
+        git_webhook_secret=git_webhook_secret,
+        git_webhook_port=git_webhook_port,
+        git_webhook_path=git_webhook_path,
+        git_repo_path=git_repo_path,
+        git_notify_channel_id=git_notify_channel_id,
     )

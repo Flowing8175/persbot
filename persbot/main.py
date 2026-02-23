@@ -18,6 +18,7 @@ from persbot.bot.cogs.persona import PersonaCog
 from persbot.bot.cogs.summarizer import SummarizerCog
 from persbot.bot.session import SessionManager
 from persbot.config import load_config
+from persbot.services.git_webhook_service import GitWebhookService
 from persbot.services.llm_service import LLMService
 from persbot.services.prompt_service import PromptService
 from persbot.tools.manager import ToolManager
@@ -95,6 +96,20 @@ async def main(config) -> None:
     prompt_service = PromptService()
     tool_manager = ToolManager(config)
 
+    # Git webhook notification callback
+    async def send_git_notification(message: str) -> None:
+        """Send notification to Discord channel about git pull events."""
+        if config.git_notify_channel_id:
+            channel = bot.get_channel(config.git_notify_channel_id)
+            if channel:
+                try:
+                    await channel.send(message)
+                except Exception:
+                    logger.exception("Failed to send git notification")
+
+    # Initialize and start git webhook service
+    webhook_service = GitWebhookService(config, notify_callback=send_git_notification)
+
     # Start background cache warmup to reduce first-message latency
     # This pre-creates commonly used Gemini caches asynchronously
     llm_service.start_background_cache_warmup()
@@ -128,10 +143,18 @@ async def main(config) -> None:
             except Exception:
                 logger.exception("Failed to sync command tree")
 
+        # Start git webhook server after bot is ready
+        if config.git_webhook_enabled:
+            try:
+                await webhook_service.start()
+            except Exception:
+                logger.exception("Failed to start git webhook service")
+
     @bot.event
     async def on_close() -> None:
         """Cleanup on bot close."""
-        pass
+        if webhook_service.is_running:
+            await webhook_service.stop()
 
     try:
         await bot.start(config.discord_token)

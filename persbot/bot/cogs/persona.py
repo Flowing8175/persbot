@@ -7,12 +7,12 @@ import re
 from typing import Optional, List, Dict
 
 import discord
-from bot.session import SessionManager
-from config import AppConfig
+from persbot.bot.session import SessionManager
+from persbot.config import AppConfig
 from discord.ext import commands
-from services.llm_service import LLMService
-from services.prompt_service import PromptService
-from utils import send_discord_message
+from persbot.services.llm_service import LLMService
+from persbot.services.prompt_service import PromptService
+from persbot.utils import send_discord_message
 
 logger = logging.getLogger(__name__)
 
