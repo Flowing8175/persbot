@@ -38,16 +38,24 @@ def _build_text_part(text: str) -> genai_types.Part:
     return genai_types.Part(text=text)
 
 
-def _build_function_call_part(name: str, args: dict) -> genai_types.Part:
+def _build_function_call_part(name: str, args: dict, thought_signature: Optional[str] = None) -> genai_types.Part:
     """Build a Part object containing a function call.
 
     Args:
         name: The function name.
         args: The function arguments.
+        thought_signature: Optional thought signature (required for Gemini 3 models with tools).
 
     Returns:
-        A Part object with function_call.
+        A Part object with function_call and optional thought_signature.
     """
+    if thought_signature:
+        # When thought_signature is present, we need to construct Part directly
+        # because from_function_call() doesn't support thought_signature parameter
+        return genai_types.Part(
+            function_call=genai_types.FunctionCall(name=name, args=args),
+            thought_signature=thought_signature
+        )
     return genai_types.Part.from_function_call(name=name, args=args)
 
 
@@ -445,11 +453,13 @@ class GeminiChatSession:
                     contents.append(genai_types.Content.model_validate(content_dict))
             elif function_calls:
                 # Streaming case: convert function_calls to Part objects
+                # IMPORTANT: Preserve thought_signature for Gemini 3 models with tools
                 model_parts: List[genai_types.Part] = []
                 for fc in function_calls:
                     model_parts.append(_build_function_call_part(
                         name=fc.get("name", ""),
-                        args=fc.get("parameters") or fc.get("args") or {}
+                        args=fc.get("parameters") or fc.get("args") or {},
+                        thought_signature=fc.get("thought_signature")
                     ))
                 if model_parts:
                     contents.append(_build_content("model", model_parts))
