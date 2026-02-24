@@ -200,8 +200,14 @@ class ZAIService(BaseLLMServiceCore):
         model_name: Optional[str] = None,
         tools: Optional[Any] = None,
         cancel_event: Optional[asyncio.Event] = None,
+        images: Optional[List[bytes]] = None,
     ) -> Optional[Tuple[str, Any]]:
-        """Generate chat response."""
+        """Generate chat response.
+
+        Args:
+            images: Optional pre-extracted images (e.g., for retry operations).
+                   If provided, skips extraction from discord_message.
+        """
         # Check cancellation event before starting API call
         if cancel_event and cancel_event.is_set():
             raise asyncio.CancelledError("LLM API call aborted by user")
@@ -218,15 +224,18 @@ class ZAIService(BaseLLMServiceCore):
         author_id = primary_msg.author.id
         author_name = getattr(primary_msg.author, "name", str(author_id))
 
-        # Extract images from messages first (before model selection)
-        images = await self._extract_images_from_messages(discord_message)
+        # Use provided images or extract from message(s)
+        if images is not None:
+            extracted_images = images
+        else:
+            extracted_images = await self._extract_images_from_messages(discord_message)
 
         # Determine the actual model to use (switch to vision model if images present)
         actual_model = self._get_model_for_images(
             model_name
             if model_name
             else getattr(chat_session, "_model_name", self._assistant_model_name),
-            len(images) > 0,
+            len(extracted_images) > 0,
         )
 
         # Check for model switch
@@ -243,7 +252,7 @@ class ZAIService(BaseLLMServiceCore):
                 author_id,
                 author_name=author_name,
                 message_ids=message_ids,
-                images=images,
+                images=extracted_images,
                 tools=converted_tools,
             ),
             "응답 생성",
