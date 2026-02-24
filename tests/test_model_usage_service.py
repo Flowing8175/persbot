@@ -759,3 +759,150 @@ class TestModelUsageServiceGetApiModelName:
         result = service.get_api_model_name("Unknown Model")
 
         assert result == "glm-4.7"
+
+
+class TestFallbackChainValidation:
+    """Tests for validating fallback chain integrity.
+
+    These tests ensure:
+    1. All fallback_alias values point to existing models
+    2. No circular references exist in fallback chains
+    3. All chains terminate with null
+    """
+
+    @pytest.fixture
+    def real_models_service(self):
+        """Create a ModelUsageService with actual models.json data."""
+        import os
+
+        models_path = "data/models.json"
+        if not os.path.exists(models_path):
+            pytest.skip("models.json not found")
+
+        with patch("os.path.exists", return_value=False):
+            service = ModelUsageService.__new__(ModelUsageService)
+            service.data_file = "data/model_usage.json"
+            service.models_file = models_path
+            service.usage_data = {}
+            service._default_provider = "gemini"
+            service.MODEL_DEFINITIONS = {}
+            service._model_definition_cache = {}
+            service.ALIAS_TO_API = {}
+            service.API_TO_ALIAS = {}
+            service._load_models()
+            return service
+
+    def test_all_fallback_aliases_point_to_existing_models(self, real_models_service):
+        """All fallback_alias values must point to models in MODEL_DEFINITIONS."""
+        service = real_models_service
+        invalid_fallbacks = []
+
+        for alias, model_def in service.MODEL_DEFINITIONS.items():
+            if model_def.fallback_alias is not None:
+                if model_def.fallback_alias not in service.MODEL_DEFINITIONS:
+                    invalid_fallbacks.append(
+                        (alias, model_def.fallback_alias)
+                    )
+
+        assert not invalid_fallbacks, (
+            f"Invalid fallback_aliases that don't point to existing models: {invalid_fallbacks}"
+        )
+
+    def test_no_circular_references_in_fallback_chains(self, real_models_service):
+        """Fallback chains must not contain circular references."""
+        service = real_models_service
+        circular_chains = []
+
+        for start_alias in service.MODEL_DEFINITIONS:
+            visited = set()
+            current = start_alias
+            chain = [current]
+
+            while current is not None:
+                model_def = service.MODEL_DEFINITIONS.get(current)
+                if model_def is None:
+                    break
+
+                next_alias = model_def.fallback_alias
+                if next_alias is None:
+                    break
+
+                if next_alias in visited:
+                    # Found a cycle
+                    cycle_start = chain.index(next_alias)
+                    cycle = chain[cycle_start:] + [next_alias]
+                    circular_chains.append((start_alias, cycle))
+                    break
+
+                visited.add(next_alias)
+                chain.append(next_alias)
+                current = next_alias
+
+        assert not circular_chains, (
+            f"Circular references found in fallback chains: {circular_chains}"
+        )
+
+    def test_all_fallback_chains_terminate(self, real_models_service):
+        """All fallback chains must eventually terminate with null."""
+        service = real_models_service
+        non_terminating = []
+        max_chain_length = 20  # Safety limit
+
+        for start_alias in service.MODEL_DEFINITIONS:
+            current = start_alias
+            chain_length = 0
+
+            while current is not None and chain_length < max_chain_length:
+                model_def = service.MODEL_DEFINITIONS.get(current)
+                if model_def is None:
+                    break
+
+                if model_def.fallback_alias is None:
+                    # Chain terminates properly
+                    break
+
+                current = model_def.fallback_alias
+                chain_length += 1
+
+            if chain_length >= max_chain_length:
+                non_terminating.append(start_alias)
+
+        assert not non_terminating, (
+            f"Fallback chains that don't terminate within {max_chain_length} steps: {non_terminating}"
+        )
+
+    def test_fallback_chain_depth_is_reasonable(self, real_models_service):
+        """Fallback chains should not be excessively deep."""
+        service = real_models_service
+        max_acceptable_depth = 10
+        deep_chains = []
+
+        for start_alias in service.MODEL_DEFINITIONS:
+            depth = 0
+            current = start_alias
+
+            while current is not None:
+                model_def = service.MODEL_DEFINITIONS.get(current)
+                if model_def is None or model_def.fallback_alias is None:
+                    break
+                current = model_def.fallback_alias
+                depth += 1
+
+            if depth > max_acceptable_depth:
+                deep_chains.append((start_alias, depth))
+
+        assert not deep_chains, (
+            f"Fallback chains exceeding max depth of {max_acceptable_depth}: {deep_chains}"
+        )
+
+    def test_glm_4_7_is_terminal_model(self, real_models_service):
+        """GLM 4.7 should be a terminal model (no fallback)."""
+        service = real_models_service
+
+        glm_4_7 = service.MODEL_DEFINITIONS.get("GLM 4.7")
+        if glm_4_7 is None:
+            pytest.skip("GLM 4.7 not in model definitions")
+
+        assert glm_4_7.fallback_alias is None, (
+            f"GLM 4.7 should be a terminal model but has fallback: {glm_4_7.fallback_alias}"
+        )

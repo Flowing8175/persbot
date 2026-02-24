@@ -6,9 +6,12 @@ and YouTube videos.
 """
 
 import asyncio
+import ipaddress
 import logging
 import re
+import socket
 from typing import Optional
+from urllib.parse import urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -22,6 +25,52 @@ USER_AGENT = "Mozilla/5.0 (compatible; SoyeBot/1.0; +https://github.com/persbot)
 
 # Maximum content length to return
 MAX_CONTENT_LENGTH = 1000
+
+# Blocklist for SSRF protection
+BLOCKED_IP_RANGES = [
+    ipaddress.ip_network('10.0.0.0/8'),      # Private Class A
+    ipaddress.ip_network('172.16.0.0/12'),   # Private Class B
+    ipaddress.ip_network('192.168.0.0/16'),  # Private Class C
+    ipaddress.ip_network('127.0.0.0/8'),     # Localhost
+    ipaddress.ip_network('169.254.0.0/16'),  # Link-local (cloud metadata)
+    ipaddress.ip_network('::1/128'),         # IPv6 localhost
+    ipaddress.ip_network('fc00::/7'),        # IPv6 ULA
+]
+BLOCKED_HOSTNAMES = ['localhost', 'localhost.localdomain', 'ip6-localhost',
+                     'metadata.google.internal', 'metadata.azure.com']
+
+
+async def _is_ssrf_safe_url(url: str) -> tuple[bool, str]:
+    """Check if URL is safe from SSRF attacks.
+
+    Returns (is_safe, error_message).
+    """
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or parsed.path.split('/')[0]
+
+        # Check blocked hostnames
+        hostname_lower = hostname.lower()
+        for blocked in BLOCKED_HOSTNAMES:
+            if hostname_lower == blocked or hostname_lower.endswith('.' + blocked):
+                return False, f"Access to internal hostname '{hostname}' is blocked"
+
+        # Resolve hostname to IP and check against blocked ranges
+        try:
+            # Get all IPs for the hostname (IPv4 and IPv6) - non-blocking
+            addr_info = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
+            for family, _, _, _, sockaddr in addr_info:
+                ip = ipaddress.ip_address(sockaddr[0])
+                for blocked_range in BLOCKED_IP_RANGES:
+                    if ip in blocked_range:
+                        return False, f"Access to private IP address {ip} is blocked"
+        except socket.gaierror:
+            # If we can't resolve, allow it (will fail in HTTP request)
+            pass
+
+        return True, ""
+    except Exception as e:
+        return False, f"URL validation error: {str(e)}"
 
 
 def _parse_html_sync(html: str) -> dict:
@@ -110,6 +159,11 @@ async def inspect_external_content(
     # Validate URL format
     if not url.startswith(("http://", "https://")):
         return ToolResult(success=False, error="URL must start with http:// or https://")
+
+    # SSRF protection - validate URL before making request
+    is_safe, error_msg = await _is_ssrf_safe_url(url)
+    if not is_safe:
+        return ToolResult(success=False, error=f"SSRF protection: {error_msg}")
 
     # Check for cancellation before HTTP request
     if cancel_event and cancel_event.is_set():
@@ -223,7 +277,7 @@ async def _inspect_youtube_content(
     except asyncio.CancelledError:
         return ToolResult(success=False, error="YouTube content inspection aborted by user")
     except Exception as e:
-        pass  # Logging removed
+        logger.debug("Error in web content inspection (non-critical): %s", e)
 
     # Fallback: Return basic info
     return ToolResult(

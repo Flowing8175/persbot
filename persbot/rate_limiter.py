@@ -433,19 +433,28 @@ class ImageGenerationRateLimiter:
 
 # Global rate limiter instance for image generation
 _global_image_limiter: Optional[ImageGenerationRateLimiter] = None
+_limiter_lock = asyncio.Lock()
 
 
-def get_image_rate_limiter() -> ImageGenerationRateLimiter:
-    """Get or create the global image generation rate limiter."""
+async def get_image_rate_limiter() -> ImageGenerationRateLimiter:
+    """Get or create the global image rate limiter with proper locking."""
     global _global_image_limiter
-    if _global_image_limiter is None:
-        from persbot.config import load_config
 
-        config = load_config()
-        _global_image_limiter = ImageGenerationRateLimiter(
-            max_requests_per_minute=getattr(config, "image_rate_limit_per_minute", 3),
-            max_requests_per_hour=getattr(config, "image_rate_limit_per_hour", 15),
-        )
+    if _global_image_limiter is not None:
+        return _global_image_limiter
+
+    async with _limiter_lock:
+        # Double-check pattern
+        if _global_image_limiter is None:
+            from persbot.config import load_config
+
+            config = load_config()
+            _global_image_limiter = ImageGenerationRateLimiter(
+                max_requests_per_minute=getattr(config, "image_rate_limit_per_minute", 3),
+                max_requests_per_hour=getattr(config, "image_rate_limit_per_hour", 15),
+            )
+            logger.debug("Initialized global image rate limiter")
+
     return _global_image_limiter
 
 

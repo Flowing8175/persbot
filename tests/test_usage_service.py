@@ -233,8 +233,9 @@ class TestImageUsageServiceLoadAsync:
     @pytest.mark.asyncio
     async def test_handles_invalid_json_async(self, service):
         """_load_async handles invalid JSON gracefully."""
+        # Mock builtins.open to return invalid JSON
         with patch("os.path.exists", return_value=True):
-            with patch("aiofiles.open", mock_open_async(read_data="invalid json")):
+            with patch("builtins.open", mock_open(read_data="invalid json")):
                 await service._load_async()
 
         assert service.usage_data == {}
@@ -288,26 +289,27 @@ class TestImageUsageServiceSave:
     @pytest.mark.asyncio
     async def test_save_async_writes_to_file(self, service):
         """_save_async writes data to file asynchronously."""
-        with patch("aiofiles.open", mock_open_async()) as mock_file:
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             await service._save_async()
 
-        mock_file.assert_called_once_with("data/image_usage.json", "w", encoding="utf-8")
+        mock_to_thread.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_save_async_with_data(self, service):
         """_save_async_with_data writes specific data."""
         data = {"2024-06-15": {"456": 10}}
 
-        with patch("aiofiles.open", mock_open_async()) as mock_file:
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             await service._save_async_with_data(data)
 
-        mock_file.assert_called_once()
+        mock_to_thread.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_save_async_handles_error(self, service):
         """_save_async handles write errors gracefully."""
-        with patch("aiofiles.open", side_effect=IOError("Write error")):
-            # Should not raise
+        # Mock builtins.open to raise an error
+        with patch("builtins.open", side_effect=IOError("Write error")):
+            # Should not raise - error is caught and logged
             await service._save_async()
 
 

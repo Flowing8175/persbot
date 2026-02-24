@@ -116,6 +116,14 @@ class ModelSelectorCog(commands.Cog):
         # Load config for image model info
         self.config = load_config()
 
+    async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        """Handle errors in model selector commands."""
+        error = getattr(error, 'original', error)
+
+        if isinstance(error, commands.CommandInvokeError):
+            logger.error("Model selector command error: %s", error, exc_info=True)
+            await ctx.send("An error occurred while changing the model.")
+
     @commands.hybrid_group(
         name="model",
         aliases=["모델"],

@@ -225,7 +225,7 @@ class RetryHandler(ABC):
 
                 if self._is_fatal_error(e):
                     logger.warning("Encountered fatal error. Re-throwing.")
-                    raise e
+                    raise  # Preserves original traceback
 
                 if self._is_rate_limit_error(e):
                     # Try fallback call if provided

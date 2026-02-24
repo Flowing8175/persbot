@@ -6,8 +6,6 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import aiofiles
-
 from persbot.prompts import BOT_PERSONA_PROMPT, SUMMARY_SYSTEM_INSTRUCTION
 
 logger = logging.getLogger(__name__)
@@ -55,22 +53,15 @@ class PromptService:
 
     async def _reload(self):
         """Asynchronous reload of prompts (for after modifications)."""
-        # For simplicity, we can reuse the logic but with async file reading?
-        # Or just update the list in memory if we are confident.
-        # But scanning is safer for consistency.
-        # Since glob is sync, we can run it in thread if many files,
-        # but for a few files, it's fast. Reading content async is better.
-
-        # Re-implement scan logic with aiofiles
+        # Re-implement scan logic with asyncio.to_thread
         new_prompts = []
         md_files = sorted(self.prompt_dir.glob("*.md"))
 
         for file_path in md_files:
             try:
-                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-                    content = await f.read()
-                    name = file_path.stem
-                    new_prompts.append({"name": name, "content": content, "path": str(file_path)})
+                content = await asyncio.to_thread(lambda p=file_path: p.read_text(encoding="utf-8"))
+                name = file_path.stem
+                new_prompts.append({"name": name, "content": content, "path": str(file_path)})
             except Exception:
                 logger.exception("Failed to load prompt from %s", file_path)
 
@@ -91,11 +82,14 @@ class PromptService:
             self.usage_data = {}
 
     async def _save_usage(self) -> None:
-        try:
-            async with aiofiles.open(self.usage_path, "w", encoding="utf-8") as f:
-                await f.write(json.dumps(self.usage_data, ensure_ascii=False, indent=4))
-        except Exception:
-            logger.exception("Failed to save prompt usage")
+        def _sync_save():
+            try:
+                with open(self.usage_path, "w", encoding="utf-8") as f:
+                    json.dump(self.usage_data, f, ensure_ascii=False, indent=4)
+            except Exception:
+                logger.exception("Failed to save prompt usage")
+
+        await asyncio.to_thread(_sync_save)
 
     def _get_today_key(self) -> str:
         return datetime.datetime.now().strftime("%Y-%m-%d")
@@ -142,8 +136,7 @@ class PromptService:
             counter += 1
 
         try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
-                await f.write(content)
+            await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
 
             await self._reload()
 

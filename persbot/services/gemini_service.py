@@ -47,6 +47,9 @@ class GeminiService(BaseLLMServiceCore):
         summary_model_name: Optional[str] = None,
         prompt_service: PromptService,
     ):
+        # Validate API key
+        if not config.gemini_api_key or not config.gemini_api_key.strip():
+            raise ValueError("Gemini API key is required and cannot be empty")
         super().__init__(config)
         self.client = genai.Client(api_key=config.gemini_api_key)
         self._assistant_model_name = assistant_model_name
@@ -72,10 +75,12 @@ class GeminiService(BaseLLMServiceCore):
         self._cache_hits: int = 0
         self._cache_misses: int = 0
         self._cache_tokens_saved: int = 0
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # Start periodic cache cleanup task
         if config.gemini_cache_ttl_minutes > 0:
-            asyncio.create_task(self._periodic_cache_cleanup())
+            self._cleanup_task = asyncio.create_task(self._periodic_cache_cleanup())
+            self._cleanup_task.add_done_callback(self._log_cleanup_error)
 
     @property
     def assistant_model(self) -> GeminiCachedModel:
@@ -1398,3 +1403,12 @@ class GeminiService(BaseLLMServiceCore):
             pass
         except Exception as e:
             logger.error(f"Cache cleanup task error: {e}", exc_info=True)
+
+    def _log_cleanup_error(self, task: asyncio.Task) -> None:
+        """Log errors from background cleanup task."""
+        try:
+            task.result()  # Raises exception if task failed
+        except asyncio.CancelledError:
+            logger.info("Cache cleanup task was cancelled")
+        except Exception as e:
+            logger.error("Cache cleanup task failed: %s", e, exc_info=True)

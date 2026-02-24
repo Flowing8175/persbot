@@ -223,12 +223,8 @@ class FileConfig:
 # =============================================================================
 
 
-class Provider(str, Enum):
-    """LLM provider identifiers."""
-
-    GEMINI = "gemini"
-    OPENAI = "openai"
-    ZAI = "zai"
+# Re-export from domain/model.py for backward compatibility
+from persbot.domain.model import Provider
 
 
 # =============================================================================
@@ -236,24 +232,33 @@ class Provider(str, Enum):
 # =============================================================================
 
 
+# Re-export from domain/model.py
+from persbot.domain.model import StandardModels
+
+# Backward compatibility: Keep ModelAlias as Enum for constants.py API
+# The new ModelAlias dataclass is available in persbot.domain.model
 class ModelAlias(str, Enum):
-    """Standard model aliases."""
+    """Standard model aliases (Enum-based for backward compatibility).
+
+    For new code, prefer using persbot.domain.model.StandardModels constants
+    or the ModelAlias dataclass directly.
+    """
 
     # Gemini models
-    GEMINI_FLASH = "Gemini 2.5 Flash"
-    GEMINI_PRO = "Gemini 2.5 Pro"
+    GEMINI_FLASH = str(StandardModels.GEMINI_FLASH)
+    GEMINI_PRO = str(StandardModels.GEMINI_PRO)
 
     # OpenAI models
-    GPT_4O = "GPT-4o"
-    GPT_4O_MINI = "GPT-4o Mini"
-    GPT_5_MINI = "GPT-5 Mini"
+    GPT_4O = str(StandardModels.GPT_4O)
+    GPT_4O_MINI = str(StandardModels.GPT_4O_MINI)
+    GPT_5_MINI = str(StandardModels.GPT_5_MINI)
 
     # ZAI models
-    GLM_4_7 = "GLM 4.7"
-    GLM_4_FLASH = "GLM 4 Flash"
-    GLM_4_6V = "GLM 4.6V"
+    GLM_4_7 = str(StandardModels.GLM_4_7)
+    GLM_4_FLASH = str(StandardModels.GLM_4_FLASH)
+    GLM_4_6V = str(StandardModels.GLM_4_6V)
 
-    DEFAULT = "Gemini 2.5 Flash"
+    DEFAULT = str(StandardModels.DEFAULT)
 
 
 # =============================================================================

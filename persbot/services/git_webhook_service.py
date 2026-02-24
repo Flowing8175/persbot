@@ -60,8 +60,8 @@ class GitWebhookService:
     def _verify_signature(self, payload: bytes, signature: str | None) -> bool:
         """Verify webhook signature using HMAC-SHA256."""
         if not self.config.git_webhook_secret:
-            # No secret configured, allow all requests
-            return True
+            logger.warning("Git webhook secret not configured - rejecting all requests for security")
+            return False
 
         if not signature:
             return False
@@ -80,9 +80,28 @@ class GitWebhookService:
 
         return hmac.compare_digest(computed_sig, expected_sig)
 
+    def _validate_repo_path(self, repo_path: Path) -> bool:
+        """Validate that the repo path is a valid git repository."""
+        if not repo_path.exists():
+            logger.error("Repo path does not exist: %s", repo_path)
+            return False
+
+        if not (repo_path / ".git").exists():
+            logger.error("Path %s is not a git repository", repo_path)
+            return False
+
+        return True
+
     async def _handle_webhook(self, request: web.Request) -> web.Response:
         """Handle incoming webhook request."""
         try:
+            # Check IP allowlist FIRST
+            if self.config.git_webhook_allowed_ips:
+                client_ip = request.remote
+                if client_ip not in self.config.git_webhook_allowed_ips:
+                    logger.warning("Rejected webhook from unauthorized IP: %s", client_ip)
+                    return web.Response(status=403, text="Forbidden")
+
             payload = await request.read()
 
             # Check for signature in various headers
@@ -133,8 +152,8 @@ class GitWebhookService:
         """Execute git pull and return (success, message)."""
         repo_path = Path(self.config.git_repo_path) if self.config.git_repo_path else Path.cwd()
 
-        if not (repo_path / ".git").exists():
-            return False, f"Not a git repository: {repo_path}"
+        if not self._validate_repo_path(repo_path):
+            return False, f"Invalid repository path: {repo_path}"
 
         try:
             # Run git pull in a thread to avoid blocking

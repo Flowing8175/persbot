@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, AsyncIterator, Optional, Union
 
 import discord
 
+from persbot.bot.chat_models import ChatReply
 from persbot.bot.session import ResolvedSession, SessionManager
 from persbot.constants import TOOL_NAME_KOREAN
 from persbot.services.llm_service import LLMService
@@ -19,6 +21,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Overall timeout for tool execution loops (5 minutes)
+TOOL_EXECUTION_TIMEOUT = 300
+
 __all__ = [
     "ChatReply",
     "TOOL_NAME_KOREAN",
@@ -28,16 +33,6 @@ __all__ = [
     "send_split_response",
     "send_streaming_response",
 ]
-
-
-@dataclass(frozen=True)
-class ChatReply:
-    """Container for an LLM response tied to a session."""
-
-    text: str
-    session_key: str
-    response: object
-    images: list[bytes] = field(default_factory=list)
 
 
 async def resolve_session_for_message(
@@ -156,21 +151,31 @@ async def create_chat_reply(
         max_tool_rounds = 10  # Prevent infinite loops
         tool_rounds = 0
         generated_images = []  # Collect all images across tool rounds
+        loop_start_time = time.monotonic()  # Track overall timeout
 
         # Check for cancellation before starting tool execution
         if cancel_event and cancel_event.is_set():
             function_calls = None  # Prevent the loop from executing
         else:
             while function_calls and tool_rounds < max_tool_rounds:
+                # Check overall timeout
+                elapsed = time.monotonic() - loop_start_time
+                if elapsed > TOOL_EXECUTION_TIMEOUT:
+                    logger.warning("Tool loop exceeded %ds timeout after %d rounds", TOOL_EXECUTION_TIMEOUT, tool_rounds)
+                    break
+
                 # Send progress notification before tool execution
                 notification_text = f"🔧 {', '.join(TOOL_NAME_KOREAN.get(call.get('name', 'unknown'), call.get('name', 'unknown')) for call in function_calls)} 사용 중..."
                 progress_msg = None
                 if primary_msg and hasattr(primary_msg, "channel") and primary_msg.channel:
                     try:
                         progress_msg = await primary_msg.channel.send(notification_text)
-                    except Exception:
-                        # If sending fails, continue without notification
-                        pass
+                    except discord.Forbidden:
+                        logger.debug("Missing permissions to send progress notification")
+                    except discord.HTTPException as e:
+                        logger.debug("Failed to send progress notification: %s", e)
+                    except Exception as e:
+                        logger.debug("Unexpected error sending progress notification: %s", e)
 
                 try:
                     # Execute tools in parallel
@@ -398,11 +403,19 @@ async def create_chat_reply_stream(
         max_tool_rounds = 10
         tool_rounds = 0
         generated_images: list[bytes] = []  # Collect images from tool results
+        loop_start_time = time.monotonic()  # Track overall timeout
 
         while function_calls and tool_rounds < max_tool_rounds:
             # Check for cancellation
             if cancel_event and cancel_event.is_set():
                 return
+
+            # Check overall timeout
+            elapsed = time.monotonic() - loop_start_time
+            if elapsed > TOOL_EXECUTION_TIMEOUT:
+                logger.warning("Tool loop exceeded %ds timeout after %d rounds", TOOL_EXECUTION_TIMEOUT, tool_rounds)
+                break
+
 
             # Send progress notification
             notification_text = f"🔧 {', '.join(TOOL_NAME_KOREAN.get(call.get('name', 'unknown'), call.get('name', 'unknown')) for call in function_calls)} 사용 중..."
@@ -410,8 +423,12 @@ async def create_chat_reply_stream(
             if primary_msg and hasattr(primary_msg, "channel") and primary_msg.channel:
                 try:
                     progress_msg = await primary_msg.channel.send(notification_text)
-                except Exception:
-                    pass
+                except discord.Forbidden:
+                    logger.debug("Missing permissions to send progress notification")
+                except discord.HTTPException as e:
+                    logger.debug("Failed to send progress notification: %s", e)
+                except Exception as e:
+                    logger.debug("Unexpected error sending progress notification: %s", e)
 
             try:
                 # Execute tools

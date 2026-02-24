@@ -730,7 +730,8 @@ class TestRateLimitResult:
 class TestGlobalImageRateLimiter:
     """Tests for global image rate limiter functions."""
 
-    def test_get_image_rate_limiter_creates_instance(self):
+    @pytest.mark.asyncio
+    async def test_get_image_rate_limiter_creates_instance(self):
         """get_image_rate_limiter creates a limiter instance."""
         reset_image_rate_limiter()
 
@@ -740,12 +741,13 @@ class TestGlobalImageRateLimiter:
         mock_config.image_rate_limit_per_hour = 15
 
         with patch('persbot.config.load_config', return_value=mock_config):
-            limiter = get_image_rate_limiter()
+            limiter = await get_image_rate_limiter()
             assert isinstance(limiter, ImageGenerationRateLimiter)
 
         reset_image_rate_limiter()
 
-    def test_get_image_rate_limiter_returns_same_instance(self):
+    @pytest.mark.asyncio
+    async def test_get_image_rate_limiter_returns_same_instance(self):
         """get_image_rate_limiter returns the same instance on subsequent calls."""
         reset_image_rate_limiter()
 
@@ -754,23 +756,24 @@ class TestGlobalImageRateLimiter:
         mock_config.image_rate_limit_per_hour = 15
 
         with patch('persbot.config.load_config', return_value=mock_config):
-            limiter1 = get_image_rate_limiter()
-            limiter2 = get_image_rate_limiter()
+            limiter1 = await get_image_rate_limiter()
+            limiter2 = await get_image_rate_limiter()
 
             assert limiter1 is limiter2
 
         reset_image_rate_limiter()
 
-    def test_reset_image_rate_limiter_clears_instance(self):
+    @pytest.mark.asyncio
+    async def test_reset_image_rate_limiter_clears_instance(self):
         """reset_image_rate_limiter clears the global instance."""
         mock_config = Mock()
         mock_config.image_rate_limit_per_minute = 3
         mock_config.image_rate_limit_per_hour = 15
 
         with patch('persbot.config.load_config', return_value=mock_config):
-            limiter1 = get_image_rate_limiter()
+            limiter1 = await get_image_rate_limiter()
             reset_image_rate_limiter()
-            limiter2 = get_image_rate_limiter()
+            limiter2 = await get_image_rate_limiter()
 
             assert limiter1 is not limiter2
 

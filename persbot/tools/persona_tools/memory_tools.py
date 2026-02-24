@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Default path for memory vector data (can be overridden via config)
 DEFAULT_MEMORY_PATH = "data/memory_vector_mock.json"
 
+# Maximum number of memories to store per user (prevents unbounded growth)
+MAX_MEMORIES_PER_USER = 1000
+
 
 async def search_episodic_memory(
     user_id: str,
@@ -152,6 +155,17 @@ async def save_episodic_memory(
             "type": memory_type.lower(),
             "tags": tags or [],
         }
+
+        # Prune old memories if user has too many
+        user_memories = [m for m in memories if m.get("user_id") == user_id]
+        if len(user_memories) >= MAX_MEMORIES_PER_USER:
+            # Sort by date and remove oldest
+            user_memories.sort(key=lambda m: m.get("date", ""))
+            memories_to_remove = user_memories[:-MAX_MEMORIES_PER_USER]
+            for old_mem in memories_to_remove:
+                if old_mem in memories:
+                    memories.remove(old_mem)
+            logger.info("Pruned %d old memories for user %s", len(memories_to_remove), user_id)
 
         # Add to memories list
         memories.append(new_memory)

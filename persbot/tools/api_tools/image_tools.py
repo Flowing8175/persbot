@@ -166,7 +166,7 @@ async def generate_image(
         if (discord_context and hasattr(discord_context, "author"))
         else "unknown"
     )
-    rate_limiter = get_image_rate_limiter()
+    rate_limiter = await get_image_rate_limiter()
     rate_limit_result = await rate_limiter.check_rate_limit(user_id)
 
     if not rate_limit_result.allowed:

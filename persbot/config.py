@@ -122,6 +122,10 @@ class AppConfig:
     image_rate_limit_per_minute: int = 3
     image_rate_limit_per_hour: int = 15
 
+    # --- Image Memory Limits ---
+    max_image_size_bytes: int = 10 * 1024 * 1024  # 10MB per image
+    max_total_image_memory_mb: int = 100  # 100MB total for images in history
+
     # --- Git Webhook Configuration ---
     git_webhook_enabled: bool = False
     git_webhook_secret: str | None = None
@@ -129,6 +133,7 @@ class AppConfig:
     git_webhook_path: str = "/git-pull"
     git_repo_path: str | None = None  # Defaults to cwd if not set
     git_notify_channel_id: int | None = None  # Discord channel for notifications
+    git_webhook_allowed_ips: tuple[str, ...] = ()  # IP allowlist (empty = allow all when secret set)
 
 
 def _normalize_provider(raw_provider: str | None, default: str) -> str:
@@ -344,6 +349,11 @@ def load_config() -> AppConfig:
     git_repo_path = os.environ.get("GIT_REPO_PATH")
     git_notify_channel_id_str = os.environ.get("GIT_NOTIFY_CHANNEL_ID")
     git_notify_channel_id = int(git_notify_channel_id_str) if git_notify_channel_id_str else None
+    # Parse git webhook allowed IPs (comma-separated)
+    git_webhook_allowed_ips = ()
+    if os.environ.get("GIT_WEBHOOK_ALLOWED_IPS"):
+        ips_str = os.environ.get("GIT_WEBHOOK_ALLOWED_IPS", "")
+        git_webhook_allowed_ips = tuple(ip.strip() for ip in ips_str.split(",") if ip.strip())
 
     return AppConfig(
         discord_token=discord_token,
@@ -387,4 +397,5 @@ def load_config() -> AppConfig:
         git_webhook_path=git_webhook_path,
         git_repo_path=git_repo_path,
         git_notify_channel_id=git_notify_channel_id,
+        git_webhook_allowed_ips=git_webhook_allowed_ips,
     )

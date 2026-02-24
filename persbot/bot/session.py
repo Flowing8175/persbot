@@ -86,6 +86,7 @@ class SessionManager:
         # Start periodic session cleanup task
         if config.session_inactive_minutes > 0:
             self._cleanup_task = asyncio.create_task(self._periodic_session_cleanup())
+            self._cleanup_task.add_done_callback(self._log_cleanup_error)
 
     def _evict_if_needed(self) -> None:
         """Ensure the session cache does not grow without bounds."""
@@ -558,6 +559,15 @@ class SessionManager:
 
         except Exception as e:
             logger.error(f"Error during session cleanup: {e}", exc_info=True)
+
+    def _log_cleanup_error(self, task: asyncio.Task) -> None:
+        """Log errors from background session cleanup task."""
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.info("Session cleanup task was cancelled")
+        except Exception as e:
+            logger.error("Session cleanup task failed: %s", e, exc_info=True)
 
     async def cleanup(self) -> None:
         """Cancel the periodic cleanup task and clean up resources."""

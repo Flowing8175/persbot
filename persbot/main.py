@@ -156,6 +156,41 @@ async def main(config) -> None:
         if webhook_service.is_running:
             await webhook_service.stop()
 
+    @bot.event
+    async def on_command_error(ctx: commands.Context, error: commands.CommandError) -> None:
+        """Global error handler for commands without specific handlers."""
+        # Get the original error if wrapped
+        error = getattr(error, 'original', error)
+
+        if isinstance(error, commands.CommandNotFound):
+            return
+
+        if isinstance(error, commands.DisabledCommand):
+            await ctx.send("This command is currently disabled.")
+            return
+
+        if isinstance(error, commands.NoPrivateMessage):
+            await ctx.send("This command cannot be used in private messages.")
+            return
+
+        if isinstance(error, commands.MissingPermissions):
+            missing = ', '.join(error.missing_permissions)
+            await ctx.send(f"You need the following permissions: {missing}")
+            return
+
+        if isinstance(error, commands.BotMissingPermissions):
+            missing = ', '.join(error.missing_permissions)
+            await ctx.send(f"I need the following permissions: {missing}")
+            return
+
+        if isinstance(error, commands.CommandOnCooldown):
+            await ctx.send(f"Please wait {error.retry_after:.1f}s before using this command.")
+            return
+
+        # Log unexpected errors
+        logger.error("Unhandled command error in %s: %s", ctx.command, error, exc_info=True)
+        await ctx.send("An unexpected error occurred. Please try again later.")
+
     try:
         await bot.start(config.discord_token)
     except discord.LoginFailure:

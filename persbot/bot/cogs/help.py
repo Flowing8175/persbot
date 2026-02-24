@@ -150,6 +150,14 @@ class HelpCog(commands.Cog):
         provider = getattr(config, "assistant_llm_provider", "gemini")
         self.ai_provider_label = self._get_provider_label(provider)
 
+    async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        """Handle errors in help commands."""
+        error = getattr(error, 'original', error)
+
+        if isinstance(error, commands.CommandInvokeError):
+            logger.error("Help command error: %s", error, exc_info=True)
+            await ctx.send("An error occurred while displaying help.")
+
     def _get_provider_label(self, provider: str) -> str:
         """AI 공급자 라벨을 반환합니다."""
         provider_lower = str(provider).lower()
@@ -435,6 +443,3 @@ class HelpCog(commands.Cog):
             )
 
 
-async def setup(bot: commands.Bot) -> None:
-    """Setup function for loading the cog."""
-    pass

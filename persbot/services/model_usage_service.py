@@ -1,11 +1,10 @@
+import asyncio
 import datetime
 import json
 import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
-
-import aiofiles
 
 logger = logging.getLogger(__name__)
 
@@ -115,12 +114,15 @@ class ModelUsageService:
 
     async def _save_usage(self) -> None:
         """Save usage data to file asynchronously."""
-        try:
-            os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
-            async with aiofiles.open(self.data_file, "w", encoding="utf-8") as f:
-                await f.write(json.dumps(self.usage_data, indent=2, ensure_ascii=False))
-        except Exception:
-            logger.exception("Failed to save model usage data")
+        def _sync_save():
+            try:
+                os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
+                with open(self.data_file, "w", encoding="utf-8") as f:
+                    json.dump(self.usage_data, f, indent=2, ensure_ascii=False)
+            except Exception:
+                logger.exception("Failed to save model usage data")
+
+        await asyncio.to_thread(_sync_save)
 
     def _check_daily_reset(self) -> None:
         """Reset usage if the date has changed (KST Midnight)."""

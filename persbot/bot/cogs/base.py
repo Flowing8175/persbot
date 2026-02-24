@@ -10,6 +10,7 @@ from persbot.tools.manager import ToolManager
 from discord.ext import commands
 
 from persbot.bot.buffer import MessageBuffer
+from persbot.bot.state_manager import ActiveAPICall
 from persbot.bot.chat_handler import (
     ChatReply,
     create_chat_reply,
@@ -24,27 +25,6 @@ from persbot.services.llm_service import LLMService
 from persbot.utils import GENERIC_ERROR_MESSAGE, extract_message_content, send_discord_message
 
 logger = logging.getLogger(__name__)
-
-
-class ActiveAPICall:
-    """Tracks an active API call for cancellation.
-
-    This class ensures that when a new message arrives during batch processing:
-    1. The ongoing LLM API-side generation is cancelled (like pressing STOP in chatgpt.com)
-    2. The stacked messages are included in new request
-    """
-
-    def __init__(self, task: asyncio.Task, cancel_event: asyncio.Event) -> None:
-        self.task = task
-        self.cancel_event = cancel_event
-
-    def cancel(self) -> None:
-        """Cancel both task and set cancel event immediately."""
-        if self.cancel_event:
-            self.cancel_event.set()
-        if self.task and not self.task.done():
-            self.task.cancel()
-
 
 class BaseChatCog(commands.Cog):
     """Abstract base cog containing shared logic for message buffering and processing."""

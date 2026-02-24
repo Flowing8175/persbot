@@ -50,6 +50,9 @@ class OpenAIService(BaseLLMServiceCore):
         summary_model_name: Optional[str] = None,
         prompt_service: PromptService,
     ):
+        # Validate API key
+        if not config.openai_api_key or not config.openai_api_key.strip():
+            raise ValueError("OpenAI API key is required and cannot be empty")
         super().__init__(config)
         self.client = OpenAI(
             api_key=config.openai_api_key,
@@ -144,6 +147,7 @@ class OpenAIService(BaseLLMServiceCore):
 
     def _extract_text_from_response(self, response_obj: Any) -> str:
         """Extract text content from OpenAI chat completion response."""
+        result = ""  # Initialize with default
         try:
             choices = getattr(response_obj, "choices", []) or []
             for choice in choices:
@@ -153,8 +157,6 @@ class OpenAIService(BaseLLMServiceCore):
                     return content
         except Exception:
             logger.exception("Failed to extract text from OpenAI response")
-
-        result = self._extract_text_from_response_output(response_obj)
         return result
 
     def _extract_text_from_response_output(self, response_obj: Any) -> str:
@@ -483,7 +485,7 @@ class OpenAIService(BaseLLMServiceCore):
                             pass
 
                 # Start sync iteration in thread
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 future = loop.run_in_executor(None, _sync_iterate)
 
                 try:

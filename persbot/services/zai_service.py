@@ -47,6 +47,9 @@ class ZAIService(BaseLLMServiceCore):
         summary_model_name: Optional[str] = None,
         prompt_service: PromptService,
     ):
+        # Validate API key
+        if not config.zai_api_key or not config.zai_api_key.strip():
+            raise ValueError("Z.AI API key is required and cannot be empty")
         super().__init__(config)
         # Initialize OpenAI client with Z.AI base URL and timeout
         self.client = OpenAI(

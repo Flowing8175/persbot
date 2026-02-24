@@ -5,8 +5,6 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-import aiofiles
-
 logger = logging.getLogger(__name__)
 
 
@@ -53,16 +51,18 @@ class ImageUsageService:
         await self._load_async()
 
     async def _load_async(self) -> None:
-        """Load usage data from disk asynchronously using aiofiles."""
-        if os.path.exists(self.storage_path):
-            try:
-                async with aiofiles.open(self.storage_path, "r", encoding="utf-8") as f:
-                    content = await f.read()
-                    self.usage_data = json.loads(content)
-            except Exception:
-                logger.exception("Failed to load image usage data")
-                self.usage_data = {}
+        """Load usage data from disk asynchronously."""
+        def _sync_load():
+            if os.path.exists(self.storage_path):
+                try:
+                    with open(self.storage_path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    logger.exception("Failed to load image usage data")
+                    return {}
+            return {}
 
+        self.usage_data = await asyncio.to_thread(_sync_load)
         self._loaded = True
         # Cleanup old data (optional, to prevent file growing indefinitely)
         self._cleanup_old_entries()
@@ -99,12 +99,15 @@ class ImageUsageService:
         await self._save_async_with_data(data_snapshot)
 
     async def _save_async_with_data(self, data: Dict[str, Dict[str, int]]) -> None:
-        """Save usage data to disk asynchronously using aiofiles."""
-        try:
-            async with aiofiles.open(self.storage_path, "w", encoding="utf-8") as f:
-                await f.write(json.dumps(data, ensure_ascii=False, indent=4))
-        except Exception:
-            logger.exception("Failed to save image usage data")
+        """Save usage data to disk asynchronously."""
+        def _sync_save():
+            try:
+                with open(self.storage_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=4)
+            except Exception:
+                logger.exception("Failed to save image usage data")
+
+        await asyncio.to_thread(_sync_save)
 
     def _schedule_write(self) -> None:
         """Schedule a debounced write operation."""

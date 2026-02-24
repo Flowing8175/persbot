@@ -161,24 +161,33 @@ class BaseLLMService(ABC):
         return False
 
     async def _extract_images_from_message(self, message: discord.Message) -> List[bytes]:
-        """Extract image bytes from message attachments, downscaling to ~1MP."""
+        """Extract images from Discord message attachments with size limits."""
         images = []
-        if not message.attachments:
-            return images
+        total_size = 0
+        max_image_size_bytes = getattr(self.config, "max_image_size_bytes", 10 * 1024 * 1024)  # 10MB default
+        max_total_image_memory_mb = getattr(self.config, "max_total_image_memory_mb", 100)  # 100MB default
 
         for attachment in message.attachments:
             if attachment.content_type and attachment.content_type.startswith("image/"):
+                # Check size before downloading
+                if attachment.size > max_image_size_bytes:
+                    logger.warning("Image too large (%d bytes): %s", attachment.size, attachment.filename)
+                    continue
+
+                if total_size + attachment.size > max_total_image_memory_mb * 1024 * 1024:
+                    logger.warning("Total image memory limit reached, skipping remaining images")
+                    break
+
                 try:
                     image_data = await attachment.read()
-
-                    # Run CPU-bound image processing in a separate thread
                     processed_data = await asyncio.to_thread(
                         process_image_sync, image_data, attachment.filename
                     )
                     images.append(processed_data)
-
-                except Exception:
-                    logger.exception("Failed to read/process attachment %s", attachment.filename)
+                    total_size += len(processed_data)
+                except Exception as e:
+                    logger.warning("Failed to process image %s: %s", attachment.filename, e)
+                    continue
 
         return images
 
