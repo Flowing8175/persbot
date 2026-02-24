@@ -222,21 +222,8 @@ async def create_chat_reply(
 
                 except Exception as e:
                     logger.error("Error executing tools: %s", e, exc_info=True)
-                    # Clean up progress message on error
-                    if "progress_msg" in locals() and progress_msg:
-                        try:
-                            await progress_msg.delete()
-                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                            pass
                     # Return original response on tool execution error
                     break
-                finally:
-                    # Clean up progress message (both success and error cases)
-                    if progress_msg:
-                        try:
-                            await progress_msg.delete()
-                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                            pass
 
         if tool_rounds > 0:
             # We executed tools, use the final response from the LLM
@@ -475,13 +462,6 @@ async def create_chat_reply_stream(
             except Exception as e:
                 logger.error("Error executing tools in stream: %s", e, exc_info=True)
                 break
-            finally:
-                # Clean up progress message
-                if progress_msg:
-                    try:
-                        await progress_msg.delete()
-                    except Exception:
-                        pass
 
         # If no tool calls were made, yield the collected chunks
         if tool_rounds == 0 and full_text:
