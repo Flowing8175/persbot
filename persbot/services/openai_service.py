@@ -555,6 +555,16 @@ class OpenAIService(BaseLLMServiceCore):
                     yield text
 
         except asyncio.CancelledError:
+            # IMPORTANT: Update history with partial content before re-raising
+            # Messages already sent to Discord must remain in conversation history
+            if full_content:
+                model_msg = ChatMessage(role="assistant", content=full_content)
+                chat_session._history.append(user_msg)
+                chat_session._history.append(model_msg)
+                logger.info(
+                    "Stream cancelled - saved partial response (%d chars) to history",
+                    len(full_content),
+                )
             raise
 
         # Store pending function calls in chat_session for tool handling

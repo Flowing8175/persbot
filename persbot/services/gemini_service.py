@@ -1015,6 +1015,21 @@ class GeminiService(BaseLLMServiceCore):
                     stream.close()
             except BaseException:
                 pass
+
+            # IMPORTANT: Update history with partial content before re-raising
+            # Messages already sent to Discord must remain in conversation history
+            if full_content:
+                model_msg = ChatMessage(
+                    role="model",
+                    content=full_content,
+                    parts=[{"text": full_content}],
+                )
+                chat_session.history.append(user_msg)
+                chat_session.history.append(model_msg)
+                logger.info(
+                    "Stream cancelled - saved partial response (%d chars) to history",
+                    len(full_content),
+                )
             raise
         except Exception as e:
             # Check if this is a cache error - we can retry once
