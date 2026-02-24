@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 from persbot.config import AppConfig
 from persbot.prompts import BOT_PERSONA_PROMPT
+from persbot.services.channel_prompt_service import ChannelPromptService
 from persbot.services.llm_service import LLMService
 from persbot.services.model_usage_service import ModelUsageService
 from persbot.services.summarization_service import SummarizationConfig, SummarizationService
@@ -61,12 +62,13 @@ class SessionManager:
         self,
         config: AppConfig,
         llm_service: LLMService,
+        channel_prompt_service: Optional[ChannelPromptService] = None,
     ):
         self.config = config
         self.llm_service = llm_service
+        self.channel_prompt_service = channel_prompt_service or ChannelPromptService()
         self.sessions: OrderedDict[str, ChatSession] = OrderedDict()
         self.session_contexts: OrderedDict[str, SessionContext] = OrderedDict()
-        self.channel_prompts: Dict[int, str] = {}  # channel_id -> prompt_content override
         self.channel_model_preferences: Dict[int, str] = {}  # channel_id -> model_alias override
         self._cleanup_task: Optional[asyncio.Task] = (
             None  # Track cleanup task for graceful shutdown
@@ -260,7 +262,7 @@ class SessionManager:
         history_to_transfer: Optional[List[Dict[str, str]]] = None,
     ) -> Tuple[object, str]:
         """Create a new chat session, optionally with transferred history."""
-        system_prompt = self.channel_prompts.get(channel_id, BOT_PERSONA_PROMPT)
+        system_prompt = self.channel_prompt_service.get_effective_prompt(channel_id)
         chat = self.llm_service.create_chat_session_for_alias(model_alias, system_prompt)
         chat.model_alias = model_alias
 
@@ -383,12 +385,14 @@ class SessionManager:
                 content=msg_dict['content']
             ))
 
-    def set_channel_prompt(self, channel_id: int, prompt_content: Optional[str]) -> None:
-        """Set a custom system prompt for a specific channel."""
-        if prompt_content:
-            self.channel_prompts[channel_id] = prompt_content
-        else:
-            self.channel_prompts.pop(channel_id, None)
+    @property
+    def channel_prompts(self) -> Dict[int, str]:
+        """Backward-compatible property returning all channel prompts."""
+        return self.channel_prompt_service.get_all_channel_prompts()
+
+    async def set_channel_prompt(self, channel_id: int, prompt_content: Optional[str]) -> None:
+        """Set and persist a custom system prompt for a specific channel."""
+        await self.channel_prompt_service.set_channel_prompt(channel_id, prompt_content)
 
         # Reset current session for this channel to apply the new prompt
         self.reset_session_by_channel(channel_id)

@@ -548,7 +548,7 @@ class PromptManagerView(discord.ui.View):
         if self.selected_index is not None:
             p = self.cog.prompt_service.get_prompt(self.selected_index)
             if p:
-                self.cog.session_manager.set_channel_prompt(self.ctx.channel.id, p["content"])
+                await self.cog.session_manager.set_channel_prompt(self.ctx.channel.id, p["content"])
                 await send_discord_message(
                     interaction,
                     f"✅ **{p['name']}** 페르소나가 이 채널에 적용되었습니다! (세션 초기화)",

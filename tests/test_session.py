@@ -246,22 +246,24 @@ class TestSessionManager:
         manager = SessionManager(mock_config, mock_llm_service)
         assert len(manager.channel_prompts) == 0
 
-    def test_set_channel_prompt_stores_prompt(self, mock_config, mock_llm_service):
+    @pytest.mark.asyncio
+    async def test_set_channel_prompt_stores_prompt(self, mock_config, mock_llm_service):
         """set_channel_prompt stores prompt."""
         from persbot.bot.session import SessionManager
 
         manager = SessionManager(mock_config, mock_llm_service)
-        manager.set_channel_prompt(123, "Custom prompt")
+        await manager.set_channel_prompt(123, "Custom prompt")
 
         assert manager.channel_prompts[123] == "Custom prompt"
 
-    def test_set_channel_prompt_removes_prompt_when_none(self, mock_config, mock_llm_service):
+    @pytest.mark.asyncio
+    async def test_set_channel_prompt_removes_prompt_when_none(self, mock_config, mock_llm_service):
         """set_channel_prompt removes prompt when None."""
         from persbot.bot.session import SessionManager
 
         manager = SessionManager(mock_config, mock_llm_service)
-        manager.channel_prompts[123] = "Existing prompt"
-        manager.set_channel_prompt(123, None)
+        manager.channel_prompt_service._cache[123] = "Existing prompt"
+        await manager.set_channel_prompt(123, None)
 
         assert 123 not in manager.channel_prompts
 
