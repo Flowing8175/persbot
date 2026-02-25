@@ -42,7 +42,6 @@ class SummarizerCog(commands.Cog):
         text_parts = [
             f"{msg.author.display_name}: {msg.content}"
             async for msg in channel.history(**kwargs)
-            if not msg.author.bot
         ]
 
         # Messages are in chronological order (oldest first) - critical for LLM context
@@ -218,9 +217,8 @@ class SummarizerCog(commands.Cog):
                 oldest_first=True,
             )
             # 시작 메시지도 포함
-            if not start_message.author.bot:
-                full_text = f"{start_message.author.display_name}: {start_message.content}\n" + full_text
-                count += 1
+            full_text = f"{start_message.author.display_name}: {start_message.content}\n" + full_text
+            count += 1
 
             if count == 0:
                 await send_discord_message(ctx, f"ℹ️ 메시지 ID `{message_id}` 이후 메시지가 없어요.")
