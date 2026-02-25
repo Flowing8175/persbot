@@ -281,7 +281,7 @@ class AutoChannelCog(BaseChatCog):
             user_message_count = sum(
                 1
                 for msg in session.chat.history
-                if msg.role == user_role and msg.author_id == ctx.author.id
+                if msg.role == user_role and getattr(msg, 'author_id', None) == ctx.author.id
             )
 
         is_admin = (
