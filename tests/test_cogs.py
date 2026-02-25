@@ -313,7 +313,11 @@ class TestBaseChatCogCancelTasks:
         assert result == []
 
     def test_cancel_active_tasks_with_api_call(self, mock_bot, mock_config, mock_llm_service, mock_session_manager, mock_message):
-        """_cancel_active_tasks cancels active API call and returns messages."""
+        """_cancel_active_tasks cancels active API call but does NOT return messages.
+
+        When API call is cancelled, the LLM service saves partial response to history,
+        so we don't prepend old messages to avoid duplication.
+        """
         cog = BaseChatCog(mock_bot, mock_config, mock_llm_service, mock_session_manager)
 
         # Setup active API call
@@ -326,7 +330,8 @@ class TestBaseChatCogCancelTasks:
 
         result = cog._cancel_active_tasks(123, "TestUser")
 
-        assert result == [mock_message]
+        # Should NOT return messages - partial response is saved to history
+        assert result == []
         assert event.is_set()
         task.cancel.assert_called_once()
 
@@ -390,7 +395,11 @@ class TestBaseChatCogCancelTasks:
         task.cancel.assert_not_called()
 
     def test_cancel_active_tasks_prevents_duplicate_prepends(self, mock_bot, mock_config, mock_llm_service, mock_session_manager, mock_message):
-        """_cancel_active_tasks only returns messages once even if multiple sources."""
+        """_cancel_active_tasks does NOT return messages when API call is cancelled.
+
+        When API call is cancelled, partial response is saved to history, so we
+        don't prepend old messages. This prevents duplicate user messages in API calls.
+        """
         mock_config.break_cut_mode = True
         cog = BaseChatCog(mock_bot, mock_config, mock_llm_service, mock_session_manager)
 
@@ -409,8 +418,11 @@ class TestBaseChatCogCancelTasks:
 
         result = cog._cancel_active_tasks(123, "TestUser")
 
-        # Should only return messages once
-        assert result == [mock_message]
+        # Should NOT return messages because API call was cancelled
+        # (partial response is saved to history)
+        assert result == []
+        api_task.cancel.assert_called_once()
+        send_task.cancel.assert_called_once()
 
 
 # =============================================================================

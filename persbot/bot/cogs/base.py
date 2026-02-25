@@ -236,6 +236,7 @@ class BaseChatCog(commands.Cog):
                     stream=stream,
                     session_key=f"channel:{channel_id}",
                     session_manager=self.session_manager,
+                    llm_service=self.llm_service,
                 )
             except Exception as e:
                 logger.error("Error sending streaming response: %s", e, exc_info=True)
@@ -364,6 +365,7 @@ class BaseChatCog(commands.Cog):
                     stream=_stream_from_text(),
                     session_key=reply.session_key,
                     session_manager=self.session_manager,
+                    llm_service=self.llm_service,
                 )
             )
         else:
@@ -387,41 +389,49 @@ class BaseChatCog(commands.Cog):
 
         This method ensures that when a new message arrives during batch processing:
         1. Any ongoing LLM API-side generation is cancelled immediately (like STOP button)
-        2. The messages from cancelled batch are returned for stacking
+        2. The messages from cancelled batch are returned for stacking (if applicable)
         3. A new request will be made with all stacked messages
 
         IMPORTANT: Messages are only returned for prepending if we actually CANCELLED
         an in-progress task. If the task already completed, we don't prepend to avoid
         generating duplicate responses.
+
+        NOTE: When an API call is cancelled, the LLM service saves the partial response
+        to history. In this case, we don't prepend old messages because the history
+        already has the context (user message + partial assistant response).
         """
         messages_to_prepend = []
         was_cancelled = False  # Track if we actually cancelled something
+        api_call_cancelled = False  # Track if API call was cancelled (partial saved to history)
 
         # Step 1: Cancel ongoing API call FIRST (critical for server-side cancellation)
         # This is the most important step - it cancels the actual HTTP request
         if channel_id in self.active_api_calls:
             active_api = self.active_api_calls[channel_id]
-            # Only prepend messages if the API call was actually in progress
             if active_api.task and not active_api.task.done():
                 active_api.cancel()
                 was_cancelled = True
-                # Get messages from the cancelled batch to prepend to new request
-                messages_to_prepend = self.active_batches.get(channel_id, [])
+                api_call_cancelled = True
+                # DON'T prepend messages here - the LLM service saves partial response
+                # to history, so the context is preserved. Prepending would cause
+                # the user message to be duplicated in the API call.
 
         # Step 2: Also trigger cancellation signal (redundant but ensures coverage)
         if channel_id in self.cancellation_signals:
             self.cancellation_signals[channel_id].set()
 
         # Step 3: Cancel sending task if in break-cut mode
-        # Only prepend messages if we're cancelling a send in progress
+        # Only prepend messages if we're cancelling a send in progress AND
+        # the API call wasn't cancelled (meaning full response is in history)
         if channel_id in self.sending_tasks:
             task = self.sending_tasks[channel_id]
             if not task.done():
                 if self.config.break_cut_mode:
                     task.cancel()
                     was_cancelled = True
-                    # Only get messages for stacking if we haven't already
-                    if not messages_to_prepend:
+                    # Only get messages for stacking if API call wasn't cancelled
+                    # (i.e., full response is in history, just sending was interrupted)
+                    if not api_call_cancelled and not messages_to_prepend:
                         messages_to_prepend = self.active_batches.get(channel_id, [])
 
         # Step 4: Cancel the processing task itself
@@ -429,8 +439,8 @@ class BaseChatCog(commands.Cog):
             task = self.processing_tasks[channel_id]
             if not task.done():
                 was_cancelled = True
-                # If we didn't get messages from active_api_calls, get from active_batches
-                if not messages_to_prepend:
+                # Only get messages if API call wasn't cancelled
+                if not api_call_cancelled and not messages_to_prepend:
                     messages_to_prepend = self.active_batches.get(channel_id, [])
                 task.cancel()
 
