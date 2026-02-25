@@ -141,8 +141,8 @@ class TestFetchMessages:
         assert "User4: Test message 4" in text
 
     @pytest.mark.asyncio
-    async def test_fetch_messages_filters_bot_messages(self, summarizer_cog, mock_context):
-        """_fetch_messages filters out bot messages."""
+    async def test_fetch_messages_includes_bot_messages(self, summarizer_cog, mock_context):
+        """_fetch_messages includes bot messages for complete context."""
         messages = []
         for i in range(5):
             msg = Mock()
@@ -159,11 +159,13 @@ class TestFetchMessages:
 
         text, count = await summarizer_cog._fetch_messages(mock_context.channel, limit=10)
 
-        # Should only have non-bot messages (indices 1, 3)
-        assert count == 2
+        # Should include all messages including bot messages
+        assert count == 5
+        assert "User0: Message 0" in text
         assert "User1: Message 1" in text
+        assert "User2: Message 2" in text
         assert "User3: Message 3" in text
-        assert "User0" not in text
+        assert "User4: Message 4" in text
 
     @pytest.mark.asyncio
     async def test_fetch_messages_with_no_messages(self, summarizer_cog, mock_context):

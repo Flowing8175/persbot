@@ -35,6 +35,53 @@ __all__ = [
 ]
 
 
+async def _maybe_summarize_history(
+    session_manager: SessionManager,
+    session_key: str,
+    llm_service: LLMService,
+) -> None:
+    """Check if history needs summarization and perform it if needed.
+
+    This is called after each LLM response to check if the conversation
+    history has grown beyond the threshold. If so, older messages are
+    summarized to reduce token costs while keeping recent context.
+
+    Args:
+        session_manager: The session manager.
+        session_key: The session key to check.
+        llm_service: The LLM service for generating summaries.
+    """
+    try:
+        # Check if summarization is needed
+        if not session_manager.check_and_summarize_history(session_key):
+            return
+
+        # Get the pending summarization data
+        session = session_manager.sessions.get(session_key)
+        if not session:
+            return
+
+        pending = getattr(session, "_pending_summarization", None)
+        if not pending:
+            return
+
+        # Generate summary using the LLM
+        summary = await llm_service.summarize_text(pending["prompt"])
+        if not summary:
+            logger.warning("Summarization failed for session %s: no summary generated", session_key)
+            session._pending_summarization = None
+            return
+
+        # Apply the summary to the session history
+        if session_manager.apply_summarization(session_key, summary):
+            logger.info("Auto-summarized session %s", session_key)
+        else:
+            logger.warning("Failed to apply summarization to session %s", session_key)
+
+    except Exception as e:
+        logger.error("Error during auto-summarization: %s", e, exc_info=True)
+
+
 async def resolve_session_for_message(
     message: discord.Message,
     content: str,
@@ -140,6 +187,13 @@ async def create_chat_reply(
         return None
 
     response_text, response_obj = response_result
+
+    # Check if history needs summarization after adding new messages
+    await _maybe_summarize_history(
+        session_manager=session_manager,
+        session_key=session_key,
+        llm_service=llm_service,
+    )
 
     # Check for function calls in the response
     if tool_manager and tool_manager.is_enabled():
@@ -488,6 +542,7 @@ async def send_streaming_response(
     stream: AsyncIterator[str],
     session_key: str,
     session_manager: SessionManager,
+    llm_service: Optional[LLMService] = None,
 ) -> list[discord.Message]:
     """Send a streaming response to Discord channel.
 
@@ -503,6 +558,7 @@ async def send_streaming_response(
         stream: Async iterator yielding text chunks or image marker tuples.
         session_key: The session key for linking messages.
         session_manager: The session manager for linking.
+        llm_service: Optional LLM service for auto-summarization.
 
     Returns:
         List of sent Discord messages.
@@ -583,5 +639,13 @@ async def send_streaming_response(
                 img_msg = await channel.send(file=img_file)
                 session_manager.link_message_to_session(str(img_msg.id), session_key)
                 sent_messages.append(img_msg)
+
+    # Check if history needs summarization after streaming completes
+    if llm_service:
+        await _maybe_summarize_history(
+            session_manager=session_manager,
+            session_key=session_key,
+            llm_service=llm_service,
+        )
 
     return sent_messages
