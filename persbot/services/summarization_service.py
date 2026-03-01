@@ -53,18 +53,21 @@ class SummarizationService:
         """Split history into messages to summarize and messages to keep.
 
         Args:
-            history: Full conversation history.
+            history: Full conversation history (may be a deque or list).
 
         Returns:
             Tuple of (messages_to_summarize, messages_to_keep).
         """
         if len(history) <= self.config.keep_recent_messages:
-            return [], history
+            return [], list(history)
+
+        # Convert to list to support slicing (history may be a deque)
+        history_list = list(history)
 
         # Keep the most recent messages intact
         keep_count = self.config.keep_recent_messages
-        messages_to_summarize = history[:-keep_count]
-        messages_to_keep = history[-keep_count:]
+        messages_to_summarize = history_list[:-keep_count]
+        messages_to_keep = history_list[-keep_count:]
 
         return messages_to_summarize, messages_to_keep
 
